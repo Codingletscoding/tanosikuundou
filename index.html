@@ -912,10 +912,11 @@
 
           const handleDeleteBooking = async (booking) => {
             if (loading || deletingBookingRef.current || booking.status !== '預約成功' || !booking.bookingId) return;
+            const slot = slots.find(s => s.id === booking.slotId);
             const details = [
                 `學生：${booking.name || '未提供'}`,
-                `課程：${booking.slotTitle || '未提供'}`,
-                `時間：${booking.slotDate || ''} ${booking.slotTime || ''}`,
+                `課程：${booking.slotTitle || (slot && slot.title) || '課程已下架'}`,
+                `時間：${booking.slotDate || (slot && slot.date) || ''} ${booking.slotTime || (slot && slot.time) || ''}`,
                 `金額：NT$ ${booking.paidPrice || 0}`,
                 `訂單編號：${booking.bookingId}`
             ].join('\n');
@@ -924,7 +925,9 @@
             setDeletingBookingId(booking.bookingId);
             setLoading(true);
             try {
-                const result = await fetchAPI({ action: 'deleteBooking', bookingId: booking.bookingId });
+                const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                if (!accessToken) throw new Error('請重新登入 LINE 後再刪除訂單。');
+                const result = await fetchAPI({ action: 'deleteBooking', bookingId: booking.bookingId, accessToken });
                 if (!result || result.status === 'error' || result.success === false ||
                     !(result.status === 'success' || result.success === true)) {
                     throw new Error('刪除未獲後端確認。請確認後端支援 deleteBooking，再重新整理訂單狀態。');
