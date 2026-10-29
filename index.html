@@ -917,16 +917,17 @@
           const deletingBookingRef = React.useRef(false);
 
           const handleDeleteBooking = async (booking) => {
-            if (loading || deletingBookingRef.current || booking.status !== '預約成功' || !booking.bookingId) return;
+            if (loading || deletingBookingRef.current || !['審核中', '預約成功'].includes(booking.status) || !booking.bookingId) return;
             const slot = slots.find(s => s.id === booking.slotId);
             const details = [
                 `學生：${booking.name || '未提供'}`,
                 `課程：${booking.slotTitle || (slot && slot.title) || '課程已下架'}`,
                 `時間：${booking.slotDate || (slot && slot.date) || ''} ${booking.slotTime || (slot && slot.time) || ''}`,
                 `金額：NT$ ${booking.paidPrice || 0}`,
+                `狀態：${booking.status}`,
                 `訂單編號：${booking.bookingId}`
             ].join('\n');
-            if (!confirm(`確定刪除此已預約成功訂單？\n\n${details}\n\n此操作無法復原，且不會自動退款。`)) return;
+            if (!confirm(`確定從預約名單刪除此訂單？\n\n${details}\n\n此操作無法復原，且不會自動退款。`)) return;
             deletingBookingRef.current = true;
             setDeletingBookingId(booking.bookingId);
             setLoading(true);
@@ -936,7 +937,7 @@
                 const result = await fetchAPI({ action: 'deleteBooking', bookingId: booking.bookingId, accessToken });
                 if (!result || result.status === 'error' || result.success === false ||
                     !(result.status === 'success' || result.success === true)) {
-                    throw new Error('刪除未獲後端確認。請確認後端支援 deleteBooking，再重新整理訂單狀態。');
+                    throw new Error(result && result.message ? result.message : '刪除未獲後端確認。請確認 Apps Script 已更新並重新部署，支援 deleteBooking。');
                 }
                 const [coachData, slotData] = await Promise.all([
                     fetchAPI({ action: 'getCoachData' }),
@@ -1128,23 +1129,26 @@
                                     )}
                                 </td>
                                 <td data-label="操作" className="p-3 md:p-4 text-center">
-                                    {b.status === "審核中" && b.bookingId && (
-                                        <button onClick={() => handleApprove(b.bookingId)} disabled={loading} className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
-                                            對帳核准
-                                        </button>
-                                    )}
-                                    {b.status === "預約成功" && b.bookingId && (
-                                        <div className="flex flex-wrap justify-center gap-2">
+                                    <div className="flex flex-wrap justify-center gap-2">
+                                        {b.status === "審核中" && b.bookingId && (
+                                            <button onClick={() => handleApprove(b.bookingId)} disabled={loading} className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
+                                                對帳核准
+                                            </button>
+                                        )}
+                                        {b.status === "預約成功" && b.bookingId && (
                                             <button onClick={() => setLogModalTarget({ lineId: b.lineId, name: b.name, bookingId: b.bookingId })} disabled={loading} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
                                                 結課 / 日誌
                                             </button>
-                                            <button onClick={() => handleDeleteBooking(b)} disabled={loading} className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
+                                        )}
+                                        {["審核中", "預約成功"].includes(b.status) && (
+                                            <button onClick={() => handleDeleteBooking(b)} disabled={loading || !b.bookingId} title={!b.bookingId ? '此舊訂單缺少訂單編號，請先補上預約名單第 H 欄的唯一編號。' : undefined} aria-label={`刪除${b.name || '學員'}的預約`} className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
                                                 {deletingBookingId === b.bookingId ? '刪除中...' : '刪除訂單'}
                                             </button>
-                                        </div>
-                                    )}
-                                    {b.status === "已完課" && (
-                                        <span className="text-xs text-gray-400 font-bold">不可操作</span>
+                                        )}
+                                        {b.status === "已完課" && <span className="text-xs text-gray-400 font-bold">已完課紀錄保留</span>}
+                                    </div>
+                                    {["審核中", "預約成功"].includes(b.status) && !b.bookingId && (
+                                        <p className="mt-2 text-xs text-red-600">缺少訂單編號，請先補上唯一編號</p>
                                     )}
                                 </td>
                               </tr>

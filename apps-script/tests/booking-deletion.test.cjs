@@ -48,7 +48,7 @@ for (const flag of ['notCoach', 'wrongChannel', 'expired', 'noChannel', 'busy'])
     assert.equal(state.isLocked(), false);
   });
 }
-for (const status of ['已完課', '審核中']) {
+for (const status of ['已完課', '未知狀態']) {
   test(`rejects ${status}`, () => {
     const state = setup({ status }); assert.equal(state.run().status, 'error');
     assert.equal(state.bookingRows.length, 2); assert.equal(state.slotRows[1][6], 3);
@@ -111,3 +111,10 @@ if (complete) {
     const state = setup(); assert.equal(state.run({ action: 'not-supported' }).status, 'error');
   });
 }
+
+test('coach can delete pending booking and restore exactly one seat', () => {
+  const state = setup({ status: '審核中' });
+  assert.equal(state.run().status, 'success'); assert.equal(state.bookingRows.length, 1);
+  assert.equal(state.slotRows[1][6], 4); assert.equal(state.run().status, 'error');
+  assert.equal(state.slotRows[1][6], 4);
+});

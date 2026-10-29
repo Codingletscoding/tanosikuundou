@@ -313,7 +313,7 @@ function deleteApprovedBooking_(ss, bookingId) {
   var index = matches[0];
   var booking = rows[index];
   var status = booking[5] || '預約成功';
-  if (['預約成功', '成功', '已完成'].indexOf(status) === -1) throw new Error('只能刪除已預約成功且尚未完課的訂單。');
+  if (['審核中', '預約成功', '成功', '已完成'].indexOf(status) === -1) throw new Error('只能刪除審核中或預約成功且尚未完課的訂單。');
   var slotRows = slots.getDataRange().getValues();
   var slotIndex = -1;
   for (var j = 1; j < slotRows.length; j++) {
