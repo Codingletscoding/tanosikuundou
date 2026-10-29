@@ -907,6 +907,50 @@
             fetchData(); setLoading(false);
           };
 
+          const [deletingBookingId, setDeletingBookingId] = useState(null);
+          const deletingBookingRef = React.useRef(false);
+
+          const handleDeleteBooking = async (booking) => {
+            if (loading || deletingBookingRef.current || booking.status !== '預約成功' || !booking.bookingId) return;
+            const details = [
+                `學生：${booking.name || '未提供'}`,
+                `課程：${booking.slotTitle || '未提供'}`,
+                `時間：${booking.slotDate || ''} ${booking.slotTime || ''}`,
+                `金額：NT$ ${booking.paidPrice || 0}`,
+                `訂單編號：${booking.bookingId}`
+            ].join('\n');
+            if (!confirm(`確定刪除此已預約成功訂單？\n\n${details}\n\n此操作無法復原，且不會自動退款。`)) return;
+            deletingBookingRef.current = true;
+            setDeletingBookingId(booking.bookingId);
+            setLoading(true);
+            try {
+                const result = await fetchAPI({ action: 'deleteBooking', bookingId: booking.bookingId });
+                if (!result || result.status === 'error' || result.success === false ||
+                    !(result.status === 'success' || result.success === true)) {
+                    throw new Error('刪除未獲後端確認。請確認後端支援 deleteBooking，再重新整理訂單狀態。');
+                }
+                const [coachData, slotData] = await Promise.all([
+                    fetchAPI({ action: 'getCoachData' }),
+                    fetchAPI({ action: 'getSlots' })
+                ]);
+                if (!Array.isArray(coachData.bookings) || !Array.isArray(slotData.slots)) {
+                    throw new Error('刪除已送出，但無法重新讀取訂單與名額，請重新整理確認，勿重複刪除。');
+                }
+                setBookings(coachData.bookings);
+                setSlots(slotData.slots.filter(s => s.id && s.title && s.date));
+                if (coachData.bookings.some(b => b.bookingId === booking.bookingId)) {
+                    throw new Error('訂單仍在清單中，尚未確認刪除，請確認後端處理結果。');
+                }
+                alert('訂單已刪除，課程名額資料已重新讀取。如需退款，請另外處理。');
+            } catch (error) {
+                alert(error.message || '刪除失敗，請重新整理確認訂單狀態。');
+            } finally {
+                deletingBookingRef.current = false;
+                setDeletingBookingId(null);
+                setLoading(false);
+            }
+          };
+
           const handleApprove = async (bookingId) => {
             if (!confirm("確認已收到款項並核准此預約？\n核准後可為該學員填寫訓練日誌結課。")) return;
             setLoading(true);
@@ -1081,9 +1125,14 @@
                                         </button>
                                     )}
                                     {b.status === "預約成功" && b.bookingId && (
-                                        <button onClick={() => setLogModalTarget({ lineId: b.lineId, name: b.name, bookingId: b.bookingId })} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition">
-                                            結課 / 日誌
-                                        </button>
+                                        <div className="flex flex-wrap justify-center gap-2">
+                                            <button onClick={() => setLogModalTarget({ lineId: b.lineId, name: b.name, bookingId: b.bookingId })} disabled={loading} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
+                                                結課 / 日誌
+                                            </button>
+                                            <button onClick={() => handleDeleteBooking(b)} disabled={loading} className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
+                                                {deletingBookingId === b.bookingId ? '刪除中...' : '刪除訂單'}
+                                            </button>
+                                        </div>
                                     )}
                                     {b.status === "已完課" && (
                                         <span className="text-xs text-gray-400 font-bold">不可操作</span>
