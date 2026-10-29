@@ -1059,7 +1059,7 @@
           );
         };
 
-        const CoachMembersView = () => {
+        const CoachMembersView = ({ onOpenStudent }) => {
             const [members, setMembers] = useState([]);
             const [viewModal, setViewModal] = useState({ isOpen: false, student: null });
             const [logModalTarget, setLogModalTarget] = useState(null); 
@@ -1096,6 +1096,9 @@
                                             <td className="p-3 md:p-4 text-center font-extrabold text-slate-600 text-xl md:text-2xl">{m.totalClasses || 0}</td>
                                             <td className="p-3 md:p-4 text-center">
                                                 <div className="flex justify-center gap-2">
+                                                    <button onClick={() => onOpenStudent(m)} disabled={!m.lineId} className="bg-slate-700 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-2.5 px-4 md:px-5 rounded-lg shadow-sm text-xs md:text-sm active:scale-95 transition">
+                                                        開啟學生畫面
+                                                    </button>
                                                     <button onClick={()=>setViewModal({isOpen: true, student: m})} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 md:px-5 rounded-lg shadow-sm text-xs md:text-sm active:scale-95 transition">
                                                         檢視資料
                                                     </button>
@@ -1117,8 +1120,28 @@
         };
 
         const CoachDashboard = () => {
-            const [activeTab, setActiveTab] = useState('slots'); 
-            
+            const [activeTab, setActiveTab] = useState('slots');
+            const [selectedStudent, setSelectedStudent] = useState(null);
+
+            if (selectedStudent) {
+                return (
+                    <div>
+                        <div className="sticky top-0 z-50 bg-amber-100 border-b border-amber-300 p-4 flex flex-wrap items-center justify-between gap-3" role="region" aria-label="教練學生畫面">
+                            <div>
+                                <p className="font-bold text-amber-950">目前操作學生：{selectedStudent.name}</p>
+                                <p className="text-sm text-amber-900">教練檢視模式，預約將記錄在此學生名下。</p>
+                            </div>
+                            <button onClick={() => setSelectedStudent(null)} className="bg-slate-800 text-white font-bold px-4 py-2 rounded-lg">返回教練後台</button>
+                        </div>
+                        <StudentDashboard
+                            key={selectedStudent.lineId}
+                            profile={{ userId: selectedStudent.lineId, displayName: selectedStudent.name }}
+                            userRecord={selectedStudent}
+                        />
+                    </div>
+                );
+            }
+
             return (
                 <div className="max-w-6xl mx-auto min-h-screen flex flex-col bg-gray-50 md:shadow-lg md:rounded-b-2xl">
                     <div className="bg-slate-800 p-4 md:p-8 pb-0 text-white shadow-md relative z-10">
@@ -1132,7 +1155,7 @@
                         </div>
                     </div>
                     <div className="flex-1 p-4 md:p-8">
-                        {activeTab === 'slots' ? <CoachSlotsView /> : <CoachMembersView />}
+                        {activeTab === 'slots' ? <CoachSlotsView /> : <CoachMembersView onOpenStudent={setSelectedStudent} />}
                     </div>
                 </div>
             );
