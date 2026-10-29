@@ -1,3 +1,13 @@
+# 完整替換版本（建議）
+
+[complete/Code.gs](complete/Code.gs) 直接依原程式整合，保留單一 `doPost(e)` 及既有 action，加入 `deleteBooking` 分支。整份替換原 Code.gs 即可，不必改名為 handleRequest。**若先前新增過 BookingDeletion.gs，請移除該額外檔案，避免函式重複。兩種安裝方式只能選一種。**
+
+仍須依下方步驟設定 `LINE_LOGIN_CHANNEL_ID` 並更新原有 Web App 部署為新版本，保留原 API_URL。
+
+完整版本測試：`node apps-script/tests/booking-deletion.test.cjs --complete`。
+
+以下為保留舊程式、分檔整合的替代方式；使用完整版本者略過改名及新增檔案步驟。
+
 # 啟用教練刪除成功預約
 
 前端已呼叫 `deleteBooking`，但必須更新現有 Google Apps Script 部署才會生效。這些檔案不會由 GitHub Pages 執行。不要建立另一個不相干的試算表專案或更換前端 API_URL。
