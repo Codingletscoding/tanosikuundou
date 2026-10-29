@@ -735,6 +735,135 @@
           );
         };
 
+        const MonthlyLeaveSummary = ({ records }) => !records.length ? null : (
+            <section className="bg-amber-50 border border-amber-200 rounded-2xl p-4 md:p-6 mb-6" aria-label="請假與補課紀錄">
+                <h3 className="font-bold text-amber-950 mb-3">月繳請假與補課</h3>
+                <div className="space-y-3">
+                    {records.map(record => <div key={record.id} className="bg-white rounded-xl border p-3 text-sm">
+                        <p className="font-bold">{record.originalDate} {record.originalTime} 請假 · {record.status}</p>
+                        <p className="text-gray-600">{record.monthlyTitle}</p>
+                        {record.status === '已安排' ? <p className="mt-1 text-emerald-800">補課：{record.makeupDate} {record.makeupTime} · {record.makeupTitle} · {record.makeupLocation}</p> : <p className="mt-1 text-amber-800">待教練安排補課時間</p>}
+                    </div>)}
+                </div>
+            </section>
+        );
+
+        const MonthlyLeaveModal = ({ bookings, slots, onClose, onSuccess }) => {
+            const [records, setRecords] = useState([]);
+            const [ready, setReady] = useState(false);
+            const [error, setError] = useState('');
+            const [busy, setBusy] = useState(false);
+            const busyRef = React.useRef(false);
+            const [bookingId, setBookingId] = useState('');
+            const [originalDate, setOriginalDate] = useState('');
+            const [reason, setReason] = useState('');
+            const [targets, setTargets] = useState({});
+            const [message, setMessage] = useState('');
+            const monthlyBookings = bookings.filter(b => b.bookingId && b.status === '預約成功' && slots.some(s => s.id === b.slotId && /^\[月繳/.test(s.title)));
+            const selectedSlot = slots.find(s => s.id === (bookings.find(b => b.bookingId === bookingId) || {}).slotId);
+            const request = async (payload) => {
+                const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                if (!accessToken) throw new Error('請重新登入 LINE 後再操作。');
+                const result = await fetchAPI({ ...payload, accessToken });
+                if (!result || result.status !== 'success') throw new Error((result && result.message) || '後端尚未支援請假補課，請更新 Apps Script 部署後再試。');
+                return result;
+            };
+            const reload = async () => {
+                const result = await request({ action: 'getMonthlyLeaves' });
+                if (!Array.isArray(result.leaves)) throw new Error('讀取請假紀錄失敗。');
+                setRecords(result.leaves);
+                setReady(true);
+            };
+            useEffect(() => { let active = true;
+                request({ action: 'getMonthlyLeaves' }).then(result => {
+                    if (!Array.isArray(result.leaves)) throw new Error('讀取請假紀錄失敗。');
+                    if (active) { setRecords(result.leaves); setReady(true); }
+                }).catch(err => { if (active) setError(err.message); });
+                return () => { active = false; };
+            }, []);
+            const mutate = async (payload, success) => {
+                if (busyRef.current) return;
+                busyRef.current = true; setBusy(true); setError(''); setMessage('');
+                let saved = false;
+                try {
+                    await request(payload); saved = true;
+                    if (payload.action === 'registerMonthlyLeave') { setOriginalDate(''); setReason(''); }
+                    await reload();
+                    await onSuccess();
+                    setMessage(success);
+                } catch (err) {
+                    if (saved) setReady(false);
+                    setError(saved ? '資料已儲存，但重新讀取失敗。請關閉後重新開啟核對，勿重複送出。' : err.message);
+                } finally { busyRef.current = false; setBusy(false); }
+            };
+            const register = (event) => {
+                event.preventDefault();
+                mutate({ action: 'registerMonthlyLeave', bookingId, originalDate, reason }, '請假已登記，可在下方安排補課。');
+            };
+            const singleStart = (slot) => {
+                const date = String(slot.date || '').match(/^(\d{4}-\d{2}-\d{2})/);
+                const time = String(slot.time || '').match(/^(\d{1,2}:\d{2})/);
+                return date && time ? Date.parse(`${date[1]}T${time[1].padStart(5, '0')}:00+08:00`) : NaN;
+            };
+            return (
+                <div className="fixed inset-0 z-50 bg-slate-900 bg-opacity-60 p-3 md:p-4 flex items-center justify-center overflow-y-auto">
+                    <div role="dialog" aria-modal="true" aria-label="月繳請假與補課" className="w-full min-w-0 max-w-4xl max-h-[90dvh] bg-gray-50 rounded-2xl shadow-xl flex flex-col overflow-hidden my-auto">
+                        <div className="p-4 bg-slate-800 text-white flex gap-3 justify-between items-center shrink-0">
+                            <h2 className="font-bold text-lg">月繳請假與補課</h2>
+                            <button onClick={onClose} disabled={busy} aria-label="關閉請假補課" className="px-3 text-2xl shrink-0 disabled:opacity-50">×</button>
+                        </div>
+                        <div className="p-4 md:p-6 overflow-y-auto min-w-0">
+                            <p className="text-sm text-slate-600 mb-4">每次請假需在該堂課開始前至少 14 天登記（台北時間）。保留原月繳訂單，補課不重複收費。</p>
+                            {error && <p role="alert" className="bg-red-50 border border-red-200 text-red-800 p-3 rounded-lg mb-4">{error}</p>}
+                            {message && <p role="status" className="bg-emerald-50 text-emerald-800 p-3 rounded-lg mb-4">{message}</p>}
+                            {!ready && !error && <p role="status" className="mb-4 text-gray-500">讀取請假紀錄中...</p>}
+                            <form onSubmit={register} className="bg-white border rounded-xl p-4 space-y-4 mb-6">
+                                <h3 className="font-bold">登記月繳請假</h3>
+                                <label className="block text-sm font-bold">月繳學生與訂單
+                                    <select aria-label="月繳學生與訂單" required disabled={busy || !ready} value={bookingId} onChange={e => { setBookingId(e.target.value); setOriginalDate(''); }} className="block w-full min-w-0 border rounded-lg p-3 mt-2 bg-white">
+                                        <option value="">請選擇月繳學生</option>
+                                        {monthlyBookings.map(b => <option key={b.bookingId} value={b.bookingId}>{b.name} · {(slots.find(s => s.id === b.slotId) || {}).title} · {(slots.find(s => s.id === b.slotId) || {}).date}</option>)}
+                                    </select>
+                                </label>
+                                {!monthlyBookings.length && <p className="text-sm text-gray-500">目前沒有已確認的月繳預約。</p>}
+                                {selectedSlot && <p className="text-sm bg-amber-50 p-3 rounded-lg">原課程：{selectedSlot.date} · {selectedSlot.time}。請確認下方請假日期的年份正確。</p>}
+                                <label className="block text-sm font-bold">請假上課日期
+                                    <input aria-label="請假上課日期" type="date" required disabled={busy || !ready} value={originalDate} onChange={e => setOriginalDate(e.target.value)} className="block w-full min-w-0 border p-3 rounded-lg mt-2" />
+                                </label>
+                                <label className="block text-sm font-bold">請假原因
+                                    <textarea aria-label="請假原因" required maxLength={500} disabled={busy || !ready} value={reason} onChange={e => setReason(e.target.value)} className="block w-full border p-3 rounded-lg mt-2" rows="2" />
+                                </label>
+                                <button type="submit" disabled={busy || !ready || !bookingId} className="w-full bg-amber-600 text-white rounded-lg px-4 py-3 font-bold disabled:opacity-50">{busy ? '處理中...' : '登記請假'}</button>
+                            </form>
+                            <h3 className="font-bold mb-3">請假與補課紀錄</h3>
+                            {ready && !records.length && <p className="text-gray-500 text-sm">目前沒有請假紀錄。</p>}
+                            <div className="space-y-4">
+                                {records.slice().reverse().map(record => {
+                                    const available = slots.filter(s => !/^\[(月繳|專屬教練課)/.test(s.title) && Number(s.remaining) > 0 && singleStart(s) > Date.now() && !String(s.date).startsWith(record.originalDate));
+                                    return <article key={record.id} className="bg-white border rounded-xl p-4 min-w-0">
+                                        <div className="flex flex-wrap gap-2 justify-between"><h4 className="font-bold">{record.name}</h4><span className="text-sm text-amber-800">{record.status}</span></div>
+                                        <p className="text-sm text-gray-700 mt-2">請假：{record.originalDate} {record.originalTime} · {record.monthlyTitle}</p>
+                                        <p className="text-sm text-gray-500 mt-1 whitespace-pre-wrap">原因：{record.reason}</p>
+                                        {record.status === '待補課' ? <div className="mt-3 space-y-3">
+                                            <select aria-label={`安排${record.name} ${record.originalDate}補課時段`} disabled={busy || !ready} value={targets[record.id] || ''} onChange={e => setTargets(prev => ({ ...prev, [record.id]: e.target.value }))} className="w-full min-w-0 border rounded-lg p-3 bg-white">
+                                                <option value="">請選擇有名額的單堂團課</option>
+                                                {available.map(s => <option key={s.id} value={s.id}>{s.date} {s.time} · {s.title} · {s.location}（剩 {s.remaining} 名）</option>)}
+                                            </select>
+                                            {!available.length && <p className="text-sm text-gray-500">沒有可用時段，請先在後台新增單堂團課。</p>}
+                                            <button type="button" disabled={busy || !ready || !available.some(s => s.id === targets[record.id])} onClick={() => {
+                                                const target = available.find(s => s.id === targets[record.id]);
+                                                if (target && confirm(`確認為 ${record.name} 安排補課？\n${target.date} ${target.time}\n${target.title} · ${target.location}\n將占用一個名額，不重複收費。`)) mutate({ action: 'arrangeMonthlyMakeup', leaveId: record.id, slotId: target.id }, '補課已安排，學生預約紀錄已更新。');
+                                            }} className="w-full bg-emerald-600 text-white rounded-lg px-4 py-3 font-bold disabled:opacity-50">安排補課</button>
+                                        </div> : <p className="mt-3 text-sm text-emerald-800">補課：{record.makeupDate} {record.makeupTime} · {record.makeupTitle} · {record.makeupLocation}</p>}
+                                    </article>;
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const StudentRecordsView = ({ lineId }) => {
             const [data, setData] = useState(null);
 
@@ -752,6 +881,7 @@
 
             return (
                 <div className="p-4 md:p-8 pb-10">
+                    <MonthlyLeaveSummary records={data.monthlyLeaves || []} />
                     <div className="bg-white rounded-2xl shadow-sm border p-6 md:p-8 text-center border-t-4 border-t-emerald-500 mb-6">
                         <div className="text-sm md:text-base text-gray-500 font-bold mb-2">累積完成課程 (已完課)</div>
                         <div className="text-5xl md:text-6xl font-extrabold text-slate-800">{data.totalClasses || 0} <span className="text-lg text-gray-500 font-normal">堂</span></div>
@@ -861,11 +991,12 @@
           const [slots, setSlots] = useState([]);
           const [loading, setLoading] = useState(false);
           const [logModalTarget, setLogModalTarget] = useState(null); 
+          const [showMonthlyLeave, setShowMonthlyLeave] = useState(false);
 
           const monthlyInfo = getMonthlyDatesInfo(form.date);
 
           const fetchData = () => {
-            Promise.all([fetchAPI({ action: 'getCoachData' }), fetchAPI({ action: 'getSlots' })]).then(([bRes, sRes]) => {
+            return Promise.all([fetchAPI({ action: 'getCoachData' }), fetchAPI({ action: 'getSlots' })]).then(([bRes, sRes]) => {
                 setBookings(bRes.bookings || []);
                 setSlots((sRes.slots || []).filter(s => s.id && s.title && s.date));
             });
@@ -892,7 +1023,7 @@
                 finalCapacity = 1; 
                 finalLocation = `coach_loc:${allowedLocations.join(',')}`; 
             }
-            const finalDate = form.mode === 'monthly' ? monthlyInfo.text : `${form.date} (${getDayOfWeek(form.date)})`;
+            const finalDate = form.mode === 'monthly' ? `${form.date.slice(0, 4)}年 ${monthlyInfo.text}` : `${form.date} (${getDayOfWeek(form.date)})`;
             await fetchAPI({ action: 'addSlot', ...form, capacity: finalCapacity, location: finalLocation, title: finalTitle, date: finalDate, time: `${form.startTime} - ${form.endTime}` });
             alert('課程上架成功！');
             setForm({...form, date: ''}); 
@@ -971,6 +1102,10 @@
 
           return (
             <div className="space-y-6 md:space-y-8">
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+                <div><h2 className="font-bold text-amber-950">月繳請假與補課</h2><p className="text-sm text-amber-900">提前至少 14 天登記請假，再安排其他補課日期。</p></div>
+                <button onClick={() => setShowMonthlyLeave(true)} className="bg-amber-600 text-white px-4 py-3 rounded-lg font-bold">請假登記／安排補課</button>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
                 <div className="bg-white p-5 md:p-8 rounded-2xl shadow-sm border min-w-0 col-span-1 h-fit">
                   <h2 className="font-bold text-lg md:text-xl mb-5 border-b pb-3">新增課程 / 開放時段</h2>
@@ -1112,7 +1247,7 @@
                             {bookings.slice().reverse().map((b, idx) => {
                                return (
                               <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
-                                <td data-label="學生姓名" className="p-3 md:p-4 font-bold text-gray-800">{b.name}</td>
+                                <td data-label="學生姓名" className="p-3 md:p-4 font-bold text-gray-800">{b.name}{b.makeupLeaveId && <span className="block text-xs font-normal text-emerald-700 mt-1">月繳補課（不重複收費）</span>}</td>
                                 <td data-label="金額" className="p-3 md:p-4 text-emerald-600 font-bold">NT$ {b.paidPrice}</td>
                                 <td data-label="狀態 / 後五碼" className="p-3 md:p-4">
                                     {b.status === "已完課" ? (
@@ -1159,6 +1294,7 @@
                     </div>
                 </div>
               </div>
+              {showMonthlyLeave && <MonthlyLeaveModal bookings={bookings} slots={slots} onClose={() => setShowMonthlyLeave(false)} onSuccess={fetchData} />}
               {/* 共用寫日誌彈窗 (傳入 targetData={lineId, name, bookingId}) */}
               {logModalTarget && <LogFormModal targetData={logModalTarget} onClose={() => setLogModalTarget(null)} onSuccess={fetchData} />}
             </div>

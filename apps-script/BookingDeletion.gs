@@ -7,12 +7,32 @@ function doPost(e) {
   try {
     var payload = JSON.parse(e.postData.contents);
     // All writes share a lock so booking/deletion cannot race on remaining seats.
-    var writes = ['registerUser', 'bookClass', 'addSlot', 'deleteSlot', 'approveBooking', 'updatePayment', 'addLog', 'deleteBooking'];
+    var writes = ['registerUser', 'bookClass', 'addSlot', 'deleteSlot', 'approveBooking', 'updatePayment', 'addLog', 'deleteBooking', 'registerMonthlyLeave', 'arrangeMonthlyMakeup'];
     if (writes.indexOf(payload.action) !== -1) {
       lock = LockService.getScriptLock();
       if (!lock.tryLock(30000)) throw new Error('系統忙碌中，請稍後再試。');
     }
-    if (payload.action !== 'deleteBooking') return handleRequest(e);
+    if (['getMonthlyLeaves', 'registerMonthlyLeave', 'arrangeMonthlyMakeup'].indexOf(payload.action) !== -1) {
+      return bookingDeletionResponse_(monthlyLeaveAction_(SpreadsheetApp.getActiveSpreadsheet(), payload));
+    }
+    if (payload.action === 'bookClass') validateBookingSlot_(SpreadsheetApp.getActiveSpreadsheet(), payload);
+    if (payload.action !== 'deleteBooking') {
+      var output = handleRequest(e);
+      if (payload.action === 'getCoachData') {
+        var coachData = JSON.parse(output.getContent());
+        var makeupIds = {};
+        SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_BOOKINGS).getDataRange().getValues().slice(1).forEach(function(row) { if (row[7] && row[8]) makeupIds[row[7]] = row[8]; });
+        if (Array.isArray(coachData.bookings)) coachData.bookings.forEach(function(booking) { booking.makeupLeaveId = makeupIds[booking.bookingId] || ''; });
+        return bookingDeletionResponse_(coachData);
+      }
+      if (payload.action === 'getStudentStats') {
+        var data = JSON.parse(output.getContent());
+        var leaveSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('請假補課');
+        data.monthlyLeaves = leaveSheet ? monthlyLeaveRows_(leaveSheet).filter(function(row) { return row.lineId === payload.lineId; }) : [];
+        return bookingDeletionResponse_(data);
+      }
+      return output;
+    }
     verifyBookingDeletionCoach_(payload.accessToken);
     var result = deleteApprovedBooking_(SpreadsheetApp.getActiveSpreadsheet(), payload.bookingId);
     return bookingDeletionResponse_(result);
@@ -66,6 +86,10 @@ function deleteApprovedBooking_(ss, bookingId) {
     if (String(rows[i][7]) === bookingId) matches.push(i);
   }
   if (matches.length !== 1) throw new Error(matches.length ? '訂單編號重複，請先檢查資料。' : '訂單不存在或已刪除。');
+  var leaveSheet = ss.getSheetByName('請假補課');
+  if (leaveSheet && leaveSheet.getDataRange().getValues().slice(1).some(function(row) {
+    return String(row[2]) === bookingId || String(row[12]) === bookingId;
+  })) throw new Error('此訂單已有請假或補課紀錄，請保留訂單以維持補課追蹤。');
   var index = matches[0];
   var booking = rows[index];
   var status = booking[5] || '預約成功';

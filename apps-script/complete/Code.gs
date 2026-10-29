@@ -1,5 +1,5 @@
 /**
- * 樂動羽球完整 Apps Script（直接依原程式整合）
+ * 樂動羽球 Apps Script 主檔（直接依原程式整合；另需加入 MonthlyLeave.gs）
  * 整份取代原有 Code.gs。若曾加入 BookingDeletion.gs，請刪除該額外檔案，避免函式重複。
  * 設定指令碼屬性 LINE_LOGIN_CHANNEL_ID = LIFF 所屬 LINE Login channel 的 Channel ID。
  * 儲存並更新原有 Web App 部署為新版本，維持原 API 網址。
@@ -23,7 +23,7 @@ function doPost(e) {
       throw new Error("請求格式不正確。");
     }
     const action = payload.action;
-    const writeActions = ["registerUser", "bookClass", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking"];
+    const writeActions = ["registerUser", "bookClass", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking", "registerMonthlyLeave", "arrangeMonthlyMakeup"];
     if (writeActions.includes(action)) {
       const candidate = LockService.getScriptLock();
       if (!candidate.tryLock(30000)) throw new Error("系統忙碌中，請稍後再試。");
@@ -77,6 +77,7 @@ function doPost(e) {
     }
     
     else if (action === "bookClass") {
+      validateBookingSlot_(ss, payload);
       const sheetBookings = ss.getSheetByName(SHEET_BOOKINGS);
       const sheetSlots = ss.getSheetByName(SHEET_SLOTS);
       const bookingId = Utilities.getUuid();
@@ -134,7 +135,8 @@ function doPost(e) {
             paidPrice: bData[i][4],
             status: status,
             paymentCode: bData[i][6] || "",
-            bookingId: bData[i][7] || ""
+            bookingId: bData[i][7] || "",
+            makeupLeaveId: bData[i][8] || ""
         });
       }
 
@@ -156,6 +158,10 @@ function doPost(e) {
         });
       }
       result = { status: "success", bookings: bookings, members: members };
+    }
+
+    else if (["getMonthlyLeaves", "registerMonthlyLeave", "arrangeMonthlyMakeup"].includes(action)) {
+      result = monthlyLeaveAction_(ss, payload);
     }
 
     else if (action === "deleteBooking") {
@@ -259,7 +265,7 @@ function doPost(e) {
         }
       }
       
-      result = { status: "success", totalClasses: totalClasses, stats: stats, logs: logs.reverse(), bookings: myBookings.reverse() };
+      result = { status: "success", totalClasses: totalClasses, stats: stats, logs: logs.reverse(), bookings: myBookings.reverse(), monthlyLeaves: ss.getSheetByName('請假補課') ? monthlyLeaveRows_(ss.getSheetByName('請假補課')).filter(function(row) { return row.lineId === payload.lineId; }) : [] };
     }
 
     if (!result.status) throw new Error("不支援的操作：" + String(action || "未提供"));
@@ -310,6 +316,10 @@ function deleteApprovedBooking_(ss, bookingId) {
     if (String(rows[i][7]) === bookingId) matches.push(i);
   }
   if (matches.length !== 1) throw new Error(matches.length ? '訂單編號重複，請先檢查資料。' : '訂單不存在或已刪除。');
+  var leaveSheet = ss.getSheetByName('請假補課');
+  if (leaveSheet && leaveSheet.getDataRange().getValues().slice(1).some(function(row) {
+    return String(row[2]) === bookingId || String(row[12]) === bookingId;
+  })) throw new Error('此訂單已有請假或補課紀錄，請保留訂單以維持補課追蹤。');
   var index = matches[0];
   var booking = rows[index];
   var status = booking[5] || '預約成功';

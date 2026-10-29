@@ -1,3 +1,9 @@
+# 月繳請假與補課更新
+
+請依 [原程式修改位置](monthly-leave-changes.md) 更新現有 Apps Script，並新增本資料夾的 `MonthlyLeave.gs`。不需整份替換。此功能包含提前 14 天請假、獨立紀錄、教練安排單堂團課補課及學生查看。
+
+以下完整版本或分檔版本**也都需要加入 MonthlyLeave.gs**；兩種入口安裝方式只能選一種。GitHub 推送不會部署 Apps Script。
+
 # 完整替換版本（建議）
 
 [complete/Code.gs](complete/Code.gs) 直接依原程式整合，保留單一 `doPost(e)` 及既有 action，加入 `deleteBooking` 分支。整份替換原 Code.gs 即可，不必改名為 handleRequest。**若先前新增過 BookingDeletion.gs，請移除該額外檔案，避免函式重複。兩種安裝方式只能選一種。**
