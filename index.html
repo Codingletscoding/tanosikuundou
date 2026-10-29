@@ -19,7 +19,12 @@
         }
         @media (max-width: 767px) {
             body { padding-bottom: env(safe-area-inset-bottom); }
-            #root { min-width: 0; }
+            #root { width: 100%; min-width: 0; }
+            #root .flex > *, #root .grid > * { min-width: 0; }
+            input[type="range"] { width: 100%; min-width: 0; max-width: 100%; }
+            input[type="date"] { width: 100%; min-width: 0; }
+            input[type="date"]::-webkit-date-and-time-value { min-width: 0; text-align: left; }
+            input[type="date"]::-webkit-datetime-edit { min-width: 0; padding: 0; }
             button { min-height: 44px; }
             input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea {
                 font-size: 16px !important;
@@ -33,7 +38,7 @@
                 position: absolute; width: 1px; height: 1px; padding: 0;
                 overflow: hidden; clip-path: inset(50%); white-space: nowrap;
             }
-            .mobile-card-table tbody { display: grid; gap: 12px; }
+            .mobile-card-table tbody { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
             .mobile-card-table tbody tr {
                 display: block; min-width: 0; padding: 12px;
                 border: 1px solid #e2e8f0; border-radius: 12px; background: #fff;
@@ -171,9 +176,9 @@
             const strokeDashoffset = circumference - (safeValue / max) * circumference;
             
             return (
-                <div className="flex flex-col items-center justify-center p-2">
-                    <div className="relative flex items-center justify-center">
-                        <svg className="w-20 h-20 transform -rotate-90">
+                <div className="min-w-0 flex flex-col items-center justify-center p-1 sm:p-2">
+                    <div className="relative w-full max-w-[80px] aspect-square flex items-center justify-center">
+                        <svg viewBox="0 0 80 80" className="w-full h-auto transform -rotate-90">
                             <circle cx="40" cy="40" r="32" stroke="#e2e8f0" strokeWidth="6" fill="transparent" />
                             <circle cx="40" cy="40" r="32" stroke="#10b981" strokeWidth="6" fill="transparent" 
                                 strokeDasharray={circumference} 
@@ -231,7 +236,7 @@
                                 maxLength="5"
                                 value={code} 
                                 onChange={e=>setCode(e.target.value.replace(/\D/g, ''))} 
-                                className="flex-1 border border-amber-200 bg-white rounded-lg p-2 md:p-2.5 text-sm md:text-base outline-none focus:ring-1 focus:ring-amber-500 font-mono transition"
+                                className="flex-1 min-w-0 border border-amber-200 bg-white rounded-lg p-2 md:p-2.5 text-sm md:text-base outline-none focus:ring-1 focus:ring-amber-500 font-mono transition"
                             />
                             <button 
                                 onClick={handleUpdate} 
@@ -280,9 +285,9 @@
             return (
                 <div className="fixed inset-0 bg-slate-900 bg-opacity-60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden my-auto max-h-[90dvh] flex flex-col">
-                        <div className="bg-slate-800 p-5 text-white flex justify-between items-center shrink-0">
+                        <div className="bg-slate-800 p-4 md:p-5 text-white flex gap-3 justify-between items-center shrink-0">
                             <h3 className="font-bold text-base md:text-lg">訓練日誌：{targetData.name || '學員'}</h3>
-                            <button onClick={onClose} className="text-slate-400 hover:text-white font-bold text-3xl px-2 leading-none active:scale-90">&times;</button>
+                            <button onClick={onClose} className="text-slate-400 hover:text-white font-bold text-3xl px-2 shrink-0 leading-none active:scale-90">&times;</button>
                         </div>
                         
                         <form onSubmit={handleSubmit} className="p-4 md:p-6 overflow-y-auto">
@@ -296,10 +301,10 @@
                                     <label className="block text-sm md:text-base font-bold text-slate-700">訓練評分 / 時數</label>
                                     <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded w-fit font-bold">0 = 未訓練，最高 5 分</span>
                                 </div>
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-x-6 md:gap-y-5">
+                                <div className="grid grid-cols-1 min-[360px]:grid-cols-2 md:grid-cols-3 gap-3 md:gap-x-6 md:gap-y-5">
                                     {SKILL_KEYS.map(skill => (
                                         <div key={skill.key} className="flex flex-col bg-slate-50 p-3 md:p-4 rounded-xl border border-slate-100">
-                                            <div className="flex justify-between text-sm md:text-base font-bold text-slate-700 mb-2.5">
+                                            <div className="flex flex-wrap gap-1 justify-between text-sm md:text-base font-bold text-slate-700 mb-2.5">
                                                 <span>{skill.label}</span>
                                                 <span className={stats[skill.key] > 0 ? "text-emerald-600 font-extrabold" : "text-slate-400"}>{stats[skill.key]}</span>
                                             </div>
@@ -338,24 +343,24 @@
             return (
                 <div className="fixed inset-0 bg-slate-900 bg-opacity-60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden my-auto max-h-[90dvh] flex flex-col">
-                        <div className="bg-slate-800 p-5 text-white flex justify-between items-center shrink-0">
+                        <div className="bg-slate-800 p-4 md:p-5 text-white flex gap-3 justify-between items-center shrink-0">
                             <h3 className="font-bold text-base md:text-lg flex items-center gap-2">
                                 <span className="text-emerald-400">學員檔案：</span> {student ? student.name : ''}
                             </h3>
-                            <button onClick={onClose} className="text-slate-400 hover:text-white font-bold text-3xl px-2 leading-none active:scale-90">&times;</button>
+                            <button onClick={onClose} className="text-slate-400 hover:text-white font-bold text-3xl px-2 shrink-0 leading-none active:scale-90">&times;</button>
                         </div>
                         
-                        <div className="p-4 md:p-6 overflow-y-auto bg-gray-50 flex-1">
+                        <div className="p-4 md:p-6 overflow-y-auto bg-gray-50 flex-1 min-w-0">
                             {!data ? (
                                 <div className="text-center py-20 text-gray-500 font-bold animate-pulse">讀取學員資料中...</div>
                             ) : (
                                 <div className="space-y-6">
-                                    <div className="grid md:grid-cols-2 gap-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6 h-fit">
                                             <h3 className="font-bold text-slate-800 mb-4 ml-1 flex items-center text-base md:text-lg">
                                                 <span className="w-1.5 h-5 bg-emerald-500 rounded mr-2"></span>能力時數雷達
                                             </h3>
-                                            <div className="grid grid-cols-3 gap-2">
+                                            <div data-layout="skill-radar" className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                                 {SKILL_KEYS.map(skill => (
                                                     <CircleProgress key={skill.key} label={skill.label} value={data.stats ? data.stats[skill.key] : 0} />
                                                 ))}
@@ -629,14 +634,14 @@
                                     )}
 
                                     <div className={`mt-5 pt-4 border-t flex flex-col md:flex-row gap-3 ${isFull ? 'border-gray-200' : 'border-green-200'}`}>
-                                        <div className={`flex-1 flex justify-between items-center p-3 rounded-lg border shadow-sm ${isFull ? 'bg-gray-100 border-gray-200' : 'bg-white border-green-100'}`}>
+                                        <div className={`flex-1 min-w-0 flex justify-between items-center p-3 rounded-lg border shadow-sm ${isFull ? 'bg-gray-100 border-gray-200' : 'bg-white border-green-100'}`}>
                                             <div className={isFull ? 'opacity-60' : ''}>
                                                 <span className={`font-bold text-sm md:text-base ${isFull ? 'text-gray-500' : 'text-green-700'}`}>1對1 教練課</span>
                                                 <div className="mt-0.5"><span className={`${isFull ? 'text-gray-500' : 'text-emerald-600'} font-bold text-lg`}>NT$ {my1v1}</span></div>
                                             </div>
                                             <button onClick={() => handleBookClick(slot, '1對1', my1v1, selectedLoc)} disabled={status==='booking' || isFull} className={`font-bold py-2 px-5 rounded-lg text-sm md:text-base active:scale-95 transition-transform ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}>{isFull ? '已額滿' : '預約 1對1'}</button>
                                         </div>
-                                        <div className={`flex-1 flex justify-between items-center p-3 rounded-lg border shadow-sm ${isFull ? 'bg-gray-100 border-gray-200' : 'bg-white border-green-100'}`}>
+                                        <div className={`flex-1 min-w-0 flex justify-between items-center p-3 rounded-lg border shadow-sm ${isFull ? 'bg-gray-100 border-gray-200' : 'bg-white border-green-100'}`}>
                                             <div className={isFull ? 'opacity-60' : ''}>
                                                 <span className={`font-bold text-sm md:text-base ${isFull ? 'text-gray-500' : 'text-green-700'}`}>1對2 教練課</span>
                                                 <div className="mt-0.5"><span className={`${isFull ? 'text-gray-500' : 'text-emerald-600'} font-bold text-lg`}>NT$ {my1v2}</span></div>
@@ -717,8 +722,8 @@
                             </div>
                         </div>
                         <div className="flex border-t border-gray-100">
-                            <button onClick={() => setBookingTarget(null)} className="flex-1 py-4 font-bold text-gray-500 hover:bg-gray-50 border-r border-gray-100 transition">取消</button>
-                            <button onClick={confirmBooking} disabled={status === 'booking'} className="flex-1 py-4 font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition active:scale-95 disabled:opacity-50">
+                            <button onClick={() => setBookingTarget(null)} className="flex-1 min-w-0 py-4 font-bold text-gray-500 hover:bg-gray-50 border-r border-gray-100 transition">取消</button>
+                            <button onClick={confirmBooking} disabled={status === 'booking'} className="flex-1 min-w-0 py-4 font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition active:scale-95 disabled:opacity-50">
                                 {status === 'booking' ? '處理中...' : '確定送出'}
                             </button>
                         </div>
@@ -766,12 +771,12 @@
                         </div>
                     </div>
 
-                    <div className="grid md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6 h-fit">
                             <h3 className="font-bold text-slate-800 mb-4 ml-1 flex items-center text-base md:text-lg">
                                 <span className="w-1.5 h-5 bg-emerald-500 rounded mr-2"></span>能力時數雷達
                             </h3>
-                            <div className="grid grid-cols-3 gap-2">
+                            <div data-layout="skill-radar" className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                 {SKILL_KEYS.map(skill => (
                                     <CircleProgress key={skill.key} label={skill.label} value={data.stats ? data.stats[skill.key] : 0} />
                                 ))}
@@ -827,12 +832,12 @@
                             </div>
                         </div>
                         <div className="flex w-full mt-2 border-b border-slate-600">
-                            <button onClick={()=>setActiveTab('booking')} className={`flex-1 py-3 px-1 text-sm md:text-base font-bold text-center border-b-4 transition-colors ${activeTab === 'booking' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>課程預約</button>
-                            <button onClick={()=>setActiveTab('records')} className={`flex-1 py-3 px-1 text-sm md:text-base font-bold text-center border-b-4 transition-colors ${activeTab === 'records' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>我的訓練紀錄</button>
+                            <button onClick={()=>setActiveTab('booking')} className={`flex-1 min-w-0 py-3 px-1 text-sm md:text-base font-bold text-center border-b-4 transition-colors ${activeTab === 'booking' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>課程預約</button>
+                            <button onClick={()=>setActiveTab('records')} className={`flex-1 min-w-0 py-3 px-1 text-sm md:text-base font-bold text-center border-b-4 transition-colors ${activeTab === 'records' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>我的訓練紀錄</button>
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto">
+                    <div className="flex-1 min-w-0 overflow-y-auto">
                         {activeTab === 'booking' ? <StudentBookingView profile={profile} userRecord={userRecord} /> : <StudentRecordsView lineId={profile ? profile.userId : ''} />}
                     </div>
                 </div>
@@ -1012,14 +1017,14 @@
                     </div>
 
                     <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                             <label className="block text-sm mb-1.5 text-gray-700 font-bold">開始時間</label>
                             <select className="w-full border border-gray-300 p-3 rounded-lg bg-white text-base" value={form.startTime} onChange={e=>setForm({...form, startTime: e.target.value})}>
                                 {timeOptions.map(t => <option key={`start-${t}`} value={t}>{t}</option>)}
                             </select>
                         </div>
                         <span className="pt-6 text-gray-400 font-bold">至</span>
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                             <label className="block text-sm mb-1.5 text-gray-700 font-bold">結束時間</label>
                             <select className="w-full border border-gray-300 p-3 rounded-lg bg-white text-base" value={form.endTime} onChange={e=>setForm({...form, endTime: e.target.value})}>
                                 {timeOptions.map(t => <option key={`end-${t}`} value={t}>{t}</option>)}
@@ -1034,8 +1039,8 @@
                               <h3 className="text-sm font-bold text-gray-700 border-b pb-2">各等級收費 (NT$)</h3>
                               {[1,2,3,4,5].map(lvl => (
                                 <div key={lvl} className="flex items-center text-base md:text-sm">
-                                    <span className="w-16 font-bold text-gray-600">{LEVEL_NAMES[lvl]}</span>
-                                    <input type="number" required min="0" className="flex-1 border border-gray-300 p-2 rounded-lg px-3" value={form.prices[lvl]} onChange={e=>updatePrice(lvl, e.target.value)} />
+                                    <span className="w-16 shrink-0 font-bold text-gray-600">{LEVEL_NAMES[lvl]}</span>
+                                    <input type="number" required min="0" className="flex-1 min-w-0 border border-gray-300 p-2 rounded-lg px-3" value={form.prices[lvl]} onChange={e=>updatePrice(lvl, e.target.value)} />
                                 </div>
                               ))}
                             </div>
@@ -1043,8 +1048,8 @@
                     ) : (
                         <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 space-y-4 mt-4">
                             <h3 className="text-sm font-bold text-indigo-800 border-b border-indigo-200 pb-2">專屬教練課收費設定 (基準價)</h3>
-                            <div className="flex items-center text-base md:text-sm gap-3"><span className="w-20 font-bold text-indigo-900">1對1 基準價</span><input type="number" required min="0" className="flex-1 border border-indigo-200 p-2 rounded-lg px-3 text-base" value={form.coachBase1v1} onChange={e=>setForm({...form, coachBase1v1: e.target.value})} /></div>
-                            <div className="flex items-center text-base md:text-sm gap-3"><span className="w-20 font-bold text-indigo-900">1對2 基準價</span><input type="number" required min="0" className="flex-1 border border-indigo-200 p-2 rounded-lg px-3 text-base" value={form.coachBase1v2} onChange={e=>setForm({...form, coachBase1v2: e.target.value})} /></div>
+                            <div className="flex items-center text-base md:text-sm gap-3"><span className="w-20 shrink-0 font-bold text-indigo-900">1對1 基準價</span><input type="number" required min="0" className="flex-1 min-w-0 border border-indigo-200 p-2 rounded-lg px-3 text-base" value={form.coachBase1v1} onChange={e=>setForm({...form, coachBase1v1: e.target.value})} /></div>
+                            <div className="flex items-center text-base md:text-sm gap-3"><span className="w-20 shrink-0 font-bold text-indigo-900">1對2 基準價</span><input type="number" required min="0" className="flex-1 min-w-0 border border-indigo-200 p-2 rounded-lg px-3 text-base" value={form.coachBase1v2} onChange={e=>setForm({...form, coachBase1v2: e.target.value})} /></div>
                             
                             <h3 className="text-sm font-bold text-indigo-800 border-b border-indigo-200 pb-2 mt-4">開放學員可選場地</h3>
                             <div className="flex flex-wrap gap-2 mt-2">
@@ -1246,8 +1251,8 @@
                             <h1 className="text-xl md:text-3xl font-bold tracking-wider">教練管理後台</h1>
                         </div>
                         <div className="flex w-full mt-2 border-b border-slate-600">
-                            <button onClick={()=>setActiveTab('slots')} className={`flex-1 md:flex-none md:w-48 px-1 py-3 text-sm md:text-base font-bold border-b-4 text-center transition-colors ${activeTab === 'slots' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>排課與預約管理</button>
-                            <button onClick={()=>setActiveTab('members')} className={`flex-1 md:flex-none md:w-48 px-1 py-3 text-sm md:text-base font-bold border-b-4 text-center transition-colors ${activeTab === 'members' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>學員名單與資料</button>
+                            <button onClick={()=>setActiveTab('slots')} className={`flex-1 min-w-0 md:flex-none md:w-48 px-1 py-3 text-sm md:text-base font-bold border-b-4 text-center transition-colors ${activeTab === 'slots' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>排課與預約管理</button>
+                            <button onClick={()=>setActiveTab('members')} className={`flex-1 min-w-0 md:flex-none md:w-48 px-1 py-3 text-sm md:text-base font-bold border-b-4 text-center transition-colors ${activeTab === 'members' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>學員名單與資料</button>
                         </div>
                     </div>
                     <div className="flex-1 min-w-0 p-3 md:p-8">
