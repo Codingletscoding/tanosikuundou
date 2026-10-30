@@ -1,0 +1,14 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+const code=source.slice(source.indexOf('        const formatMoney ='),source.indexOf('        const CoachRevenue ='))+'\nglobalThis.payments={calculateCoachPayments,taipeiMonth};';
+const ctx={Intl,Date};vm.createContext(ctx);vm.runInContext(code,ctx);
+const {calculateCoachPayments:sum,taipeiMonth:month}=ctx.payments;
+const order=(extra={})=>({bookingId:'one',lineId:'student',paidPrice:300,status:'預約成功',timestamp:'2026-10-01T00:00:00+08:00',...extra});
+test('counts approved and completed, excludes pending and cancelled',()=>{const result=sum(['預約成功','已完課','審核中','已取消'].map((status,i)=>order({status,bookingId:String(i)})),'2026-10');assert.equal(result.monthlyTotal,600);assert.equal(result.memberTotals.get('student'),600);});
+test('Taipei month boundary is UTC+8',()=>{assert.equal(month('2026-09-30T16:00:00Z'),'2026-10');assert.equal(month('2026-09-30T15:59:59Z'),'2026-09');assert.equal(month('2026-10-31T16:00:00Z'),'2026-11');});
+test('member lifetime total spans months while monthly total does not',()=>{const result=sum([order(),order({bookingId:'two',timestamp:'2026-09-01T00:00:00+08:00',paidPrice:500})],'2026-10');assert.equal(result.monthlyTotal,300);assert.equal(result.memberTotals.get('student'),800);});
+test('same names never merge different LINE identities',()=>{const result=sum([order({name:'同名'}),order({bookingId:'two',lineId:'other',name:'同名',paidPrice:200})],'2026-10');assert.equal(result.memberTotals.get('student'),300);assert.equal(result.memberTotals.get('other'),200);});
+test('zero-charge makeup and duplicate IDs do not inflate totals',()=>{const result=sum([order(),order(),order({bookingId:'makeup',paidPrice:0})],'2026-10');assert.equal(result.monthlyTotal,300);assert.equal(result.duplicateOrders,1);});
+test('missing date contributes lifetime total but is flagged and excluded from month',()=>{const result=sum([order({timestamp:''})],'2026-10');assert.equal(result.monthlyTotal,0);assert.equal(result.memberTotals.get('student'),300);assert.equal(result.missingDates,1);});
+test('invalid amounts do not silently become valid payments',()=>{const result=sum(['',null,'wrong',-1,Infinity].map((paidPrice,i)=>order({paidPrice,bookingId:String(i)})),'2026-10');assert.equal(result.monthlyTotal,0);assert.equal(result.invalidAmounts,5);});
+test('legacy approved statuses and decimal money use cent arithmetic',()=>{const result=sum([order({paidPrice:0.1,status:'成功'}),order({bookingId:'two',paidPrice:0.2,status:'已完成'})],'2026-10');assert.equal(result.monthlyTotal,0.3);});

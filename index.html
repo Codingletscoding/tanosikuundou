@@ -1014,7 +1014,61 @@
             </div>;
         };
 
-        const CoachSlotsView = () => {
+        const formatMoney = value => new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 2 }).format(value);
+        const taipeiMonth = value => {
+            let text = value;
+            if (typeof text === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(text)) text += 'T00:00:00+08:00';
+            if (!(text instanceof Date) && (typeof text !== 'string' || !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(text))) return null;
+            const date = text instanceof Date ? text : new Date(text);
+            if (!Number.isFinite(date.getTime())) return null;
+            const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit' }).formatToParts(date);
+            return `${parts.find(p => p.type === 'year').value}-${parts.find(p => p.type === 'month').value}`;
+        };
+        const calculateCoachPayments = (bookings, month) => {
+            const members = new Map();
+            let monthlyCents = 0, invalidAmounts = 0, missingDates = 0, duplicateOrders = 0, unmatchedStudents = 0;
+            const seen = new Set();
+            for (const booking of bookings) {
+                if (!['預約成功', '已完課', '成功', '已完成'].includes(booking.status)) continue;
+                if (booking.bookingId && seen.has(booking.bookingId)) { duplicateOrders++; continue; }
+                if (booking.bookingId) seen.add(booking.bookingId);
+                const amount = Number(booking.paidPrice);
+                if (booking.paidPrice === '' || booking.paidPrice == null || !Number.isFinite(amount) || amount < 0) { invalidAmounts++; continue; }
+                const cents = Math.round(amount * 100);
+                if (booking.lineId) members.set(booking.lineId, (members.get(booking.lineId) || 0) + cents);
+                else if (cents) unmatchedStudents++;
+                const bookedMonth = taipeiMonth(booking.timestamp);
+                if (!bookedMonth && cents) missingDates++;
+                if (bookedMonth === month) monthlyCents += cents;
+            }
+            return { memberTotals: new Map([...members].map(([id, cents]) => [id, cents / 100])), monthlyTotal: monthlyCents / 100, invalidAmounts, missingDates, duplicateOrders, unmatchedStudents };
+        };
+
+        const CoachRevenue = ({ revision }) => {
+            const [data, setData] = useState(null);
+            const [error, setError] = useState('');
+            const [refresh, setRefresh] = useState(0);
+            const [loading, setLoading] = useState(true);
+            const month = taipeiMonth(new Date());
+            useEffect(() => {
+                let active = true;
+                setLoading(true); setError('');
+                fetchAPI({ action: 'getCoachData' }).then(result => {
+                    if (!result || !Array.isArray(result.bookings) || result.status === 'error') throw new Error((result && result.message) || '無法讀取收入資料');
+                    if (active) setData(calculateCoachPayments(result.bookings, month));
+                }).catch(err => { if (active) { setData(null); setError(err.message); } }).finally(() => { if (active) setLoading(false); });
+                return () => { active = false; };
+            }, [revision, refresh, month]);
+            return <section aria-label="本月收入統計" className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 md:p-6 mb-5 min-w-0">
+                <div className="flex flex-wrap justify-between items-center gap-3"><h2 className="font-bold text-emerald-950">{month} 本月收入</h2><button onClick={() => setRefresh(n => n + 1)} disabled={loading} className="border border-emerald-300 rounded-lg px-3 py-2 text-sm text-emerald-900 disabled:opacity-50">重新整理金額</button></div>
+                {loading ? <p role="status" className="mt-3">讀取收入中...</p> : error ? <p role="alert" className="text-red-700 mt-3">{error}</p> : <p className="text-3xl font-extrabold text-emerald-800 mt-3 break-all">{formatMoney(data.monthlyTotal)}</p>}
+                <p className="text-xs md:text-sm text-emerald-950 mt-3">按台北時間的「預約登記月份」統計已核准及已完課訂單，非實際收款日期；審核中、已取消訂單不計。補課金額為 0，不重複計費。</p>
+                <p className="text-xs text-gray-600 mt-1">依目前保留的訂單計算，刪除訂單會影響統計；取消不代表已退款，此處不是完整金流帳本。</p>
+                {data && !loading && (data.invalidAmounts + data.missingDates + data.duplicateOrders + data.unmatchedStudents > 0) && <p role="status" className="text-sm text-amber-900 mt-3">資料待核對：金額異常 {data.invalidAmounts} 筆、缺少有效登記日期 {data.missingDates} 筆、重複訂單編號 {data.duplicateOrders} 筆、缺少學生 ID {data.unmatchedStudents} 筆。異常金額不計；日期缺漏不計本月；重複編號只計一次。</p>}
+            </section>;
+        };
+
+        const CoachSlotsView = ({ onPaymentsChanged = () => {} }) => {
           const [form, setForm] = useState({ 
             mode: 'single', title: '新手團課', location: '關聖里活動中心',
             date: '', startTime: '19:00', endTime: '21:00', capacity: '6', 
@@ -1036,6 +1090,7 @@
             return Promise.all([fetchAPI({ action: 'getCoachData' }), fetchAPI({ action: 'getSlots' })]).then(([bRes, sRes]) => {
                 setBookings(bRes.bookings || []);
                 setSlots((sRes.slots || []).filter(s => s.id && s.title && s.date));
+                onPaymentsChanged();
             });
           };
 
@@ -1358,11 +1413,20 @@
 
         const CoachMembersView = ({ onOpenStudent }) => {
             const [members, setMembers] = useState([]);
+            const [paymentTotals, setPaymentTotals] = useState(null);
+            const [paymentError, setPaymentError] = useState('');
             const [viewModal, setViewModal] = useState({ isOpen: false, student: null });
             const [logModalTarget, setLogModalTarget] = useState(null); 
 
             const fetchMembers = () => {
-                fetchAPI({ action: 'getCoachData' }).then(res => setMembers(res.members || []));
+                fetchAPI({ action: 'getCoachData' }).then(res => {
+                    setMembers(res.members || []);
+                    if (res.status !== 'error' && Array.isArray(res.bookings)) {
+                        const totals = calculateCoachPayments(res.bookings, taipeiMonth(new Date()));
+                        setPaymentTotals(totals.memberTotals);
+                        setPaymentError(totals.invalidAmounts || totals.duplicateOrders || totals.unmatchedStudents ? '付款資料存在異常或缺漏，請參閱收入統計並核對原訂單。' : '');
+                    } else { setPaymentTotals(null); setPaymentError('無法讀取付款資料，累積金額暫不顯示。'); }
+                });
             };
 
             useEffect(() => { fetchMembers(); }, []);
@@ -1370,6 +1434,8 @@
             return (
                 <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
                     <h2 className="font-bold text-lg md:text-xl mb-5 border-b pb-3 text-slate-800">學員名單總覽</h2>
+                    <p className="text-sm text-gray-600 mb-4">累積付款金額依 LINE ID 加總已核准及已完課的現存訂單；未核准、已取消不計。</p>
+                    {paymentError && <p role="status" className="text-sm text-amber-800 mb-4">{paymentError}</p>}
                     <div className="mobile-list-wrap overflow-x-auto">
                         <table className="mobile-card-table w-full min-w-max text-left text-sm md:text-base whitespace-nowrap">
                             <thead className="bg-gray-50 text-gray-600 border-b border-gray-200">
@@ -1377,12 +1443,13 @@
                                     <th className="p-3 md:p-4">學員姓名</th>
                                     <th className="p-3 md:p-4">會員等級</th>
                                     <th className="p-3 md:p-4 text-center">累計完成堂數</th>
+                                    <th className="p-3 md:p-4">累積付款金額</th>
                                     <th className="p-3 md:p-4 text-center">操作</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {!members || members.length === 0 ? (
-                                    <tr><td colSpan="4" className="p-8 text-center text-gray-400">目前尚無會員資料</td></tr>
+                                    <tr><td colSpan="5" className="p-8 text-center text-gray-400">目前尚無會員資料</td></tr>
                                 ) : (
                                     members.map((m, i) => (
                                         <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition">
@@ -1391,6 +1458,7 @@
                                                 <span className="bg-amber-100 text-amber-800 text-xs md:text-sm font-bold px-3 py-1.5 rounded-md">{LEVEL_NAMES[m.level]}</span>
                                             </td>
                                             <td data-label="累計完成堂數" className="p-3 md:p-4 text-center font-extrabold text-slate-600 text-xl md:text-2xl">{m.totalClasses || 0}</td>
+                                            <td data-label="累積付款金額" className="p-3 md:p-4 font-bold text-emerald-700">{paymentTotals ? (m.lineId ? formatMoney(paymentTotals.get(m.lineId) || 0) : '缺少學生 ID') : '暫無資料'}</td>
                                             <td data-label="操作" className="p-3 md:p-4 text-center">
                                                 <div className="flex justify-center gap-2">
                                                     <button onClick={() => onOpenStudent(m)} disabled={!m.lineId} className="bg-slate-700 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-2.5 px-4 md:px-5 rounded-lg shadow-sm text-xs md:text-sm active:scale-95 transition">
@@ -1419,6 +1487,8 @@
         const CoachDashboard = () => {
             const [activeTab, setActiveTab] = useState('slots');
             const [selectedStudent, setSelectedStudent] = useState(null);
+            const [paymentRevision, setPaymentRevision] = useState(0);
+            const paymentsChanged = React.useCallback(() => setPaymentRevision(n => n + 1), []);
 
             if (selectedStudent) {
                 return (
@@ -1452,7 +1522,8 @@
                         </div>
                     </div>
                     <div className="flex-1 min-w-0 p-3 md:p-8">
-                        {activeTab === 'slots' ? <CoachSlotsView /> : <CoachMembersView onOpenStudent={setSelectedStudent} />}
+                        <CoachRevenue revision={`${activeTab}-${paymentRevision}`} />
+                        {activeTab === 'slots' ? <CoachSlotsView onPaymentsChanged={paymentsChanged} /> : <CoachMembersView onOpenStudent={setSelectedStudent} />}
                     </div>
                 </div>
             );
