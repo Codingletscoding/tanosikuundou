@@ -1,3 +1,7 @@
+# 取消預約與課程編輯
+
+請依 [原程式修改位置](coach-management-changes.md) 加入 `CoachManagement.gs` 並更新原部署。主檔及分檔入口均須搭配 `MonthlyLeave.gs` 與 `CoachManagement.gs`。
+
 # 月繳請假與補課更新
 
 請依 [原程式修改位置](monthly-leave-changes.md) 更新現有 Apps Script，並新增本資料夾的 `MonthlyLeave.gs`。不需整份替換。此功能包含提前 14 天請假、獨立紀錄、教練安排單堂團課補課及學生查看。

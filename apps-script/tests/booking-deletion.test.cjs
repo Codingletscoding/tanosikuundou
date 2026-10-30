@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
 const complete = process.argv.includes('--complete');
-const source = fs.readFileSync(path.join(__dirname, complete ? '../complete/Code.gs' : '../BookingDeletion.gs'), 'utf8').replace('U3a76953e63578ec8607297044ac54e5a', 'coach') + '\n' + fs.readFileSync(path.join(__dirname, '../MonthlyLeave.gs'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, complete ? '../complete/Code.gs' : '../BookingDeletion.gs'), 'utf8').replace('U3a76953e63578ec8607297044ac54e5a', 'coach') + '\n' + fs.readFileSync(path.join(__dirname, '../MonthlyLeave.gs'), 'utf8') + '\n' + fs.readFileSync(path.join(__dirname, '../CoachManagement.gs'), 'utf8');
 function setup(options = {}) {
   const bookingRows = [['headers'], [0, 'slot-1', 'student', '學生', 980, options.status ?? '預約成功', '', 'booking-1']];
   if (options.duplicate) bookingRows.push([...bookingRows[1]]);

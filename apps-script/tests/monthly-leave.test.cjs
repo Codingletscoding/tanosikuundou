@@ -32,7 +32,7 @@ function fixture(options={}){
   Utilities:{getUuid:()=> 'uuid-'+(++count),formatDate:(date,zone)=>new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).format(date)},
   ContentService:{MimeType:{JSON:'json'},createTextOutput:text=>({text,setMimeType(){return this;}})}
  };
- vm.createContext(ctx);vm.runInContext(full+'\n'+helper,ctx);
+ vm.createContext(ctx);vm.runInContext(full+'\n'+helper+'\n'+fs.readFileSync(path.join(__dirname,'../CoachManagement.gs'),'utf8'),ctx);
  const run=payload=>JSON.parse(ctx.doPost({postData:{contents:JSON.stringify({accessToken:'mock-token',...payload})}}).text);
  const register=(extra={})=>run({action:'registerMonthlyLeave',bookingId:'original',originalDate:'2026-11-15',reason:'家庭活動',...extra});
  const arrange=(extra={})=>run({action:'arrangeMonthlyMakeup',leaveId:'uuid-1',slotId:'target',...extra});
@@ -91,4 +91,26 @@ test('does not overwrite an existing custom booking column',()=>{
  const f=fixture();f.register();f.rows['預約名單'][0][8]='其他用途';
  assert.equal(f.arrange().status,'error');assert.equal(f.rows['可用時段'][2][6],1);
  assert.equal(f.rows['預約名單'].length,2);
+});
+
+for (const status of ['審核中','預約成功']) test('cancel '+status+' keeps row and restores seat once',()=>{
+ const f=fixture({status});assert.equal(f.run({action:'cancelBooking',bookingId:'original'}).status,'success');
+ assert.equal(f.rows['預約名單'].length,2);assert.equal(f.rows['預約名單'][1][5],'已取消');assert.equal(f.rows['可用時段'][1][6],4);
+ assert.equal(f.run({action:'cancelBooking',bookingId:'original'}).status,'error');assert.equal(f.rows['可用時段'][1][6],4);
+ for(const action of ['approveBooking','updatePayment','addLog'])assert.equal(f.run({action,bookingId:'original'}).status,'error');
+});
+test('cannot cancel completed or linked orders',()=>{
+ const completed=fixture({status:'已完課'});assert.equal(completed.run({action:'cancelBooking',bookingId:'original'}).status,'error');
+ const linked=fixture();linked.register();assert.equal(linked.run({action:'cancelBooking',bookingId:'original'}).status,'error');
+});
+function editPayload(f,extra={}){const r=f.rows['可用時段'][2];return {action:'updateSlot',slotId:'target',title:r[1],date:r[2],time:r[3],location:r[4],capacity:6,prices:{1:300,2:294,3:285,4:270,5:264},...extra};}
+test('edit preserves enrollment and paid amounts',()=>{
+ const f=fixture();assert.equal(f.run(editPayload(f,{title:'更新團課'})).status,'success');assert.equal(f.rows['可用時段'][2][5],6);assert.equal(f.rows['可用時段'][2][6],2);assert.equal(f.rows['預約名單'][1][4],1200);
+});
+test('edit rejects capacity below enrolled and invalid prices/time',()=>{
+ for(const extra of [{capacity:3},{prices:{1:-1}},{time:'25:00 - 26:00'},{date:'2026-02-30'}]){const f=fixture();assert.equal(f.run(editPayload(f,extra)).status,'error');assert.equal(f.rows['可用時段'][2][5],5);}
+});
+test('non-coaches cannot cancel or edit',()=>{const f=fixture({notCoach:true});assert.equal(f.run({action:'cancelBooking',bookingId:'original'}).status,'error');assert.equal(f.run(editPayload(f)).status,'error');});
+test('linked course schedule cannot change, capacity and prices can',()=>{
+ const f=fixture();f.register();f.arrange();assert.equal(f.run(editPayload(f,{title:'改名'})).status,'error');assert.equal(f.run(editPayload(f)).status,'success');
 });

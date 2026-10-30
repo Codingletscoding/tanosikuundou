@@ -7,11 +7,13 @@ function doPost(e) {
   try {
     var payload = JSON.parse(e.postData.contents);
     // All writes share a lock so booking/deletion cannot race on remaining seats.
-    var writes = ['registerUser', 'bookClass', 'addSlot', 'deleteSlot', 'approveBooking', 'updatePayment', 'addLog', 'deleteBooking', 'registerMonthlyLeave', 'arrangeMonthlyMakeup'];
+    var writes = ['registerUser', 'bookClass', 'addSlot', 'deleteSlot', 'approveBooking', 'updatePayment', 'addLog', 'deleteBooking', 'registerMonthlyLeave', 'arrangeMonthlyMakeup', 'cancelBooking', 'updateSlot'];
     if (writes.indexOf(payload.action) !== -1) {
       lock = LockService.getScriptLock();
       if (!lock.tryLock(30000)) throw new Error('系統忙碌中，請稍後再試。');
     }
+    rejectCancelledBookingWrite_(SpreadsheetApp.getActiveSpreadsheet(), payload);
+    if (['cancelBooking', 'updateSlot'].indexOf(payload.action) !== -1) return bookingDeletionResponse_(coachManagementAction_(SpreadsheetApp.getActiveSpreadsheet(), payload));
     if (['getMonthlyLeaves', 'registerMonthlyLeave', 'arrangeMonthlyMakeup'].indexOf(payload.action) !== -1) {
       return bookingDeletionResponse_(monthlyLeaveAction_(SpreadsheetApp.getActiveSpreadsheet(), payload));
     }

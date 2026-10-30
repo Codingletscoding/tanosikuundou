@@ -99,7 +99,7 @@ function arrangeMonthlyMakeup_(ss, payload) {
   if (bookingRows[0][8] && bookingRows[0][8] !== '來源請假編號') {
     throw new Error('預約名單第 I 欄已有其他用途，請先確認欄位，避免覆寫資料。');
   }
-  if (bookingRows.slice(1).some(function(row) { return String(row[1]) === payload.slotId && String(row[2]) === String(leave.row[3]); })) {
+  if (bookingRows.slice(1).some(function(row) { return String(row[1]) === payload.slotId && String(row[2]) === String(leave.row[3]) && row[5] !== '已取消'; })) {
     throw new Error('此學生已預約該補課時段。');
   }
   if (!bookingRows[0][8]) bookings.getRange(1, 9).setValue('來源請假編號');

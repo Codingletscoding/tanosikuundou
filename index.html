@@ -210,10 +210,11 @@
             };
 
             const isApproved = booking.status === '預約成功';
+            const isCancelled = booking.status === '已取消';
 
             return (
                 <div className={`border p-4 md:p-5 rounded-xl flex flex-col shadow-sm relative overflow-hidden ${isApproved ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
-                    {isApproved ? (
+                    {isCancelled ? <div className="text-gray-500 font-bold mb-2">預約已取消</div> : isApproved ? (
                         <div className="absolute top-0 right-0 bg-emerald-200 text-emerald-800 text-[10px] px-3 py-1 rounded-bl-lg font-bold">預約成功</div>
                     ) : (
                         <div className="absolute top-0 right-0 bg-amber-200 text-amber-800 text-[10px] px-3 py-1 rounded-bl-lg font-bold animate-pulse">審核中</div>
@@ -228,7 +229,7 @@
                         </div>
                     </div>
 
-                    {!isApproved && booking.bookingId && (
+                    {!isApproved && !isCancelled && booking.bookingId && (
                         <div className="mt-4 pt-3 border-t border-amber-200/50 flex items-center gap-2">
                             <input 
                                 type="text" 
@@ -979,6 +980,40 @@
         // 🔹 教練端主頁面與子視圖
         // ==========================================
 
+        const EditSlotModal = ({ slot, onClose, onSuccess }) => {
+            const [form, setForm] = useState({ title: slot.title, date: slot.date, time: slot.time, location: slot.location || '', capacity: slot.capacity, prices: { ...slot.prices } });
+            const [busy, setBusy] = useState(false);
+            const busyRef = React.useRef(false);
+            const [error, setError] = useState('');
+            const save = async event => {
+                event.preventDefault();
+                if (busyRef.current) return;
+                busyRef.current = true; setBusy(true); setError('');
+                let saved = false;
+                try {
+                    const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                    if (!accessToken) throw new Error('請重新登入 LINE。');
+                    const result = await fetchAPI({ action: 'updateSlot', slotId: slot.id, ...form, accessToken });
+                    if (!result || result.status !== 'success') throw new Error((result && result.message) || '請先更新 Apps Script 部署，支援課程修改。');
+                    saved = true; await onSuccess(); onClose();
+                } catch (err) { setError(saved ? '已儲存，但重新讀取失敗，請關閉後重新整理確認。' : err.message); }
+                finally { busyRef.current = false; setBusy(false); }
+            };
+            return <div className="fixed inset-0 z-50 bg-slate-900 bg-opacity-60 p-3 flex items-center justify-center overflow-y-auto">
+                <div role="dialog" aria-modal="true" aria-label="編輯課程" className="bg-white rounded-2xl w-full min-w-0 max-w-xl max-h-[90dvh] overflow-y-auto p-4 md:p-6 my-auto">
+                    <h2 className="text-lg font-bold mb-3">編輯已開課程</h2>
+                    <p className="text-sm text-gray-600 mb-4">已預約 {Number(slot.capacity) - Number(slot.remaining)} 人。修改收費不會更動既有訂單金額；修改日期與時間會影響既有學生，請另行通知。月繳日期及私人課程名稱請保留原格式。</p>
+                    {error && <p role="alert" className="bg-red-50 text-red-800 p-3 rounded-lg mb-3">{error}</p>}
+                    <form onSubmit={save} className="space-y-4">
+                        {[['title','課程名稱'],['date','上課日期'],['time','上課時間'],['location','場地']].map(([key,label]) => <label key={key} className="block text-sm font-bold">{label}<input aria-label={label} required disabled={busy} value={form[key]} onChange={e => setForm(prev => ({...prev,[key]:e.target.value}))} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>)}
+                        <label className="block text-sm font-bold">總名額<input aria-label="總名額" type="number" required min={Math.max(1, Number(slot.capacity)-Number(slot.remaining))} step="1" disabled={busy} value={form.capacity} onChange={e => setForm(prev=>({...prev,capacity:e.target.value}))} className="block w-full border rounded-lg p-3 mt-1" /></label>
+                        <fieldset className="grid grid-cols-1 sm:grid-cols-2 gap-3"><legend className="font-bold mb-2">各等級收費</legend>{[1,2,3,4,5].map(level=><label key={level} className="block text-sm">{LEVEL_NAMES[level]}<input aria-label={`${LEVEL_NAMES[level]}收費`} type="number" min="0" step="any" required disabled={busy} value={form.prices[level] ?? ''} onChange={e=>setForm(prev=>({...prev,prices:{...prev.prices,[level]:e.target.value}}))} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>)}</fieldset>
+                        <div className="flex gap-3"><button type="button" disabled={busy} onClick={onClose} className="flex-1 min-w-0 border rounded-lg p-3">取消</button><button type="submit" disabled={busy} className="flex-1 min-w-0 bg-blue-700 text-white rounded-lg p-3 font-bold disabled:opacity-50">{busy?'儲存中...':'儲存修改'}</button></div>
+                    </form>
+                </div>
+            </div>;
+        };
+
         const CoachSlotsView = () => {
           const [form, setForm] = useState({ 
             mode: 'single', title: '新手團課', location: '關聖里活動中心',
@@ -992,6 +1027,8 @@
           const [loading, setLoading] = useState(false);
           const [logModalTarget, setLogModalTarget] = useState(null); 
           const [showMonthlyLeave, setShowMonthlyLeave] = useState(false);
+          const [editingSlot, setEditingSlot] = useState(null);
+          const cancellingRef = React.useRef(false);
 
           const monthlyInfo = getMonthlyDatesInfo(form.date);
 
@@ -1035,6 +1072,21 @@
             if (Number(level) === 1) {
               setForm(prev => ({...prev, prices: { 1: val, 2: Math.round(val*getVIPDiscount(2)), 3: Math.round(val*getVIPDiscount(3)), 4: Math.round(val*getVIPDiscount(4)), 5: Math.round(val*getVIPDiscount(5)) }}));
             } else setForm(prev => ({ ...prev, prices: { ...prev.prices, [level]: val }}));
+          };
+
+          const handleCancelBooking = async booking => {
+            if (loading || cancellingRef.current || !booking.bookingId) return;
+            if (!confirm(`確認取消 ${booking.name || '學生'} 的預約？\n訂單：${booking.bookingId}\n將保留取消紀錄並回補名額，不會自動退款。`)) return;
+            cancellingRef.current = true; setLoading(true);
+            let saved = false;
+            try {
+                const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                if (!accessToken) throw new Error('請重新登入 LINE。');
+                const result = await fetchAPI({ action: 'cancelBooking', bookingId: booking.bookingId, accessToken });
+                if (!result || result.status !== 'success') throw new Error((result && result.message) || '請先更新 Apps Script 部署，支援取消預約。');
+                saved = true; await fetchData(); alert('預約已取消，紀錄保留。若需退款請另行處理。');
+            } catch (err) { alert(saved ? '取消已送出，但重新讀取失敗，請重新整理確認，勿重複取消。' : err.message); }
+            finally { cancellingRef.current = false; setLoading(false); }
           };
 
           const handleDeleteSlot = async (slotId, title, dateStr) => {
@@ -1224,7 +1276,7 @@
                                     <td data-label="課程名稱" className="p-3 md:p-4"><span className="font-bold text-gray-800">{isCoach ? '教練開放時段' : s.title}</span></td>
                                     <td data-label="日期/時間" className="p-3 md:p-4 text-gray-500">{s.date} <br/><span className="text-xs md:text-sm">{s.time} • {displayLoc}</span></td>
                                     <td data-label="進度" className="p-3 md:p-4 text-center"><span className={`px-3 py-1 rounded-full font-bold text-xs md:text-sm ${isFull ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700'}`}>{booked}/{s.capacity}</span></td>
-                                    <td data-label="操作" className="p-3 md:p-4 text-center"><button onClick={() => handleDeleteSlot(s.id, s.title, s.date)} className="text-red-600 hover:text-red-800 font-bold text-sm bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg active:scale-95 transition">刪除</button></td>
+                                    <td data-label="操作" className="p-3 md:p-4 text-center"><div className="flex flex-wrap justify-center gap-2"><button onClick={() => setEditingSlot(s)} className="bg-blue-50 text-blue-700 font-bold px-4 py-2 rounded-lg">編輯</button><button onClick={() => handleDeleteSlot(s.id, s.title, s.date)} className="text-red-600 hover:text-red-800 font-bold text-sm bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg active:scale-95 transition">刪除</button></div></td>
                                   </tr>
                                 )
                               })}
@@ -1250,7 +1302,7 @@
                                 <td data-label="學生姓名" className="p-3 md:p-4 font-bold text-gray-800">{b.name}{b.makeupLeaveId && <span className="block text-xs font-normal text-emerald-700 mt-1">月繳補課（不重複收費）</span>}</td>
                                 <td data-label="金額" className="p-3 md:p-4 text-emerald-600 font-bold">NT$ {b.paidPrice}</td>
                                 <td data-label="狀態 / 後五碼" className="p-3 md:p-4">
-                                    {b.status === "已完課" ? (
+                                    {b.status === "已取消" ? <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-md">已取消</span> : b.status === "已完課" ? (
                                         <span className="text-gray-500 font-bold text-sm bg-gray-100 px-2 py-1 rounded-md">🏁 已完課結單</span>
                                     ) : b.status === "預約成功" ? (
                                         <span className="text-emerald-600 font-bold text-sm bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">✅ 預約成功</span>
@@ -1275,11 +1327,13 @@
                                                 結課 / 日誌
                                             </button>
                                         )}
+                                        {["審核中", "預約成功"].includes(b.status) && <button onClick={() => handleCancelBooking(b)} disabled={loading || !b.bookingId} className="bg-orange-50 text-orange-800 border border-orange-200 font-bold py-2 px-3 rounded-lg disabled:opacity-50">取消預約</button>}
                                         {["審核中", "預約成功"].includes(b.status) && (
                                             <button onClick={() => handleDeleteBooking(b)} disabled={loading || !b.bookingId} title={!b.bookingId ? '此舊訂單缺少訂單編號，請先補上預約名單第 H 欄的唯一編號。' : undefined} aria-label={`刪除${b.name || '學員'}的預約`} className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
                                                 {deletingBookingId === b.bookingId ? '刪除中...' : '刪除訂單'}
                                             </button>
                                         )}
+                                        {b.status === "已取消" && <span className="text-xs text-gray-500">取消紀錄保留</span>}
                                         {b.status === "已完課" && <span className="text-xs text-gray-400 font-bold">已完課紀錄保留</span>}
                                     </div>
                                     {["審核中", "預約成功"].includes(b.status) && !b.bookingId && (
@@ -1294,6 +1348,7 @@
                     </div>
                 </div>
               </div>
+              {editingSlot && <EditSlotModal slot={editingSlot} onClose={() => setEditingSlot(null)} onSuccess={fetchData} />}
               {showMonthlyLeave && <MonthlyLeaveModal bookings={bookings} slots={slots} onClose={() => setShowMonthlyLeave(false)} onSuccess={fetchData} />}
               {/* 共用寫日誌彈窗 (傳入 targetData={lineId, name, bookingId}) */}
               {logModalTarget && <LogFormModal targetData={logModalTarget} onClose={() => setLogModalTarget(null)} onSuccess={fetchData} />}

@@ -23,7 +23,7 @@ function doPost(e) {
       throw new Error("請求格式不正確。");
     }
     const action = payload.action;
-    const writeActions = ["registerUser", "bookClass", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking", "registerMonthlyLeave", "arrangeMonthlyMakeup"];
+    const writeActions = ["registerUser", "bookClass", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking", "registerMonthlyLeave", "arrangeMonthlyMakeup", "cancelBooking", "updateSlot"];
     if (writeActions.includes(action)) {
       const candidate = LockService.getScriptLock();
       if (!candidate.tryLock(30000)) throw new Error("系統忙碌中，請稍後再試。");
@@ -32,6 +32,7 @@ function doPost(e) {
     if (action === "deleteBooking") verifyBookingDeletionCoach_(payload.accessToken);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) throw new Error("找不到試算表，請確認此 Apps Script 綁定在原本的試算表。");
+    rejectCancelledBookingWrite_(ss, payload);
     let result = {};
 
     let sheetLogs = ss.getSheetByName(SHEET_LOGS);
@@ -162,6 +163,10 @@ function doPost(e) {
 
     else if (["getMonthlyLeaves", "registerMonthlyLeave", "arrangeMonthlyMakeup"].includes(action)) {
       result = monthlyLeaveAction_(ss, payload);
+    }
+
+    else if (["cancelBooking", "updateSlot"].includes(action)) {
+      result = coachManagementAction_(ss, payload);
     }
 
     else if (action === "deleteBooking") {
