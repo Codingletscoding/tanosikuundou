@@ -479,13 +479,63 @@
           );
         };
 
+        const BOOKING_AGREEMENTS = [
+            ['預約確認', '為了確保每堂課的教學品質，送出預約登記後，需經由我們確認，並收到預約成功通知，才算真正完成預約喔！'],
+            ['開課門檻', '大家一起練球最有氣氛！若該預約時段未達基本開課人數，課程將會取消，我們也會通知您，並協助辦理當次課程的全額退費。'],
+            ['請假規範', '因為場地與教練的時間皆已為您專屬保留，若您因個人因素需請假或取消預約，將無法另行退費，再請大家多多包涵。固定團課學員若提前兩週完成請假，可與我們協調另外安排時段補課。'],
+            ['教練或場地臨時異動', '若因教練臨時有事，或場地安排異動等主辦方因素，導致當次課程無法如期進行，我們將儘早通知您，並辦理當次課程的全額退費，謝謝您的體諒！'],
+            ['天災停課', '安全永遠是第一考量！若遇颱風等天災，上課所在地政府公告停班或停課，或場地因天災無法使用時，當次課程將會取消。我們將儘早通知您，並與您協調安排補課；若無法配合補課時段，也可選擇辦理當次課程的全額退費。請大家安心，也記得照顧好自己的安全喔！'],
+            ['互相尊重', '我們非常珍惜每次與大家在球場交流的機會。若預約後無故缺席且未提前請假，為了保障其他球友的權益，我們將視情況暫停受理您後續的預約。']
+        ];
+        const BookingAgreement = ({ target, onCancel, onContinue }) => {
+            const [reachedEnd, setReachedEnd] = useState(false);
+            const [accepted, setAccepted] = useState(false);
+            const contentRef = React.useRef(null);
+            const checkEnd = () => {
+                const el = contentRef.current;
+                if (el && el.clientHeight > 0 && el.scrollHeight - el.scrollTop - el.clientHeight <= 3) setReachedEnd(true);
+            };
+            useEffect(() => {
+                const el = contentRef.current;
+                if (!el) return;
+                el.focus(); checkEnd();
+                const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(checkEnd) : null;
+                if (observer) observer.observe(el);
+                return () => { if (observer) observer.disconnect(); };
+            }, []);
+            return <div className="fixed inset-0 z-50 bg-slate-900 bg-opacity-60 flex items-center justify-center p-3 md:p-4">
+                <div role="dialog" aria-modal="true" aria-labelledby="booking-agreement-title" className="bg-white rounded-2xl shadow-xl w-full min-w-0 max-w-2xl max-h-[90dvh] flex flex-col overflow-hidden">
+                    <header className="bg-slate-800 text-white p-4 shrink-0">
+                        <h2 id="booking-agreement-title" className="font-bold text-lg">預約前，請詳閱課前小約定</h2>
+                        <p className="text-sm mt-1 text-slate-200">{target.titleDisplay} · {target.slot.date} {target.slot.time}</p>
+                    </header>
+                    <div ref={contentRef} tabIndex="0" role="region" aria-label="課前小約定全文" onScroll={checkEnd} className="min-h-0 overflow-y-auto overscroll-contain p-4 md:p-6 space-y-5 text-sm md:text-base leading-relaxed text-gray-700">
+                        <p>我們的初衷很簡單：希望透過專業、高品質的羽球教學，讓每個人都能輕鬆體會羽球的魅力！</p>
+                        <p><strong className="text-slate-900">我們的團班採用依個人程度客製化的教學方式，告別傳統全班統一課表，依照每位學員的基礎、學習進度與需要加強的地方，安排適合的練習內容。</strong>讓大家一起練球，也能按照自己的步調，享受學習與進步的樂趣！</p>
+                        <p>為了維持良好的教學品質，並讓每一堂課都能順利進行，預約前請大家先幫我們詳閱以下幾點「課前小約定」喔！</p>
+                        {BOOKING_AGREEMENTS.map(([title, text]) => <section key={title}><h3 className="font-bold text-emerald-800 mb-2">【{title}】</h3><p>{text}</p></section>)}
+                        <p>期待能在球場上與大家相見！希望透過每一堂課，陪伴您逐步掌握更流暢、更合理的擊球動作與知識，也讓您在揮灑汗水的過程中，收穫滿滿的健康與歡笑，真正享受羽球帶來的純粹樂趣！</p>
+                    </div>
+                    <footer className="border-t p-4 shrink-0 space-y-3 bg-white">
+                        <p role="status" className="text-xs text-gray-600">{reachedEnd ? '已瀏覽至文末，請勾選確認後繼續。' : '請向下捲動至文末，閱讀完整內容後才能繼續。'}</p>
+                        <label className={`flex items-start gap-3 text-sm font-bold p-2 ${reachedEnd ? 'text-slate-800' : 'text-gray-400'}`}>
+                            <input type="checkbox" disabled={!reachedEnd} checked={accepted} onChange={e => setAccepted(e.target.checked)} className="mt-1 w-5 h-5 shrink-0 accent-emerald-600" />
+                            <span>我已閱讀並同意以上課前小約定</span>
+                        </label>
+                        <div className="flex gap-3"><button onClick={onCancel} className="flex-1 min-w-0 border rounded-lg p-3 font-bold text-gray-600">返回選課</button><button disabled={!reachedEnd || !accepted} onClick={() => { if (reachedEnd && accepted) onContinue(); }} className="flex-1 min-w-0 bg-emerald-700 text-white rounded-lg p-3 font-bold disabled:opacity-40">繼續預約</button></div>
+                    </footer>
+                </div>
+            </div>;
+        };
+
         const StudentBookingView = ({ profile, userRecord }) => {
           const [slots, setSlots] = useState([]);
           const [status, setStatus] = useState('idle');
           const [currentMonth, setCurrentMonth] = useState(new Date());
           const [selectedDate, setSelectedDate] = useState(formatDate(new Date()));
           const [studentLocations, setStudentLocations] = useState({}); 
-          const [bookingTarget, setBookingTarget] = useState(null); 
+          const [bookingTarget, setBookingTarget] = useState(null);
+          const [agreementAccepted, setAgreementAccepted] = useState(false);
           const [paymentCode, setPaymentCode] = useState(''); 
           const userLevel = userRecord ? (userRecord.level || 1) : 1;
 
@@ -504,11 +554,13 @@
                 titleDisplay = `教練專屬時段 (${type} 於 ${selectedLoc})`;
                 finalName = `${userRecord ? userRecord.name : ''} [${type} - ${selectedLoc}]`;
             }
+            setAgreementAccepted(false);
             setBookingTarget({ slot, titleDisplay, finalName, myPrice });
             setPaymentCode(''); 
           };
 
           const confirmBooking = async () => {
+            if (!bookingTarget || !agreementAccepted || status === 'booking') return;
             setStatus('booking');
             await fetchAPI({ 
                 action: 'bookClass', 
@@ -685,7 +737,8 @@
               </div>
 
               {/* 預約結帳彈窗 */}
-              {bookingTarget && (
+              {bookingTarget && !agreementAccepted && <BookingAgreement target={bookingTarget} onCancel={() => setBookingTarget(null)} onContinue={() => setAgreementAccepted(true)} />}
+              {bookingTarget && agreementAccepted && (
                 <div className="fixed inset-0 bg-slate-900 bg-opacity-60 backdrop-blur-sm z-50 flex items-center justify-center p-3 md:p-4 overflow-y-auto">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[90dvh] overflow-y-auto my-auto animate-[pulse_0.2s_ease-out_1]">
                         <div className="bg-slate-800 p-4 text-white">
