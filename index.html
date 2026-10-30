@@ -511,14 +511,6 @@
             const tariff = groupTariff(monthly ? 'monthly' : 'single', time[1], time[2], monthly ? Number(monthly[1]) : 4);
             return tariff && Number(slot.prices[1]) === tariff.price ? tariff : null;
         };
-        const GroupPricingNotice = () => <section aria-label="一般會員團課收費" className="bg-white border rounded-2xl p-4 md:p-6 mb-4">
-            <h2 className="font-bold text-slate-800 mb-3">一般會員團課收費</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                <div className="bg-slate-50 rounded-lg p-3"><p className="font-bold">單堂團課</p><p className="mt-1">1 小時 NT$300</p><p>2 小時 NT$580</p></div>
-                <div className="bg-amber-50 rounded-lg p-3"><p className="font-bold">月繳團課 · 4 堂方案</p><p className="mt-1">每堂 1 小時：<del className="text-gray-500">NT$1,200</del> <strong className="text-emerald-700">NT$1,000</strong></p><p>每堂 2 小時：<del className="text-gray-500">NT$2,320</del> <strong className="text-emerald-700">NT$2,000</strong></p></div>
-            </div><p className="text-xs text-gray-500 mt-3">月繳價格為 4 堂合計；實際預約金額以所選課程及會員等級顯示為準。</p>
-        </section>;
-
         const BOOKING_AGREEMENTS = [
             ['預約確認', '為了確保每堂課的教學品質，送出預約登記後，需經由我們確認，並收到預約成功通知，才算真正完成預約喔！'],
             ['開課門檻', '大家一起練球最有氣氛！若該預約時段未達基本開課人數，課程將會取消，我們也會通知您，並協助辦理當次課程的全額退費。'],
@@ -634,7 +626,7 @@
           );
 
           return (
-            <div><div className="p-4 md:px-8 md:pt-8"><GroupPricingNotice /></div>
+            <div>
             <div className="flex flex-col md:flex-row gap-0 md:gap-8 p-0 md:p-8 pb-10 relative">
               <div className="bg-white px-2 md:px-6 py-4 md:py-6 shadow-sm border-b md:border md:rounded-2xl w-full md:w-1/3 md:sticky md:top-6 h-fit">
                 <div className="flex justify-between items-center mb-4 px-4">

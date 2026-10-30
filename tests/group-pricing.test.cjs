@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const s=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');const code=s.slice(s.indexOf('        const groupTariff ='),s.indexOf('        const GroupPricingNotice ='))+'\nglobalThis.pricing={groupTariff,slotGroupTariff};';
+const s=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');const code=s.slice(s.indexOf('        const groupTariff ='),s.indexOf('        const BOOKING_AGREEMENTS ='))+'\nglobalThis.pricing={groupTariff,slotGroupTariff};';
 const ctx={};vm.createContext(ctx);vm.runInContext(code,ctx);const {groupTariff:rate,slotGroupTariff:slotRate}=ctx.pricing;
 for(const [mode,end,price,regular] of [['single','20:00',300,300],['single','21:00',580,580],['monthly','20:00',1000,1200],['monthly','21:00',2000,2320]])test(`${mode} ${end} uses announced general-member price`,()=>{const result=rate(mode,'19:00',end,4);assert.equal(result.price,price);assert.equal(result.regular,regular);});
 test('does not invent prices for 5-class plans or unsupported duration',()=>{assert.equal(rate('monthly','19:00','20:00',5),null);assert.equal(rate('single','19:00','20:30'),null);assert.equal(rate('coach','19:00','20:00'),null);});
