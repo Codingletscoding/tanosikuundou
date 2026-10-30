@@ -1440,7 +1440,7 @@
                                 {LOCATIONS_LIST.map(loc => (
                                     <label key={loc} className="flex items-center gap-1.5 text-sm cursor-pointer bg-white px-2 py-1.5 rounded border border-indigo-200 shadow-sm transition hover:bg-indigo-100">
                                         <input type="checkbox" checked={allowedLocations.includes(loc)} onChange={() => toggleLocation(loc)} className="accent-indigo-600 w-4 h-4" />
-                                        <span className="text-indigo-900 font-medium">{loc === '自理場地(需私訊確認)' ? '其他場地(自理)' : loc}</span>
+                                        <span className="text-indigo-900 font-medium">{loc === '自理場地(需私訊確認)' ? '其他場地' : loc}</span>
                                     </label>
                                 ))}
                             </div>
