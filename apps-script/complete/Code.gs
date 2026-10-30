@@ -32,8 +32,12 @@ function doPost(e) {
     if (action === "deleteBooking") verifyBookingDeletionCoach_(payload.accessToken);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) throw new Error("找不到試算表，請確認此 Apps Script 綁定在原本的試算表。");
-    rejectCancelledBookingWrite_(ss, payload);
+    if (payload.bookingId && ['approveBooking', 'updatePayment', 'addLog'].includes(action)) rejectCancelledBookingWrite_(ss, payload);
     let result = {};
+
+    if (action === 'checkUser' && ADMIN_LINE_IDS.includes(payload.lineId)) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'success', isAdmin: true, isRegistered: false, user: null })).setMimeType(ContentService.MimeType.JSON);
+    }
 
     let sheetLogs = ss.getSheetByName(SHEET_LOGS);
     if (!sheetLogs && (action === "addLog" || action === "getStudentStats" || action === "getCoachData")) {

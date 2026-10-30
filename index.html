@@ -1465,32 +1465,36 @@
           const [liffState, setLiffState] = useState({ init: false, profile: null });
           const [userRecord, setUserRecord] = useState(null);
           const [view, setView] = useState('loading');
-
-          useEffect(() => {
-            liff.init({ liffId: LIFF_ID }).then(() => {
-              if (!liff.isLoggedIn()) liff.login();
-              else {
-                liff.getProfile().then(profile => {
-                  setLiffState({ init: true, profile });
-                  checkUser(profile.userId);
-                });
-              }
-            }).catch(() => {
-              const mockProfile = { userId: 'U12345678', displayName: '測試用戶' };
-              setLiffState({ init: true, profile: mockProfile });
-              checkUser(mockProfile.userId);
-            });
-          }, []);
-
-          const checkUser = async (lineId) => {
-            const res = await fetchAPI({ action: 'checkUser', lineId });
-            if (res.isAdmin) setView('coach');
-            else if (res.isRegistered) { setUserRecord(res.user); setView('student'); } 
-            else setView('register');
+          const [loginError, setLoginError] = useState('');
+          const loginBusy = React.useRef(false);
+          const login = async () => {
+            if (loginBusy.current) return;
+            loginBusy.current = true; setView('loading'); setLoginError('');
+            try {
+              if (typeof liff === 'undefined') throw new Error('LINE 登入元件未載入，請確認網路後重試。');
+              await liff.init({ liffId: LIFF_ID });
+              if (!liff.isLoggedIn()) { liff.login({ redirectUri: window.location.href.split('#')[0] }); return; }
+              const profile = await liff.getProfile();
+              if (!profile || !profile.userId) throw new Error('無法取得 LINE 身分，請確認 LIFF 的 profile 權限。');
+              setLiffState({ init: true, profile });
+              const res = await fetchAPI({ action: 'checkUser', lineId: profile.userId });
+              if (!res || res.status !== 'success') throw new Error((res && res.message) || '無法確認帳號權限，請確認 Apps Script 部署及網路連線。');
+              if (res.isAdmin === true) setView('coach');
+              else if (res.isRegistered === true && res.user) { setUserRecord(res.user); setView('student'); }
+              else if (res.isRegistered === false && res.isAdmin === false) setView('register');
+              else throw new Error('帳號權限回應不完整，請更新 Apps Script 部署。');
+            } catch (err) { setLoginError(err.message || '登入失敗，請重試。'); setView('login-error'); }
+            finally { loginBusy.current = false; }
           };
-
-          if (view === 'loading') return <div className="p-10 text-center text-gray-500 font-bold animate-pulse">系統載入中...</div>;
-          if (view === 'register') return <RegisterView profile={liffState.profile} onRegistered={(u) => { setUserRecord(u); setView('student'); }} />;
+          useEffect(() => { login(); }, []);
+          if (view === 'loading') return <div className="p-10 text-center text-gray-500 font-bold animate-pulse">正在確認 LINE 身分與帳號權限...</div>;
+          if (view === 'login-error') return <div className="max-w-lg mx-auto p-5 bg-white min-h-screen">
+            <h1 className="text-xl font-bold mb-4">無法完成登入</h1>
+            <p role="alert" className="bg-red-50 text-red-800 p-4 rounded-lg mb-4">{loginError}</p>
+            <button onClick={login} className="w-full bg-emerald-700 text-white p-3 rounded-lg font-bold">重新嘗試登入</button>
+            {liffState.profile && <div className="mt-5 text-sm text-gray-600"><p>若教練身分未被辨識，請確認此 LINE 帳號的 user ID 已列入後端 ADMIN_LINE_IDS，且 LIFF 使用相同 LINE Provider。</p><details className="mt-3"><summary>查看目前登入帳號 ID</summary><p className="mt-2 break-all select-all">{liffState.profile.userId}</p></details></div>}
+          </div>;
+          if (view === 'register') return <div>{liffState.profile && <details className="max-w-md mx-auto p-4 text-sm text-gray-600"><summary>我是教練，但未進入後台</summary><p className="mt-2">請確認後端 ADMIN_LINE_IDS 包含以下 LINE user ID，並更新原 Web App 部署。不同 LINE Provider 的 ID 可能不同。</p><p className="break-all select-all mt-2">{liffState.profile.userId}</p><button onClick={login} className="border p-3 rounded-lg mt-3">重新確認權限</button></details>}<RegisterView profile={liffState.profile} onRegistered={(u) => { setUserRecord(u); setView('student'); }} /></div>;
           if (view === 'student') return <StudentDashboard profile={liffState.profile} userRecord={userRecord} />;
           if (view === 'coach') return <CoachDashboard />;
         };

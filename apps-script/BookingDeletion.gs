@@ -12,7 +12,7 @@ function doPost(e) {
       lock = LockService.getScriptLock();
       if (!lock.tryLock(30000)) throw new Error('系統忙碌中，請稍後再試。');
     }
-    rejectCancelledBookingWrite_(SpreadsheetApp.getActiveSpreadsheet(), payload);
+    if (payload.bookingId && ['approveBooking', 'updatePayment', 'addLog'].indexOf(payload.action) !== -1) rejectCancelledBookingWrite_(SpreadsheetApp.getActiveSpreadsheet(), payload);
     if (['cancelBooking', 'updateSlot'].indexOf(payload.action) !== -1) return bookingDeletionResponse_(coachManagementAction_(SpreadsheetApp.getActiveSpreadsheet(), payload));
     if (['getMonthlyLeaves', 'registerMonthlyLeave', 'arrangeMonthlyMakeup'].indexOf(payload.action) !== -1) {
       return bookingDeletionResponse_(monthlyLeaveAction_(SpreadsheetApp.getActiveSpreadsheet(), payload));
