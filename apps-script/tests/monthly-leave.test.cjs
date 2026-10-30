@@ -114,3 +114,17 @@ test('non-coaches cannot cancel or edit',()=>{const f=fixture({notCoach:true});a
 test('linked course schedule cannot change, capacity and prices can',()=>{
  const f=fixture();f.register();f.arrange();assert.equal(f.run(editPayload(f,{title:'改名'})).status,'error');assert.equal(f.run(editPayload(f)).status,'success');
 });
+
+test('coach cash booking always starts unpaid even if caller claims received',()=>{
+ const f=fixture({targetTitle:'[專屬教練課] 1v1:1000|1v2:1500'});
+ assert.equal(f.run({action:'bookClass',slotId:'target',lineId:'student',name:'學生',paidPrice:1000,paymentCode:'現金已收'}).status,'success');
+ const row=f.rows['預約名單'][2];assert.equal(row[6],'現場現金');assert.equal(row[5],'審核中');
+});
+test('cash collection requires approval and is idempotent; student payment edits cannot change it',()=>{
+ const f=fixture();const row=f.rows['預約名單'][1];row[6]='現場現金';row[5]='審核中';
+ assert.equal(f.run({action:'confirmCashPayment',bookingId:'original'}).status,'error');row[5]='預約成功';
+ assert.equal(f.run({action:'updatePayment',bookingId:'original',paymentCode:'12345'}).status,'error');
+ assert.equal(f.run({action:'confirmCashPayment',bookingId:'original'}).status,'success');assert.equal(row[6],'現金已收');
+ assert.equal(f.run({action:'confirmCashPayment',bookingId:'original'}).status,'success');
+});
+test('non-coach cannot confirm cash collection',()=>{const f=fixture({notCoach:true});f.rows['預約名單'][1][6]='現場現金';assert.equal(f.run({action:'confirmCashPayment',bookingId:'original'}).status,'error');assert.equal(f.rows['預約名單'][1][6],'現場現金');});

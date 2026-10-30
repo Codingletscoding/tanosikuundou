@@ -210,6 +210,7 @@
             };
 
             const isApproved = booking.status === '預約成功';
+            const isCash = ['現場現金', '現金已收'].includes(booking.paymentCode) || /^\[專屬教練課\]/.test(booking.slotTitle || '');
             const isCancelled = booking.status === '已取消';
 
             return (
@@ -229,7 +230,8 @@
                         </div>
                     </div>
 
-                    {!isApproved && !isCancelled && booking.bookingId && (
+                    {isCash && <p className="text-sm text-amber-900 mt-3">{booking.paymentCode === '現金已收' ? '現金已收款' : '付款方式：現場現金付款（教練費不含場地費）'}</p>}
+                    {!isCash && !isApproved && !isCancelled && booking.bookingId && (
                         <div className="mt-4 pt-3 border-t border-amber-200/50 flex items-center gap-2">
                             <input 
                                 type="text" 
@@ -606,7 +608,7 @@
                 lineId: profile ? profile.userId : '', 
                 name: bookingTarget.finalName, 
                 paidPrice: bookingTarget.myPrice,
-                paymentCode: paymentCode || ""
+                paymentCode: bookingTarget.slot.title.startsWith('[專屬教練課]') ? '現場現金' : (paymentCode || '')
             });
             setStatus('success');
             setBookingTarget(null);
@@ -626,7 +628,7 @@
           if (status === 'success') return (
             <div className="p-8 text-center bg-white rounded-xl shadow-md m-6 md:m-10 border-t-4 border-emerald-500">
               <h2 className="text-2xl font-bold text-emerald-600 mb-4">預約成功！</h2>
-              <p className="text-gray-500 mb-6">您的訂單目前為<span className="text-amber-600 font-bold mx-1">審核中</span><br/>可至「我的訓練紀錄」追蹤狀態或補登後五碼。</p>
+              <p className="text-gray-500 mb-6">您的訂單目前為<span className="text-amber-600 font-bold mx-1">審核中</span><br/>可至「我的訓練紀錄」追蹤狀態。教練時段請於現場付現；團課可於紀錄中補登匯款後五碼。</p>
               <button onClick={() => window.location.reload()} className="w-full max-w-xs mx-auto bg-slate-800 text-white py-3 rounded-lg font-bold block transition hover:bg-slate-700">繼續預約</button>
             </div>
           );
@@ -710,7 +712,7 @@
                                 <div key={slot.id} className={`border p-5 rounded-2xl flex flex-col shadow-sm transition relative overflow-hidden ${isFull ? 'bg-gray-50 border-l-4 border-l-gray-400 opacity-80' : 'bg-green-50 border-l-4 border-l-green-500'}`}>
                                     <div className={`absolute top-0 right-0 text-xs px-3 py-1.5 rounded-bl-lg font-bold tracking-wide ${isFull ? 'bg-gray-200 text-gray-600' : 'bg-green-200 text-green-800'}`}>教練開放時段</div>
                                     <div className={`font-bold text-lg md:text-xl mt-1 ${isFull ? 'text-gray-500' : 'text-green-800'}`}>教練專屬時段</div>
-                                    <p className="text-xs text-green-900 mt-1">每小時教練費，不含場地費；場地由學員自行預約。</p>
+                                    <p className="text-xs text-green-900 mt-1">每小時教練費，現場現金付款；不含場地費，場地由學員自行預約。</p>
                                     <div className="font-semibold text-gray-800 mt-2 text-sm md:text-base">{slot.date}</div>
                                     <div className="text-sm text-gray-500 mt-1">{slot.time} • {slotDisplayLocation}</div>
                                     
@@ -799,6 +801,7 @@
                             </div>
                             
                             {bookingTarget.slot.title.startsWith('[專屬教練課]') && <p className="text-sm text-red-800 bg-red-50 border border-red-200 p-3 rounded-lg">此金額為教練費，不含場地費。學員須自行預約上課場地並支付場地費，本系統不代訂場地。</p>}
+                            {bookingTarget.slot.title.startsWith('[專屬教練課]') ? <div className="bg-amber-50 border border-amber-200 rounded-lg p-4"><h4 className="font-bold text-amber-950">付款方式：現場現金付款</h4><p className="text-sm text-amber-900 mt-2">請於上課當天現場支付教練費，不需事先匯款或填寫匯款後五碼。預約仍需教練確認。</p></div> : <>
                             <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
                                 <div className="text-xs font-bold text-emerald-700 mb-1">請匯款至以下指定帳戶：</div>
                                 <div className="text-sm text-slate-700">銀行代號：<span className="font-bold text-slate-900">391</span></div>
@@ -819,6 +822,7 @@
                                     💡 若尚未匯款，您可先按確認，稍後再至紀錄中補登後五碼。
                                 </p>
                             </div>
+                            </>}
                         </div>
                         <div className="flex border-t border-gray-100">
                             <button onClick={() => setBookingTarget(null)} className="flex-1 min-w-0 py-4 font-bold text-gray-500 hover:bg-gray-50 border-r border-gray-100 transition">取消</button>
@@ -1126,7 +1130,7 @@
             let monthlyCents = 0, invalidAmounts = 0, missingDates = 0, duplicateOrders = 0, unmatchedStudents = 0;
             const seen = new Set();
             for (const booking of bookings) {
-                if (!['預約成功', '已完課', '成功', '已完成'].includes(booking.status)) continue;
+                if (!['預約成功', '已完課', '成功', '已完成'].includes(booking.status) || booking.paymentCode === '現場現金') continue;
                 if (booking.bookingId && seen.has(booking.bookingId)) { duplicateOrders++; continue; }
                 if (booking.bookingId) seen.add(booking.bookingId);
                 const amount = Number(booking.paidPrice);
@@ -1159,7 +1163,7 @@
             return <section aria-label="本月收入統計" className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 md:p-6 mb-5 min-w-0">
                 <div className="flex flex-wrap justify-between items-center gap-3"><h2 className="font-bold text-emerald-950">{month} 本月收入</h2><button onClick={() => setRefresh(n => n + 1)} disabled={loading} className="border border-emerald-300 rounded-lg px-3 py-2 text-sm text-emerald-900 disabled:opacity-50">重新整理金額</button></div>
                 {loading ? <p role="status" className="mt-3">讀取收入中...</p> : error ? <p role="alert" className="text-red-700 mt-3">{error}</p> : <p className="text-3xl font-extrabold text-emerald-800 mt-3 break-all">{formatMoney(data.monthlyTotal)}</p>}
-                <p className="text-xs md:text-sm text-emerald-950 mt-3">按台北時間的「預約登記月份」統計已核准及已完課訂單，非實際收款日期；審核中、已取消訂單不計。補課金額為 0，不重複計費。</p>
+                <p className="text-xs md:text-sm text-emerald-950 mt-3">按台北時間的「預約登記月份」統計已核准及已完課訂單，非實際收款日期；審核中、已取消、尚未確認現金收款的訂單不計。補課金額為 0，不重複計費。</p>
                 <p className="text-xs text-gray-600 mt-1">依目前保留的訂單計算，刪除訂單會影響統計；取消不代表已退款，此處不是完整金流帳本。</p>
                 {data && !loading && (data.invalidAmounts + data.missingDates + data.duplicateOrders + data.unmatchedStudents > 0) && <p role="status" className="text-sm text-amber-900 mt-3">資料待核對：金額異常 {data.invalidAmounts} 筆、缺少有效登記日期 {data.missingDates} 筆、重複訂單編號 {data.duplicateOrders} 筆、缺少學生 ID {data.unmatchedStudents} 筆。異常金額不計；日期缺漏不計本月；重複編號只計一次。</p>}
             </section>;
@@ -1321,8 +1325,21 @@
             }
           };
 
-          const handleApprove = async (bookingId) => {
-            if (!confirm("確認已收到款項並核准此預約？\n核准後可為該學員填寫訓練日誌結課。")) return;
+          const handleCashReceived = async booking => {
+            if (loading || !confirm(`確認已收到 ${booking.name} 的現金教練費 NT$${booking.paidPrice}？`)) return;
+            setLoading(true);
+            try {
+                const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                if (!accessToken) throw new Error('請重新登入 LINE。');
+                const result = await fetchAPI({ action: 'confirmCashPayment', bookingId: booking.bookingId, accessToken });
+                if (!result || result.status !== 'success') throw new Error((result && result.message) || '請更新 Apps Script 部署，支援確認現金收款。');
+                await fetchData();
+            } catch (err) { alert(err.message); }
+            finally { setLoading(false); }
+          };
+
+          const handleApprove = async (bookingId, cash = false) => {
+            if (!confirm(cash ? '確認此教練時段預約？學員將於現場付現，本次核准不代表已收款。' : "確認已收到款項並核准此預約？\n核准後可為該學員填寫訓練日誌結課。")) return;
             setLoading(true);
             await fetchAPI({ action: 'approveBooking', bookingId });
             fetchData();
@@ -1482,7 +1499,7 @@
                                return (
                               <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
                                 <td data-label="學生姓名" className="p-3 md:p-4 font-bold text-gray-800">{b.name}{b.makeupLeaveId && <span className="block text-xs font-normal text-emerald-700 mt-1">月繳補課（不重複收費）</span>}</td>
-                                <td data-label="金額" className="p-3 md:p-4 text-emerald-600 font-bold">NT$ {b.paidPrice}</td>
+                                <td data-label="金額" className="p-3 md:p-4 text-emerald-600 font-bold">NT$ {b.paidPrice}{['現場現金','現金已收'].includes(b.paymentCode) && <p className="text-xs text-amber-900 mt-1">{b.paymentCode === '現金已收' ? '現金已收款' : '現場付現 · 尚未確認收款'}</p>}</td>
                                 <td data-label="狀態 / 後五碼" className="p-3 md:p-4">
                                     {b.status === "已取消" ? <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-md">已取消</span> : b.status === "已完課" ? (
                                         <span className="text-gray-500 font-bold text-sm bg-gray-100 px-2 py-1 rounded-md">🏁 已完課結單</span>
@@ -1492,16 +1509,17 @@
                                         <div className="flex flex-col gap-1 w-fit">
                                             <span className="text-amber-600 font-bold text-sm animate-pulse">⏳ 審核中</span>
                                             <span className="text-xs text-gray-500 font-mono bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">
-                                              末五碼: {b.paymentCode || '未填寫'}
+                                              {b.paymentCode === '現場現金' ? '現場現金（尚未收款）' : b.paymentCode === '現金已收' ? '現金已收款' : `末五碼: ${b.paymentCode || '未填寫'}`}
                                             </span>
                                         </div>
                                     )}
                                 </td>
                                 <td data-label="操作" className="p-3 md:p-4 text-center">
                                     <div className="flex flex-wrap justify-center gap-2">
+                                        {b.paymentCode === '現場現金' && ['預約成功', '已完課'].includes(b.status) && b.bookingId && <button onClick={() => handleCashReceived(b)} disabled={loading} className="bg-amber-600 text-white font-bold py-2 px-3 rounded-lg disabled:opacity-50">確認現金收款</button>}
                                         {b.status === "審核中" && b.bookingId && (
-                                            <button onClick={() => handleApprove(b.bookingId)} disabled={loading} className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
-                                                對帳核准
+                                            <button onClick={() => handleApprove(b.bookingId, b.paymentCode === '現場現金')} disabled={loading} className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
+                                                {b.paymentCode === '現場現金' ? '確認預約（現場付現）' : '對帳核准'}
                                             </button>
                                         )}
                                         {b.status === "預約成功" && b.bookingId && (
@@ -1561,7 +1579,7 @@
             return (
                 <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
                     <h2 className="font-bold text-lg md:text-xl mb-5 border-b pb-3 text-slate-800">學員名單總覽</h2>
-                    <p className="text-sm text-gray-600 mb-4">累積付款金額依 LINE ID 加總已核准及已完課的現存訂單；未核准、已取消不計。</p>
+                    <p className="text-sm text-gray-600 mb-4">累積付款金額依 LINE ID 加總已核准及已完課的現存訂單；未核准、已取消、尚未確認現金收款不計。</p>
                     {paymentError && <p role="status" className="text-sm text-amber-800 mb-4">{paymentError}</p>}
                     <div className="mobile-list-wrap overflow-x-auto">
                         <table className="mobile-card-table w-full min-w-max text-left text-sm md:text-base whitespace-nowrap">

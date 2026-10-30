@@ -12,3 +12,5 @@ test('zero-charge makeup and duplicate IDs do not inflate totals',()=>{const res
 test('missing date contributes lifetime total but is flagged and excluded from month',()=>{const result=sum([order({timestamp:''})],'2026-10');assert.equal(result.monthlyTotal,0);assert.equal(result.memberTotals.get('student'),300);assert.equal(result.missingDates,1);});
 test('invalid amounts do not silently become valid payments',()=>{const result=sum(['',null,'wrong',-1,Infinity].map((paidPrice,i)=>order({paidPrice,bookingId:String(i)})),'2026-10');assert.equal(result.monthlyTotal,0);assert.equal(result.invalidAmounts,5);});
 test('legacy approved statuses and decimal money use cent arithmetic',()=>{const result=sum([order({paidPrice:0.1,status:'成功'}),order({bookingId:'two',paidPrice:0.2,status:'已完成'})],'2026-10');assert.equal(result.monthlyTotal,0.3);});
+
+test('cash reservations count only after coach confirms receipt',()=>{const pending=sum([order({paymentCode:'現場現金'})],'2026-10');assert.equal(pending.monthlyTotal,0);assert.equal(pending.memberTotals.size,0);const paid=sum([order({paymentCode:'現金已收'})],'2026-10');assert.equal(paid.monthlyTotal,300);});

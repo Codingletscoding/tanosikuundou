@@ -23,7 +23,7 @@ function doPost(e) {
       throw new Error("請求格式不正確。");
     }
     const action = payload.action;
-    const writeActions = ["registerUser", "bookClass", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking", "registerMonthlyLeave", "arrangeMonthlyMakeup", "cancelBooking", "updateSlot"];
+    const writeActions = ["registerUser", "bookClass", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking", "registerMonthlyLeave", "arrangeMonthlyMakeup", "cancelBooking", "updateSlot", "confirmCashPayment"];
     if (writeActions.includes(action)) {
       const candidate = LockService.getScriptLock();
       if (!candidate.tryLock(30000)) throw new Error("系統忙碌中，請稍後再試。");
@@ -86,7 +86,8 @@ function doPost(e) {
       const sheetBookings = ss.getSheetByName(SHEET_BOOKINGS);
       const sheetSlots = ss.getSheetByName(SHEET_SLOTS);
       const bookingId = Utilities.getUuid();
-      const paymentCode = payload.paymentCode || "";
+      const bookedSlot = monthlyUniqueRow_(sheetSlots, 0, payload.slotId, '課程');
+      const paymentCode = /^\[專屬教練課\]/.test(String(bookedSlot.row[1])) ? '現場現金' : (['現場現金', '現金已收'].includes(payload.paymentCode) ? '' : (payload.paymentCode || ''));
       
       sheetBookings.appendRow([new Date(), payload.slotId, payload.lineId, payload.name, payload.paidPrice, "審核中", paymentCode, bookingId]);
       
@@ -169,7 +170,7 @@ function doPost(e) {
       result = monthlyLeaveAction_(ss, payload);
     }
 
-    else if (["cancelBooking", "updateSlot"].includes(action)) {
+    else if (["cancelBooking", "updateSlot", "confirmCashPayment"].includes(action)) {
       result = coachManagementAction_(ss, payload);
     }
 

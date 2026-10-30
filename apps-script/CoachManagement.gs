@@ -1,6 +1,15 @@
 // Requires MonthlyLeave.gs and the original worksheet constants.
 function coachManagementAction_(ss, payload) {
   monthlyVerifyCoach_(payload.accessToken);
+  if (payload.action === 'confirmCashPayment') {
+    var sheet = ss.getSheetByName(SHEET_BOOKINGS);
+    var cashBooking = monthlyUniqueRow_(sheet, 7, payload.bookingId, '訂單');
+    if (['預約成功', '已完課', '成功', '已完成'].indexOf(cashBooking.row[5] || '預約成功') < 0) throw new Error('請先確認預約，已取消訂單不能登記收款。');
+    if (cashBooking.row[6] === '現金已收') return { status: 'success' };
+    if (cashBooking.row[6] !== '現場現金') throw new Error('此訂單不是現場現金付款。');
+    sheet.getRange(cashBooking.index, 7).setValue('現金已收');
+    return { status: 'success' };
+  }
   if (payload.action === 'cancelBooking') {
     var bookings = ss.getSheetByName(SHEET_BOOKINGS);
     var booking = monthlyUniqueRow_(bookings, 7, payload.bookingId, '訂單');
@@ -68,6 +77,7 @@ function coachManagementAction_(ss, payload) {
 function rejectCancelledBookingWrite_(ss, payload) {
   if (payload.bookingId && ['approveBooking','updatePayment','addLog'].indexOf(payload.action) !== -1) {
     var booking = monthlyUniqueRow_(ss.getSheetByName(SHEET_BOOKINGS), 7, payload.bookingId, '訂單');
+    if (payload.action === 'updatePayment' && (['現場現金', '現金已收'].indexOf(booking.row[6]) !== -1 || ['現場現金', '現金已收'].indexOf(payload.paymentCode) !== -1)) throw new Error('現金付款須由教練確認收款，不適用匯款後五碼修改。');
     if (booking.row[5] === '已取消') throw new Error('已取消訂單不可核准、更新付款或結課。');
   }
 }

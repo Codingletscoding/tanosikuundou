@@ -7,18 +7,23 @@ function doPost(e) {
   try {
     var payload = JSON.parse(e.postData.contents);
     // All writes share a lock so booking/deletion cannot race on remaining seats.
-    var writes = ['registerUser', 'bookClass', 'addSlot', 'deleteSlot', 'approveBooking', 'updatePayment', 'addLog', 'deleteBooking', 'registerMonthlyLeave', 'arrangeMonthlyMakeup', 'cancelBooking', 'updateSlot'];
+    var writes = ['registerUser', 'bookClass', 'addSlot', 'deleteSlot', 'approveBooking', 'updatePayment', 'addLog', 'deleteBooking', 'registerMonthlyLeave', 'arrangeMonthlyMakeup', 'cancelBooking', 'updateSlot', 'confirmCashPayment'];
     if (writes.indexOf(payload.action) !== -1) {
       lock = LockService.getScriptLock();
       if (!lock.tryLock(30000)) throw new Error('系統忙碌中，請稍後再試。');
     }
     if (payload.bookingId && ['approveBooking', 'updatePayment', 'addLog'].indexOf(payload.action) !== -1) rejectCancelledBookingWrite_(SpreadsheetApp.getActiveSpreadsheet(), payload);
-    if (['cancelBooking', 'updateSlot'].indexOf(payload.action) !== -1) return bookingDeletionResponse_(coachManagementAction_(SpreadsheetApp.getActiveSpreadsheet(), payload));
+    if (['cancelBooking', 'updateSlot', 'confirmCashPayment'].indexOf(payload.action) !== -1) return bookingDeletionResponse_(coachManagementAction_(SpreadsheetApp.getActiveSpreadsheet(), payload));
     if (['getMonthlyLeaves', 'registerMonthlyLeave', 'arrangeMonthlyMakeup'].indexOf(payload.action) !== -1) {
       return bookingDeletionResponse_(monthlyLeaveAction_(SpreadsheetApp.getActiveSpreadsheet(), payload));
     }
     if (payload.action === 'bookClass') validateBookingSlot_(SpreadsheetApp.getActiveSpreadsheet(), payload);
     if (payload.action !== 'deleteBooking') {
+      if (payload.action === 'bookClass') {
+        var slot = monthlyUniqueRow_(SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SLOTS), 0, payload.slotId, '課程');
+        payload.paymentCode = /^\[專屬教練課\]/.test(String(slot.row[1])) ? '現場現金' : (['現場現金', '現金已收'].indexOf(payload.paymentCode) !== -1 ? '' : (payload.paymentCode || ''));
+        e = { postData: { contents: JSON.stringify(payload) } };
+      }
       var output = handleRequest(e);
       if (payload.action === 'getCoachData') {
         var coachData = JSON.parse(output.getContent());

@@ -1,3 +1,7 @@
+# 教練時段現場付現
+
+請依 [現金付款修改位置](cash-payment-changes.md) 更新原程式及 `CoachManagement.gs`，然後更新原 Web App 部署。預約核准與現金收款分開，未收款不計入付款統計；團課原有匯款方式保留。
+
 # 取消預約與課程編輯
 
 請依 [原程式修改位置](coach-management-changes.md) 加入 `CoachManagement.gs` 並更新原部署。主檔及分檔入口均須搭配 `MonthlyLeave.gs` 與 `CoachManagement.gs`。
