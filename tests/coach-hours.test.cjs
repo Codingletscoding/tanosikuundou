@@ -1,0 +1,5 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const s=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');const code=s.slice(s.indexOf('        const splitCoachHours ='),s.indexOf('        const groupTariff ='))+'\nglobalThis.split=splitCoachHours;';const ctx={};vm.createContext(ctx);vm.runInContext(code,ctx);
+test('splits three hours into independent hour slots',()=>assert.deepEqual(Array.from(ctx.split('18:00','21:00')),['18:00 - 19:00','19:00 - 20:00','20:00 - 21:00']));
+test('supports start on half-hour and a single hour',()=>{assert.deepEqual(Array.from(ctx.split('18:30','20:30')),['18:30 - 19:30','19:30 - 20:30']);assert.equal(ctx.split('19:00','20:00').length,1);});
+for(const [start,end] of [['18:00','20:30'],['20:00','19:00'],['19:00','19:00'],['23:00','01:00'],['25:00','26:00']])test(`rejects ${start}-${end} instead of dropping or inventing time`,()=>assert.throws(()=>ctx.split(start,end)));

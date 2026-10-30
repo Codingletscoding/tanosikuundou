@@ -479,6 +479,19 @@
           );
         };
 
+        const splitCoachHours = (start, end) => {
+            const minutes = value => {
+                const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+                if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) throw new Error('請選擇有效的開始與結束時間。');
+                return Number(match[1]) * 60 + Number(match[2]);
+            };
+            const from = minutes(start), to = minutes(end);
+            if (to <= from) throw new Error('結束時間必須晚於開始時間，不支援跨日設定。');
+            if ((to - from) % 60 !== 0) throw new Error('教練時段以每小時分割，總時長需為整小時，請調整結束時間。');
+            const format = value => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+            return Array.from({ length: (to - from) / 60 }, (_, i) => `${format(from + i * 60)} - ${format(from + (i + 1) * 60)}`);
+        };
+
         const groupTariff = (mode, startTime, endTime, count = 4) => {
             const minutes = value => {
                 const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
@@ -697,15 +710,17 @@
                                 <div key={slot.id} className={`border p-5 rounded-2xl flex flex-col shadow-sm transition relative overflow-hidden ${isFull ? 'bg-gray-50 border-l-4 border-l-gray-400 opacity-80' : 'bg-green-50 border-l-4 border-l-green-500'}`}>
                                     <div className={`absolute top-0 right-0 text-xs px-3 py-1.5 rounded-bl-lg font-bold tracking-wide ${isFull ? 'bg-gray-200 text-gray-600' : 'bg-green-200 text-green-800'}`}>教練開放時段</div>
                                     <div className={`font-bold text-lg md:text-xl mt-1 ${isFull ? 'text-gray-500' : 'text-green-800'}`}>教練專屬時段</div>
+                                    <p className="text-xs text-green-900 mt-1">每小時教練費，不含場地費；場地由學員自行預約。</p>
                                     <div className="font-semibold text-gray-800 mt-2 text-sm md:text-base">{slot.date}</div>
                                     <div className="text-sm text-gray-500 mt-1">{slot.time} • {slotDisplayLocation}</div>
                                     
                                     {!isFull && (
                                       <div className="mt-4">
                                           <div className="text-xs md:text-sm text-red-600 bg-red-50 px-3 py-2 rounded border border-red-100 mb-3 font-medium">
-                                            ⚠️ 教練費 <strong>不含場地費</strong>，請選擇預約地點。
+                                            ⚠️ 此費用僅含教練教學，<strong>不含場地費；場地請學員自行預約並支付場地費</strong>。本系統不代訂場地。
                                           </div>
-                                          <select className="w-full border border-green-200 p-2.5 rounded-lg bg-white text-base md:text-sm outline-none shadow-sm" value={selectedLoc} onChange={(e) => setStudentLocations(prev => ({...prev, [slot.id]: e.target.value}))}>
+                                          <label className="block text-sm font-bold text-green-900 mb-2">上課場地（請學員自行預約）</label>
+                                          <select aria-label="上課場地（請學員自行預約）" className="w-full border border-green-200 p-2.5 rounded-lg bg-white text-base md:text-sm outline-none shadow-sm" value={selectedLoc} onChange={(e) => setStudentLocations(prev => ({...prev, [slot.id]: e.target.value}))}>
                                               {availableLocs.map(loc => (
                                                   <option key={loc} value={loc}>{loc === '自理場地(需私訊確認)' ? '其他場地(請先私訊教練)' : loc}</option>
                                               ))}
@@ -783,6 +798,7 @@
                                 <div className="font-black text-2xl text-emerald-600">NT$ {bookingTarget.myPrice}</div>
                             </div>
                             
+                            {bookingTarget.slot.title.startsWith('[專屬教練課]') && <p className="text-sm text-red-800 bg-red-50 border border-red-200 p-3 rounded-lg">此金額為教練費，不含場地費。學員須自行預約上課場地並支付場地費，本系統不代訂場地。</p>}
                             <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
                                 <div className="text-xs font-bold text-emerald-700 mb-1">請匯款至以下指定帳戶：</div>
                                 <div className="text-sm text-slate-700">銀行代號：<span className="font-bold text-slate-900">391</span></div>
@@ -1165,6 +1181,12 @@
           const [editingSlot, setEditingSlot] = useState(null);
           const cancellingRef = React.useRef(false);
 
+          const addingSlotsRef = React.useRef(false);
+          let coachHours = [], coachHoursError = '';
+          if (form.mode === 'coach') {
+            try { coachHours = splitCoachHours(form.startTime, form.endTime); }
+            catch (error) { coachHoursError = error.message; }
+          }
           const monthlyInfo = getMonthlyDatesInfo(form.date);
           const tariff = groupTariff(form.mode, form.startTime, form.endTime, monthlyInfo.count);
           useEffect(() => {
@@ -1189,24 +1211,37 @@
 
           const handleAddSlot = async (e) => {
             e.preventDefault();
-            setLoading(true);
+            if (addingSlotsRef.current) return;
+            let times = [`${form.startTime} - ${form.endTime}`];
             let finalTitle = form.title, finalCapacity = form.capacity, finalLocation = form.location;
-            if (form.mode === 'monthly') finalTitle = `[月繳${monthlyInfo.count}堂] ${form.title}`;
-            else if (form.mode === 'coach') {
-                if (allowedLocations.length === 0) {
-                    alert('請至少選擇一個允許學生預約的場地！');
-                    setLoading(false);
-                    return;
+            try {
+                if (form.mode === 'monthly') finalTitle = `[月繳${monthlyInfo.count}堂] ${form.title}`;
+                else if (form.mode === 'coach') {
+                    if (!allowedLocations.length) throw new Error('請至少選擇一個允許學生預約的場地！');
+                    times = splitCoachHours(form.startTime, form.endTime);
+                    if (slots.some(slot => /^\[專屬教練課\]/.test(slot.title) && doesSlotMatchDate(slot, form.date) && times.includes(slot.time))) throw new Error('此日期已有相同的教練時段，請先核對已開課程，避免重複上架。');
+                    finalTitle = `[專屬教練課] 1v1:${form.coachBase1v1}|1v2:${form.coachBase1v2}`;
+                    finalCapacity = 1;
+                    finalLocation = `coach_loc:${allowedLocations.join(',')}`;
                 }
-                finalTitle = `[專屬教練課] 1v1:${form.coachBase1v1}|1v2:${form.coachBase1v2}`;
-                finalCapacity = 1; 
-                finalLocation = `coach_loc:${allowedLocations.join(',')}`; 
-            }
+            } catch (error) { alert(error.message); return; }
+            addingSlotsRef.current = true; setLoading(true);
+            const created = [];
             const finalDate = form.mode === 'monthly' ? `${form.date.slice(0, 4)}年 ${monthlyInfo.text}` : `${form.date} (${getDayOfWeek(form.date)})`;
-            await fetchAPI({ action: 'addSlot', ...form, capacity: finalCapacity, location: finalLocation, title: finalTitle, date: finalDate, time: `${form.startTime} - ${form.endTime}` });
-            alert('課程上架成功！');
-            setForm({...form, date: ''}); 
-            fetchData(); setLoading(false);
+            try {
+                for (const time of times) {
+                    const result = await fetchAPI({ action: 'addSlot', ...form, capacity: finalCapacity, location: finalLocation, title: finalTitle, date: finalDate, time });
+                    if (!result || result.status !== 'success') throw new Error((result && result.message) || '後端未確認成功，請先核對課程清單。');
+                    created.push(time);
+                }
+                setForm(prev => ({ ...prev, date: '' }));
+                await fetchData();
+                alert(form.mode === 'coach' ? `已上架 ${created.length} 個獨立的一小時教練時段。` : '課程上架成功！');
+            } catch (error) {
+                setForm(prev => ({ ...prev, date: '' }));
+                await fetchData().catch(() => {});
+                alert(`上架未全部確認成功。已確認 ${created.length}/${times.length} 個時段${created.length ? '：' + created.join('、') : ''}。\n${error.message}\n請先核對已開課程，再設定尚未建立的時段，勿直接重複上架。`);
+            } finally { addingSlotsRef.current = false; setLoading(false); }
           };
 
           const updatePrice = (level, value) => {
@@ -1380,8 +1415,8 @@
                     ) : (
                         <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 space-y-4 mt-4">
                             <h3 className="text-sm font-bold text-indigo-800 border-b border-indigo-200 pb-2">專屬教練課收費設定 (基準價)</h3>
-                            <div className="flex items-center text-base md:text-sm gap-3"><span className="w-20 shrink-0 font-bold text-indigo-900">1對1 基準價</span><input type="number" required min="0" className="flex-1 min-w-0 border border-indigo-200 p-2 rounded-lg px-3 text-base" value={form.coachBase1v1} onChange={e=>setForm({...form, coachBase1v1: e.target.value})} /></div>
-                            <div className="flex items-center text-base md:text-sm gap-3"><span className="w-20 shrink-0 font-bold text-indigo-900">1對2 基準價</span><input type="number" required min="0" className="flex-1 min-w-0 border border-indigo-200 p-2 rounded-lg px-3 text-base" value={form.coachBase1v2} onChange={e=>setForm({...form, coachBase1v2: e.target.value})} /></div>
+                            <div className="flex items-center text-base md:text-sm gap-3"><span className="w-20 shrink-0 font-bold text-indigo-900">1對1 每小時</span><input type="number" required min="0" className="flex-1 min-w-0 border border-indigo-200 p-2 rounded-lg px-3 text-base" value={form.coachBase1v1} onChange={e=>setForm({...form, coachBase1v1: e.target.value})} /></div>
+                            <div className="flex items-center text-base md:text-sm gap-3"><span className="w-20 shrink-0 font-bold text-indigo-900">1對2 每小時</span><input type="number" required min="0" className="flex-1 min-w-0 border border-indigo-200 p-2 rounded-lg px-3 text-base" value={form.coachBase1v2} onChange={e=>setForm({...form, coachBase1v2: e.target.value})} /></div>
                             
                             <h3 className="text-sm font-bold text-indigo-800 border-b border-indigo-200 pb-2 mt-4">開放學員可選場地</h3>
                             <div className="flex flex-wrap gap-2 mt-2">
@@ -1394,7 +1429,11 @@
                             </div>
                         </div>
                     )}
-                    <button type="submit" disabled={loading} className="w-full bg-slate-800 text-white p-4 rounded-lg font-bold text-lg mt-6 active:scale-[0.98] transition">上架時段</button>
+                    {form.mode === 'coach' && <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mt-4 text-sm">
+                        <p className="font-bold">每小時自動分割，獨立預約</p>
+                        {coachHoursError ? <p role="alert" className="text-red-700 mt-2">{coachHoursError}</p> : <><p className="mt-2">將建立 {coachHours.length} 個時段，每段 1 小時、各 1 個名額。以上價格為每小時教練費，不含場地費，學員須自行預約場地。</p><ul className="mt-2 space-y-1">{coachHours.map(time => <li key={time}>{time}</li>)}</ul></>}
+                    </div>}
+                    <button type="submit" disabled={loading || (form.mode === 'coach' && !!coachHoursError)} className="w-full bg-slate-800 text-white p-4 rounded-lg font-bold text-lg mt-6 active:scale-[0.98] transition">上架時段</button>
                   </form>
                 </div>
 
