@@ -479,6 +479,31 @@
           );
         };
 
+        const groupTariff = (mode, startTime, endTime, count = 4) => {
+            const minutes = value => {
+                const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+                return match ? Number(match[1]) * 60 + Number(match[2]) : NaN;
+            };
+            const duration = minutes(endTime) - minutes(startTime);
+            if (![60, 120].includes(duration) || (mode === 'monthly' && count !== 4) || !['single', 'monthly'].includes(mode)) return null;
+            const single = duration === 60 ? 300 : 580;
+            return { duration, regular: mode === 'monthly' ? single * 4 : single, price: mode === 'monthly' ? (duration === 60 ? 1000 : 2000) : single };
+        };
+        const slotGroupTariff = slot => {
+            const time = String(slot.time || '').match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
+            if (!time || /^\[專屬教練課\]/.test(slot.title)) return null;
+            const monthly = String(slot.title).match(/^\[月繳(\d+)堂\]/);
+            const tariff = groupTariff(monthly ? 'monthly' : 'single', time[1], time[2], monthly ? Number(monthly[1]) : 4);
+            return tariff && Number(slot.prices[1]) === tariff.price ? tariff : null;
+        };
+        const GroupPricingNotice = () => <section aria-label="一般會員團課收費" className="bg-white border rounded-2xl p-4 md:p-6 mb-4">
+            <h2 className="font-bold text-slate-800 mb-3">一般會員團課收費</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div className="bg-slate-50 rounded-lg p-3"><p className="font-bold">單堂團課</p><p className="mt-1">1 小時 NT$300</p><p>2 小時 NT$580</p></div>
+                <div className="bg-amber-50 rounded-lg p-3"><p className="font-bold">月繳團課 · 4 堂方案</p><p className="mt-1">每堂 1 小時：<del className="text-gray-500">NT$1,200</del> <strong className="text-emerald-700">NT$1,000</strong></p><p>每堂 2 小時：<del className="text-gray-500">NT$2,320</del> <strong className="text-emerald-700">NT$2,000</strong></p></div>
+            </div><p className="text-xs text-gray-500 mt-3">月繳價格為 4 堂合計；實際預約金額以所選課程及會員等級顯示為準。</p>
+        </section>;
+
         const BOOKING_AGREEMENTS = [
             ['預約確認', '為了確保每堂課的教學品質，送出預約登記後，需經由我們確認，並收到預約成功通知，才算真正完成預約喔！'],
             ['開課門檻', '大家一起練球最有氣氛！若該預約時段未達基本開課人數，課程將會取消，我們也會通知您，並協助辦理當次課程的全額退費。'],
@@ -594,6 +619,7 @@
           );
 
           return (
+            <div><div className="p-4 md:px-8 md:pt-8"><GroupPricingNotice /></div>
             <div className="flex flex-col md:flex-row gap-0 md:gap-8 p-0 md:p-8 pb-10 relative">
               <div className="bg-white px-2 md:px-6 py-4 md:py-6 shadow-sm border-b md:border md:rounded-2xl w-full md:w-1/3 md:sticky md:top-6 h-fit">
                 <div className="flex justify-between items-center mb-4 px-4">
@@ -707,9 +733,10 @@
                               );
                           }
 
-                          const originalPrice = slot.prices[1]; 
+                          const tariff = slotGroupTariff(slot);
+                          const originalPrice = tariff ? tariff.regular : slot.prices[1];
                           const myPrice = slot.prices[userLevel]; 
-                          const isDiscounted = userLevel > 1 && myPrice < originalPrice; 
+                          const isDiscounted = Number(myPrice) < Number(originalPrice);
 
                           return (
                             <div key={slot.id} className={`border p-5 rounded-2xl flex flex-col shadow-sm transition relative overflow-hidden ${isFull ? 'bg-gray-50 border-l-4 border-l-gray-400 opacity-80' : 'bg-white border-l-4 border-l-blue-500 hover:shadow-md'}`}>
@@ -723,7 +750,8 @@
                                 <button onClick={() => handleBookClick(slot)} disabled={status==='booking' || isFull} className={`font-bold py-2.5 px-6 rounded-lg shadow-sm text-sm md:text-base active:scale-95 transition-transform whitespace-nowrap ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>{isFull ? '已額滿' : '預約'}</button>
                               </div>
                               <div className={`mt-4 pt-4 border-t flex items-center justify-between w-full ${isFull ? 'border-gray-200 opacity-60' : 'border-gray-100'}`}>
-                                <div className="flex items-baseline gap-2">
+                                <div className="flex flex-wrap items-baseline gap-2">
+                                  {isDiscounted && <del className="text-gray-500 text-xs">NT$ {originalPrice}</del>}
                                   <span className={`${isFull ? 'text-gray-500' : 'text-emerald-600'} font-bold text-xl`}>NT$ {myPrice}</span>
                                   {isDiscounted && <span className="bg-red-50 text-red-600 border border-red-200 text-[10px] md:text-xs px-2 py-0.5 rounded font-bold">特價</span>}
                                 </div>
@@ -785,7 +813,7 @@
                     </div>
                 </div>
               )}
-            </div>
+            </div></div>
           );
         };
 
@@ -1125,7 +1153,7 @@
           const [form, setForm] = useState({ 
             mode: 'single', title: '新手團課', location: '關聖里活動中心',
             date: '', startTime: '19:00', endTime: '21:00', capacity: '6', 
-            prices: { 1: 300, 2: 294, 3: 285, 4: 270, 5: 264 },
+            prices: { 1: 580, 2: 568, 3: 551, 4: 522, 5: 510 },
             coachBase1v1: '1000', coachBase1v2: '1500'
           });
           const [allowedLocations, setAllowedLocations] = useState([...LOCATIONS_LIST]);
@@ -1138,6 +1166,12 @@
           const cancellingRef = React.useRef(false);
 
           const monthlyInfo = getMonthlyDatesInfo(form.date);
+          const tariff = groupTariff(form.mode, form.startTime, form.endTime, monthlyInfo.count);
+          useEffect(() => {
+            if (form.mode === 'coach') return;
+            const next = groupTariff(form.mode, form.startTime, form.endTime, getMonthlyDatesInfo(form.date).count);
+            setForm(prev => ({ ...prev, prices: Object.fromEntries([1,2,3,4,5].map(level => [level, next ? Math.round(next.price * getVIPDiscount(level)) : ''])) }));
+          }, [form.mode, form.startTime, form.endTime, form.date]);
 
           const fetchData = () => {
             return Promise.all([fetchAPI({ action: 'getCoachData' }), fetchAPI({ action: 'getSlots' })]).then(([bRes, sRes]) => {
@@ -1334,6 +1368,7 @@
                             <div><label className="block text-sm mb-1.5 text-gray-700 font-bold">總名額</label><input type="number" required min="1" className="w-full border border-gray-300 p-3 rounded-lg text-base" value={form.capacity} onChange={e=>setForm({...form, capacity: e.target.value})} /></div>
                             <div className="bg-gray-50 p-4 rounded-xl border space-y-3 mt-4">
                               <h3 className="text-sm font-bold text-gray-700 border-b pb-2">各等級收費 (NT$)</h3>
+                              {tariff ? <p className="text-sm text-emerald-800">一般會員：{form.mode === 'monthly' ? `4 堂原價 NT$${tariff.regular}，優惠 NT$${tariff.price}` : `單堂 NT$${tariff.price}`}。已帶入價格，可手動調整。</p> : <p className="text-sm text-amber-800">公告價格適用 1／2 小時，以及月繳 4 堂。其他時長或堂數請手動填寫價格，系統不自動套用 4 堂優惠。</p>}
                               {[1,2,3,4,5].map(lvl => (
                                 <div key={lvl} className="flex items-center text-base md:text-sm">
                                     <span className="w-16 shrink-0 font-bold text-gray-600">{LEVEL_NAMES[lvl]}</span>
