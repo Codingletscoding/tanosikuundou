@@ -9,7 +9,13 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <script src="./ja.js"></script>
+    <script src="./i18n.js"></script>
     <style>
+        .language-switch { display: flex; justify-content: flex-end; gap: 6px; padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+        .language-switch button { min-height: 44px; padding: 8px 14px; border-radius: 8px; border: 1px solid #cbd5e1; background: white; color: #334155; font-weight: 700; }
+        .language-switch button[aria-pressed="true"] { background: #047857; border-color: #047857; color: white; }
+        html[lang="ja"] { overflow-wrap: anywhere; }
         html { -webkit-text-size-adjust: 100%; }
         body { margin: 0; overflow-wrap: anywhere; }
         button, input, select, textarea { touch-action: manipulation; }
@@ -152,12 +158,15 @@
 
         const fetchAPI = async (payload) => {
           try {
+              if (window.BadmintonI18n) window.BadmintonI18n.remember(payload);
               const res = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify(payload)
               });
-              return await res.json();
+              const result = await res.json();
+              if (window.BadmintonI18n) window.BadmintonI18n.remember(result);
+              return result;
           } catch (err) {
               console.error("API 錯誤", err);
               return { status: 'error' };
@@ -1683,6 +1692,7 @@
               await liff.init({ liffId: LIFF_ID });
               if (!liff.isLoggedIn()) { liff.login({ redirectUri: window.location.href.split('#')[0] }); return; }
               const profile = await liff.getProfile();
+              if (window.BadmintonI18n) window.BadmintonI18n.remember(profile);
               if (!profile || !profile.userId) throw new Error('無法取得 LINE 身分，請確認 LIFF 的 profile 權限。');
               setLiffState({ init: true, profile });
               const res = await fetchAPI({ action: 'checkUser', lineId: profile.userId });
