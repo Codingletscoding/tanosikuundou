@@ -23,7 +23,7 @@ function doPost(e) {
       throw new Error("請求格式不正確。");
     }
     const action = payload.action;
-    const writeActions = ["registerUser", "bookClass", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking", "registerMonthlyLeave", "arrangeMonthlyMakeup", "cancelBooking", "updateSlot", "confirmCashPayment"];
+    const writeActions = ["registerUser", "completeAccountRegistration", "bookClass", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking", "registerMonthlyLeave", "arrangeMonthlyMakeup", "cancelBooking", "updateSlot", "confirmCashPayment"];
     if (writeActions.includes(action)) {
       const candidate = LockService.getScriptLock();
       if (!candidate.tryLock(30000)) throw new Error("系統忙碌中，請稍後再試。");
@@ -53,22 +53,35 @@ function doPost(e) {
       for (let i = 1; i < data.length; i++) {
         if (data[i][0] === payload.lineId) {
           isRegistered = true;
-          userData = { name: data[i][1], age: data[i][2], phone: data[i][3], level: data[i][5] || 1, students: accountStudents_(data[i]), studentCount: accountStudents_(data[i]).length };
+          userData = accountUser_(data[i]);
           break;
         }
       }
       const isAdmin = ADMIN_LINE_IDS.includes(payload.lineId);
-      result = { status: "success", isRegistered: isRegistered, user: userData, isAdmin: isAdmin };
+      result = { status: "success", isRegistered: isRegistered, user: userData, isAdmin: isAdmin, accountRegistrationVersion: 1 };
     } 
     
-    else if (action === "registerUser") {
+    else if (action === "registerUser" || action === "completeAccountRegistration") {
       const sheet = ss.getSheetByName(SHEET_USERS);
       const students = validateAccountStudents_(payload);
+      const rows = sheet.getDataRange().getValues();
+      const matches = rows.map((row, i) => i > 0 && row[0] === payload.lineId ? i : -1).filter(i => i > 0);
+      let oldRow = null;
+      if (action === 'completeAccountRegistration') {
+        verifyAccountOwner_(payload.accessToken, payload.lineId);
+        if (matches.length !== 1) throw new Error('找不到唯一的帳號資料，請聯絡教練確認。');
+        oldRow = rows[matches[0]];
+        if (oldRow[6]) throw new Error('此帳號已完成學生資料登記，請重新登入。');
+        // Preserve the original student's legacy logs and bookings, even if names were missing.
+        students[0].id = '';
+      } else if (matches.length) throw new Error('此帳號已註冊，請重新登入並使用補登學生資料。');
       accountReserveColumn_(sheet, 7, '帳號學生資料');
       accountReserveColumn_(sheet, 8, '代表身分證字號');
-      if (sheet.getDataRange().getValues().slice(1).some(row => row[0] === payload.lineId)) throw new Error('此帳號已註冊，請重新登入。');
-      sheet.appendRow([payload.lineId, students[0].name, students[0].age, payload.phone.replace(/[\s-]/g, ''), new Date(), 1, JSON.stringify(students), payload.idNumber.toUpperCase()]);
-      result = { status: "success" };
+      const row = [payload.lineId, students[0].name, students[0].age, payload.phone.replace(/[\s-]/g, ''), oldRow ? oldRow[4] : new Date(), oldRow ? (oldRow[5] || 1) : 1, JSON.stringify(students), payload.idNumber.toUpperCase()];
+      if (oldRow) sheet.getRange(matches[0] + 1, 1, 1, 8).setValues([row]);
+      else sheet.appendRow(row);
+      result = { status: 'success', user: accountUser_(row), studentCount: students.length };
+
     }
     
     else if (action === "getSlots") {
@@ -689,4 +702,19 @@ function rejectCancelledBookingWrite_(ss, payload) {
     if (payload.action === 'updatePayment' && (['現場現金', '現金已收'].indexOf(booking.row[6]) !== -1 || ['現場現金', '現金已收'].indexOf(payload.paymentCode) !== -1)) throw new Error('現金付款須由教練確認收款，不適用匯款後五碼修改。');
     if (booking.row[5] === '已取消') throw new Error('已取消訂單不可核准、更新付款或結課。');
   }
+}
+
+function accountUser_(row) {
+  const students = accountStudents_(row);
+  return { name: row[1], age: row[2], phone: row[3], level: row[5] || 1, students: students, studentCount: students.length, registrationComplete: !!row[6] };
+}
+function verifyAccountOwner_(accessToken, lineId) {
+  const channelId = PropertiesService.getScriptProperties().getProperty('LINE_LOGIN_CHANNEL_ID');
+  if (!channelId || !accessToken) throw new Error('請確認 LINE 登入設定並重新登入後補登資料。');
+  const verification = monthlyFetchLine_('https://api.line.me/oauth2/v2.1/verify?access_token=' + encodeURIComponent(accessToken), { muteHttpExceptions: true });
+  if (verification.getResponseCode() !== 200) throw new Error('LINE 登入已失效，請重新登入。');
+  const token = JSON.parse(verification.getContentText());
+  if (String(token.client_id) !== String(channelId) || !(Number(token.expires_in) > 0)) throw new Error('LINE 登入驗證失敗。');
+  const response = monthlyFetchLine_('https://api.line.me/v2/profile', { headers: { Authorization: 'Bearer ' + accessToken }, muteHttpExceptions: true });
+  if (response.getResponseCode() !== 200 || JSON.parse(response.getContentText()).userId !== lineId) throw new Error('只能補登自己帳號的學生資料。');
 }

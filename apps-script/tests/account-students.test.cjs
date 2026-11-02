@@ -14,10 +14,10 @@ function fixture(options={}) {
   getDataRange:()=>({getValues:()=>rows[name].map(row=>row.slice())}),
   appendRow:row=>{assert(locked);if(name==='預約名單' && ++appends===options.failAppend)throw Error('write failed');rows[name].push(row.slice());},
   deleteRow:index=>{assert(locked);rows[name].splice(index-1,1);},
-  getRange:(row,column)=>({setValue:value=>{assert(locked);rows[name][row-1][column-1]=value;}})
+  getRange:(row,column)=>({setValue:value=>{assert(locked);rows[name][row-1][column-1]=value;},setValues:values=>{assert(locked);values.forEach((cells,y)=>cells.forEach((value,x)=>rows[name][row-1+y][column-1+x]=value));}})
  };
  const ss={getSheetByName:sheet};
- const context={SpreadsheetApp:{getActiveSpreadsheet:()=>ss,flush(){}},LockService:{getScriptLock:()=>({tryLock:()=>{locked=true;return true;},releaseLock:()=>{locked=false;}})},Utilities:{getUuid:()=>`id-${++sequence}`},ContentService:{MimeType:{JSON:'json'},createTextOutput:text=>({text,setMimeType(){return this;}})}};
+ const context={PropertiesService:{getScriptProperties:()=>({getProperty:()=> 'channel'})},UrlFetchApp:{fetch:url=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify(url.includes('/verify?')?{client_id:'channel',expires_in:3600}:{userId:options.otherUser?'other':'account'})})},SpreadsheetApp:{getActiveSpreadsheet:()=>ss,flush(){}},LockService:{getScriptLock:()=>({tryLock:()=>{locked=true;return true;},releaseLock:()=>{locked=false;}})},Utilities:{getUuid:()=>`id-${++sequence}`},ContentService:{MimeType:{JSON:'json'},createTextOutput:text=>({text,setMimeType(){return this;}})}};
  vm.createContext(context);
  vm.runInContext(['complete/Code.gs'].map(file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8')).join('\n'),context);
  const run=payload=>JSON.parse(context.doPost({postData:{contents:JSON.stringify({lineId:'account',...payload})}}).text);
@@ -64,4 +64,25 @@ test('cancel and delete restore only each student seat and preserve siblings',()
  assert.equal(f.rows['可用時段'][1][6],3);assert.equal(orders[1][5],'審核中');
  assert.equal(f.run({action:'deleteBooking',bookingId:orders[1][7]}).status,'success');
  assert.equal(f.rows['可用時段'][1][6],4);assert(f.rows['預約名單'].some(row=>row[7]===orders[2][7]));
+});
+
+test('repair upgrades a legacy account to three students and preserves level and original records',()=>{
+ const f=fixture();f.rows['會員資料'].push(['account','舊姓名',20,'0912345678','original-date',3]);
+ f.rows['訓練日誌'].push([0,'account','舊姓名','2026-01-01',1,0,0,0,0,0,0,0,0,'原有紀錄']);
+ f.rows['預約名單'].push([0,'slot','account','舊姓名',285,'預約成功','','old-booking']);
+ assert.equal(f.run({action:'checkUser'}).user.registrationComplete,false);
+ const students=[1,2,3].map(i=>({name:'學生'+i,nickname:'暱稱'+i,gender:'男',age:12}));
+ const result=f.run({action:'completeAccountRegistration',accessToken:'mock',students,phone:'0912345678',idNumber:'A123456789'});
+ assert.equal(result.status,'success');assert.equal(result.user.students.length,3);assert.equal(result.user.registrationComplete,true);
+ assert.equal(f.rows['會員資料'].length,2);assert.equal(f.rows['會員資料'][1][4],'original-date');assert.equal(result.user.level,3);
+ assert.equal(f.run({action:'getStudentStats',studentId:''}).totalClasses,1);
+ assert.equal(f.run({action:'getStudentStats',studentId:result.user.students[1].id}).totalClasses,0);
+ assert.equal(f.run({action:'bookClass',slotId:'slot'}).status,'success');assert.equal(f.rows['可用時段'][1][6],2);
+ assert.equal(f.rows['預約名單'].slice(2).reduce((sum,row)=>sum+row[4],0),855);
+ assert.equal(f.run({action:'completeAccountRegistration',accessToken:'mock',students,phone:'0912345678',idNumber:'A123456789'}).status,'error');
+});
+test('repair rejects another LINE user and leaves existing profile untouched',()=>{
+ const f=fixture({otherUser:true});f.rows['會員資料'].push(['account','舊姓名',20,'0912345678',0,1]);
+ const result=f.run({action:'completeAccountRegistration',accessToken:'mock',students:[{name:'新學生',nickname:'暱稱',gender:'女',age:10}],phone:'0912345678',idNumber:'A123456789'});
+ assert.equal(result.status,'error');assert.equal(f.rows['會員資料'][1][1],'舊姓名');assert.equal(f.rows['會員資料'][1][6],undefined);
 });

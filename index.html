@@ -443,10 +443,17 @@
         // 🔹 學生端主頁面與子視圖
         // ==========================================
 
-        const RegisterView = ({ profile, onRegistered }) => {
+        const validateAccountRecord = (user, expectedCount = null) => {
+          if (!user || !Array.isArray(user.students) || user.students.length < 1 || user.students.length > 3) throw new Error('後端尚未回傳完整學生資料，請先更新原有 Apps Script 部署為最新完整 Code.gs，再重新登入。');
+          if (user.studentCount != null && Number(user.studentCount) !== user.students.length) throw new Error('帳號學生人數資料不一致，請聯絡教練確認。');
+          if (expectedCount != null && (user.students.length !== expectedCount || user.registrationComplete === false)) throw new Error('學生資料尚未完整儲存，請保留表單並確認 Apps Script 已更新，再重試。');
+          return user;
+        };
+
+        const RegisterView = ({ profile, onRegistered, existingUser = null, onCancel }) => {
           const emptyStudent = () => ({ name: '', nickname: '', gender: '', age: '' });
-          const [students, setStudents] = useState([{ ...emptyStudent(), name: (profile ? profile.displayName : '') || '' }]);
-          const [form, setForm] = useState({ phone: '', idNumber: '' });
+          const [students, setStudents] = useState([{ ...emptyStudent(), name: existingUser?.name || profile?.displayName || '', age: existingUser?.age || '' }]);
+          const [form, setForm] = useState({ phone: existingUser?.phone || '', idNumber: '' });
           const [submitting, setSubmitting] = useState(false);
           const updateStudent = (index, key, value) => setStudents(previous => previous.map((student, i) => i === index ? { ...student, [key]: value } : student));
           const handleSubmit = async (e) => {
@@ -455,13 +462,22 @@
             const cleanPhone = form.phone.replace(/[\s-]/g, '');
             if (!/^09\d{8}$/.test(cleanPhone)) { alert('請輸入 09 開頭的 10 位手機號碼'); return; }
             setSubmitting(true);
-            const result = await fetchAPI({ action: 'registerUser', lineId: profile ? profile.userId : '', students, phone: cleanPhone, idNumber: form.idNumber.toUpperCase() });
-            setSubmitting(false);
-            if (result.status !== 'success') { alert(result.message || '註冊失敗，請稍後再試'); return; }
-            // Reload server-issued student IDs; do not retain identity documents in UI state.
-            const registered = await fetchAPI({ action: 'checkUser', lineId: profile ? profile.userId : '' });
-            if (registered.status !== 'success' || !registered.user) { alert('資料已送出，請重新登入確認註冊結果。'); return; }
-            if (onRegistered) onRegistered(registered.user);
+            try {
+              const lineId = profile ? profile.userId : '';
+              const support = await fetchAPI({ action: 'checkUser', lineId });
+              if (support.status !== 'success' || support.accountRegistrationVersion !== 1) throw new Error('目前後端尚未支援完整多人註冊，請先更新原有 Apps Script 部署為最新完整 Code.gs；本次尚未送出資料。');
+              const action = existingUser ? 'completeAccountRegistration' : 'registerUser';
+              const accessToken = existingUser && typeof liff !== 'undefined' ? liff.getAccessToken() : undefined;
+              const result = await fetchAPI({ action, lineId, students, phone: cleanPhone, idNumber: form.idNumber.toUpperCase(), accessToken });
+              if (result.status !== 'success') throw new Error(result.message || '註冊失敗，請稍後再試');
+              validateAccountRecord(result.user, students.length);
+              const registered = await fetchAPI({ action: 'checkUser', lineId });
+              if (registered.status !== 'success') throw new Error('資料已送出，讀取失敗，請重新登入確認。');
+              const savedUser = validateAccountRecord(registered.user, students.length);
+              if (onRegistered) onRegistered(savedUser);
+            } catch (error) { alert(error.message); }
+            finally { setSubmitting(false); }
+
           };
 
           return (
@@ -470,7 +486,7 @@
                 <img src="./ll.png" alt="樂動羽球" className="w-16 h-16 rounded-full shadow-sm object-cover" />
                 <div>
                   <h2 className="text-2xl font-bold text-slate-800">歡迎來到樂動羽球</h2>
-                  <p className="text-sm text-slate-500 mt-1">首次登入請綁定學員資料</p>
+                  <p className="text-sm text-slate-500 mt-1">{existingUser ? '補登同帳號學生資料（保留既有預約與紀錄）' : '首次登入請綁定學員資料'}</p>
                 </div>
               </div>
               <form onSubmit={handleSubmit} className="space-y-5">
@@ -491,8 +507,9 @@
                   </>}
                 </fieldset>)}
                 <button type="submit" disabled={submitting} className="w-full bg-slate-800 text-white p-4 mt-4 rounded-lg font-bold text-lg hover:bg-slate-700 transition active:scale-[0.98]">
-                    {submitting ? '處理中...' : '確認綁定'}
+                    {submitting ? '處理中...' : (existingUser ? '儲存學生資料' : '確認綁定')}
                 </button>
+                {onCancel && <button type="button" disabled={submitting} onClick={onCancel} className="w-full border p-3 rounded-lg">返回</button>}
               </form>
             </div>
           );
@@ -586,7 +603,7 @@
           const [bookingTarget, setBookingTarget] = useState(null);
           const [agreementAccepted, setAgreementAccepted] = useState(false);
           const [paymentCode, setPaymentCode] = useState(''); 
-          const studentCount = userRecord && userRecord.students ? userRecord.students.length : 1;
+          const studentCount = validateAccountRecord(userRecord).students.length;
           const userLevel = userRecord ? (userRecord.level || 1) : 1;
 
           useEffect(() => {
@@ -1057,7 +1074,7 @@
             );
         };
 
-        const StudentDashboard = ({ profile, userRecord }) => {
+        const StudentDashboard = ({ profile, userRecord, onCompleteRegistration }) => {
             const [activeTab, setActiveTab] = useState('booking'); 
             const userLevel = userRecord ? (userRecord.level || 1) : 1;
 
@@ -1090,6 +1107,7 @@
                     </div>
 
                     <div className="flex-1 min-w-0 overflow-y-auto">
+                        {userRecord.registrationComplete === false && <div className="m-4 p-4 border rounded-xl bg-amber-50"><p>目前帳號只有舊版單人資料；若先前選擇多人但未儲存，請補登全部學生資料。</p><button onClick={onCompleteRegistration} className="mt-3 bg-amber-700 text-white p-3 rounded-lg font-bold">補登同帳號學生資料</button></div>}
                         {activeTab === 'booking' ? <StudentBookingView profile={profile} userRecord={userRecord} /> : <StudentRecordsView lineId={profile ? profile.userId : ''} userRecord={userRecord} />}
                     </div>
                 </div>
@@ -1716,7 +1734,7 @@
               const res = await fetchAPI({ action: 'checkUser', lineId: profile.userId });
               if (!res || res.status !== 'success') throw new Error((res && res.message) || '無法確認帳號權限，請確認 Apps Script 部署及網路連線。');
               if (res.isAdmin === true) setView('coach');
-              else if (res.isRegistered === true && res.user) { setUserRecord(res.user); setView('student'); }
+              else if (res.isRegistered === true && res.user) { setUserRecord(validateAccountRecord(res.user)); setView('student'); }
               else if (res.isRegistered === false && res.isAdmin === false) setView('register');
               else throw new Error('帳號權限回應不完整，請更新 Apps Script 部署。');
             } catch (err) { setLoginError(err.message || '登入失敗，請重試。'); setView('login-error'); }
@@ -1731,7 +1749,8 @@
             {liffState.profile && <div className="mt-5 text-sm text-gray-600"><p>若教練身分未被辨識，請確認此 LINE 帳號的 user ID 已列入後端 ADMIN_LINE_IDS，且 LIFF 使用相同 LINE Provider。</p><details className="mt-3"><summary>查看目前登入帳號 ID</summary><p className="mt-2 break-all select-all">{liffState.profile.userId}</p></details></div>}
           </div>;
           if (view === 'register') return <div>{liffState.profile && <details className="max-w-md mx-auto p-4 text-sm text-gray-600"><summary>我是教練，但未進入後台</summary><p className="mt-2">請確認後端 ADMIN_LINE_IDS 包含以下 LINE user ID，並更新原 Web App 部署。不同 LINE Provider 的 ID 可能不同。</p><p className="break-all select-all mt-2">{liffState.profile.userId}</p><button onClick={login} className="border p-3 rounded-lg mt-3">重新確認權限</button></details>}<RegisterView profile={liffState.profile} onRegistered={(u) => { setUserRecord(u); setView('student'); }} /></div>;
-          if (view === 'student') return <StudentDashboard profile={liffState.profile} userRecord={userRecord} />;
+          if (view === 'complete-registration') return <RegisterView profile={liffState.profile} existingUser={userRecord} onCancel={() => setView('student')} onRegistered={u => { setUserRecord(u); setView('student'); }} />;
+          if (view === 'student') return <StudentDashboard profile={liffState.profile} userRecord={userRecord} onCompleteRegistration={() => setView('complete-registration')} />;
           if (view === 'coach') return <CoachDashboard />;
         };
 
