@@ -212,7 +212,8 @@
             const handleUpdate = async () => {
                 if(!code || code.length < 5) return alert("請輸入完整的帳號後5碼！");
                 setUpdating(true);
-                await fetchAPI({ action: 'updatePayment', bookingId: booking.bookingId, paymentCode: code });
+                const result = await fetchAPI({ action: 'updatePayment', bookingId: booking.bookingId, paymentCode: code });
+                if (result.status !== 'success') { setUpdating(false); alert(result.message || '更新失敗，請稍後再試。'); return; }
                 alert("帳號後5碼已成功更新！請等待教練審核。");
                 setUpdating(false);
                 if (onUpdate) onUpdate();
@@ -594,7 +595,44 @@
             </div>;
         };
 
-        const StudentBookingView = ({ profile, userRecord }) => {
+        const StudentBookingTracking = ({ lineId, students, revision }) => {
+            const [groups, setGroups] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState('');
+            const requestRef = React.useRef(0);
+            const fetchTracking = async () => {
+                const requestId = ++requestRef.current;
+                setLoading(true); setError('');
+                try {
+                    if (!lineId) throw new Error('無法確認帳號，請重新登入。');
+                    const results = await Promise.all(students.map(async student => {
+                        const result = await fetchAPI({ action: 'getStudentStats', lineId, studentId: student.id });
+                        if (result.status !== 'success' || !Array.isArray(result.bookings)) throw new Error(result.message || '預約紀錄讀取失敗，請重試。');
+                        return { student, bookings: result.bookings };
+                    }));
+                    if (requestId === requestRef.current) setGroups(results);
+                } catch (error) {
+                    if (requestId === requestRef.current) setError(error.message);
+                } finally {
+                    if (requestId === requestRef.current) setLoading(false);
+                }
+            };
+            useEffect(() => {
+                fetchTracking();
+                return () => { requestRef.current++; };
+            }, [lineId, students, revision]);
+            return <section aria-labelledby="booking-tracking-title" className="m-4 md:mx-8 mb-8 bg-white rounded-2xl shadow-sm border p-5 md:p-6">
+                <h3 id="booking-tracking-title" className="font-bold text-slate-800 mb-4 text-base md:text-lg">追蹤中預約單 <span className="text-xs text-gray-400 font-normal">（完課後自動隱藏）</span></h3>
+                {loading ? <p role="status" className="text-gray-500">讀取預約紀錄中...</p> : error ? <div role="alert"><p>{error}</p><button onClick={fetchTracking} className="mt-3 border rounded-lg p-3">重新讀取預約單</button></div> : <div className="space-y-6">
+                    {groups.map(({ student, bookings }) => <div key={student.id}>
+                        <h4 className="font-bold text-slate-700 mb-3">{student.name}{student.nickname ? `（${student.nickname}）` : ''}</h4>
+                        <div className="space-y-4">{bookings.length === 0 ? <p className="text-gray-400 text-sm">目前尚無未結案之預約紀錄</p> : bookings.map((booking, index) => <BookingStatusItem key={booking.bookingId || `${student.id}-${index}`} booking={booking} onUpdate={fetchTracking} />)}</div>
+                    </div>)}
+                </div>}
+            </section>;
+        };
+
+        const StudentBookingView = ({ profile, userRecord, onBooked }) => {
           const [slots, setSlots] = useState([]);
           const [status, setStatus] = useState('idle');
           const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -643,6 +681,7 @@
             if (result.status !== 'success') { setStatus('idle'); alert(result.message || '預約失敗，請稍後再試'); return; }
             setStatus('success');
             setBookingTarget(null);
+            if (onBooked) onBooked();
           };
 
           const year = currentMonth.getFullYear();
@@ -659,7 +698,7 @@
           if (status === 'success') return (
             <div className="p-8 text-center bg-white rounded-xl shadow-md m-6 md:m-10 border-t-4 border-emerald-500">
               <h2 className="text-2xl font-bold text-emerald-600 mb-4">預約成功！</h2>
-              <p className="text-gray-500 mb-6">您的訂單目前為<span className="text-amber-600 font-bold mx-1">審核中</span><br/>可至「我的訓練紀錄」追蹤狀態。教練時段請於現場付現；團課可於紀錄中補登匯款後五碼。</p>
+              <p className="text-gray-500 mb-6">您的訂單目前為<span className="text-amber-600 font-bold mx-1">審核中</span><br/>可在本頁下方「追蹤中預約單」查看狀態。教練時段請於現場付現；團課可在預約單補登匯款後五碼。</p>
               <button onClick={() => window.location.reload()} className="w-full max-w-xs mx-auto bg-slate-800 text-white py-3 rounded-lg font-bold block transition hover:bg-slate-700">繼續預約</button>
             </div>
           );
@@ -1025,21 +1064,6 @@
                         <div className="text-5xl md:text-6xl font-extrabold text-slate-800">{data.totalClasses || 0} <span className="text-lg text-gray-500 font-normal">堂</span></div>
                     </div>
 
-                    <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6 mb-6">
-                        <h3 className="font-bold text-slate-800 mb-4 ml-1 flex items-center text-base md:text-lg">
-                            <span className="w-1.5 h-5 bg-amber-500 rounded mr-2"></span>追蹤中預約單 <span className="text-xs text-gray-400 font-normal ml-2">(完課後自動隱藏)</span>
-                        </h3>
-                        <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1">
-                            {!data.bookings || data.bookings.length === 0 ? (
-                                <div className="text-center text-gray-400 text-sm py-6">目前尚無未結案之預約紀錄</div>
-                            ) : (
-                                data.bookings.map((b, i) => (
-                                    <BookingStatusItem key={i} booking={b} onUpdate={fetchRecords} />
-                                ))
-                            )}
-                        </div>
-                    </div>
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6 h-fit">
                             <h3 className="font-bold text-slate-800 mb-4 ml-1 flex items-center text-base md:text-lg">
@@ -1098,7 +1122,7 @@
                 window.addEventListener('hashchange', syncRoute);
                 return () => window.removeEventListener('hashchange', syncRoute);
             }, []);
-            const navigateStudentTab = tab => { window.location.hash = STUDENT_ROUTES[tab]; setActiveTab(tab); };
+            const [bookingRevision, setBookingRevision] = useState(0);
             const userLevel = userRecord ? (userRecord.level || 1) : 1;
 
             return (
@@ -1123,15 +1147,12 @@
                                 </div>
                             </div>
                         </div>
-                        <div className="flex w-full mt-2 border-b border-slate-600">
-                            <button onClick={()=>navigateStudentTab('booking')} className={`flex-1 min-w-0 py-3 px-1 text-sm md:text-base font-bold text-center border-b-4 transition-colors ${activeTab === 'booking' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>課程預約</button>
-                            <button onClick={()=>navigateStudentTab('records')} className={`flex-1 min-w-0 py-3 px-1 text-sm md:text-base font-bold text-center border-b-4 transition-colors ${activeTab === 'records' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>我的訓練紀錄</button>
-                        </div>
+                        <h2 className="py-3 text-lg font-bold border-t border-slate-600">{activeTab === 'booking' ? '課程預約' : '我的訓練日誌'}</h2>
                     </div>
 
                     <div className="flex-1 min-w-0 overflow-y-auto">
                         {userRecord.registrationComplete === false && <div className="m-4 p-4 border rounded-xl bg-amber-50"><p>目前帳號只有舊版單人資料；若先前選擇多人但未儲存，請補登全部學生資料。</p><button onClick={onCompleteRegistration} className="mt-3 bg-amber-700 text-white p-3 rounded-lg font-bold">補登同帳號學生資料</button></div>}
-                        {activeTab === 'booking' ? <StudentBookingView profile={profile} userRecord={userRecord} /> : <StudentRecordsView lineId={profile ? profile.userId : ''} userRecord={userRecord} />}
+                        {activeTab === 'booking' ? <><StudentBookingView profile={profile} userRecord={userRecord} onBooked={() => setBookingRevision(value => value + 1)} /><StudentBookingTracking lineId={profile ? profile.userId : ''} students={userRecord.students} revision={bookingRevision} /></> : <StudentRecordsView lineId={profile ? profile.userId : ''} userRecord={userRecord} />}
                     </div>
                 </div>
             )
