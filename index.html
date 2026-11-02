@@ -444,6 +444,11 @@
         // 🔹 學生端主頁面與子視圖
         // ==========================================
 
+        const studentNickname = (student, index = 0) => {
+            const nickname = typeof student?.nickname === 'string' ? student.nickname.trim() : '';
+            return nickname || `學員 ${index + 1}`;
+        };
+
         const validateAccountRecord = (user, expectedCount = null) => {
           if (!user || !Array.isArray(user.students) || user.students.length < 1 || user.students.length > 3) throw new Error('後端尚未回傳完整學生資料，請先更新原有 Apps Script 部署為最新完整 Code.gs，再重新登入。');
           if (user.studentCount != null && Number(user.studentCount) !== user.students.length) throw new Error('帳號學生人數資料不一致，請聯絡教練確認。');
@@ -624,8 +629,8 @@
             return <section aria-labelledby="booking-tracking-title" className="m-4 md:mx-8 mb-8 bg-white rounded-2xl shadow-sm border p-5 md:p-6">
                 <h3 id="booking-tracking-title" className="font-bold text-slate-800 mb-4 text-base md:text-lg">追蹤中預約單 <span className="text-xs text-gray-400 font-normal">（完課後自動隱藏）</span></h3>
                 {loading ? <p role="status" className="text-gray-500">讀取預約紀錄中...</p> : error ? <div role="alert"><p>{error}</p><button onClick={fetchTracking} className="mt-3 border rounded-lg p-3">重新讀取預約單</button></div> : <div className="space-y-6">
-                    {groups.map(({ student, bookings }) => <div key={student.id}>
-                        <h4 className="font-bold text-slate-700 mb-3">{student.name}{student.nickname ? `（${student.nickname}）` : ''}</h4>
+                    {groups.map(({ student, bookings }, index) => <div key={student.id}>
+                        <h4 className="font-bold text-slate-700 mb-3">{studentNickname(student, index)}</h4>
                         <div className="space-y-4">{bookings.length === 0 ? <p className="text-gray-400 text-sm">目前尚無未結案之預約紀錄</p> : bookings.map((booking, index) => <BookingStatusItem key={booking.bookingId || `${student.id}-${index}`} booking={booking} onUpdate={fetchTracking} />)}</div>
                     </div>)}
                 </div>}
@@ -1057,7 +1062,7 @@
 
             return (
                 <div className="p-4 md:p-8 pb-10">
-                    {userRecord?.students?.length > 1 && <label className="block font-bold mb-6">查看學生訓練紀錄<select aria-label="查看學生訓練紀錄" className="block w-full border p-3 rounded-lg mt-2" value={studentId} onChange={e => { recordsRequest.current++; setData(null); setStudentId(e.target.value); }}>{userRecord.students.map(student => <option key={student.id} value={student.id}>{student.name}（{student.nickname}）</option>)}</select></label>}
+                    {userRecord?.students?.length > 1 && <label className="block font-bold mb-6">查看學生訓練紀錄<select aria-label="查看學生訓練紀錄" className="block w-full border p-3 rounded-lg mt-2" value={studentId} onChange={e => { recordsRequest.current++; setData(null); setStudentId(e.target.value); }}>{userRecord.students.map((student, index) => <option key={student.id} value={student.id}>{studentNickname(student, index)}</option>)}</select></label>}
                     <MonthlyLeaveSummary records={data.monthlyLeaves || []} />
                     <div className="bg-white rounded-2xl shadow-sm border p-6 md:p-8 text-center border-t-4 border-t-emerald-500 mb-6">
                         <div className="text-sm md:text-base text-gray-500 font-bold mb-2">累積完成課程 (已完課)</div>
@@ -1141,7 +1146,7 @@
                                         </h1>
                                     </div>
                                 </div>
-                                <p className="text-sm md:text-base text-slate-300 mt-2">{userRecord ? userRecord.name : ''}，歡迎！</p>
+                                <p className="text-sm md:text-base text-slate-300 mt-2">{studentNickname(userRecord?.students?.[0])}，歡迎！</p>
                                 <div className="mt-2 inline-block bg-amber-500 text-slate-900 text-xs md:text-sm font-bold px-2.5 py-1 rounded shadow-sm">
                                     {LEVEL_NAMES[userLevel]} 會員
                                 </div>

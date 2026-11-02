@@ -17,6 +17,7 @@
       if (!data || typeof data !== 'object') return;
       if (Array.isArray(data)) { data.forEach(visit); return; }
       for (const [key, item] of Object.entries(data)) {
+        if (key === 'nickname') add(typeof item === 'string' ? item.trim() : item);
         if (key === 'name' || key === 'displayName') add(typeof item === 'string' ? item.split(' [')[0] : item);
         if (['location','makeupLocation','selectedLoc'].includes(key) && typeof item === 'string') item.replace(/^coach_loc:/,'').split(',').forEach(add);
         if (item && typeof item === 'object') visit(item);

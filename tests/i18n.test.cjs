@@ -34,3 +34,10 @@ test('backend errors are translated without changing technical variable names',(
  const {i}=setup();assert.equal(i.translate('尚未設定 LINE_LOGIN_CHANNEL_ID。'),'LINE_LOGIN_CHANNEL_IDが設定されていません。');
  assert(!i.translate('只能取消審核中或預約成功的訂單。').includes('預約'));
 });
+
+test('student nicknames remain unchanged when Japanese is selected',()=>{
+ const {i}=setup();i.remember({students:[{nickname:'學生預約'},{nickname:'  學生 [預約]  '}]});
+ assert.equal(i.translate('學生預約'),'學生預約');
+ assert.equal(i.translate('學生 [預約]'),'學生 [預約]');
+ assert(i.translate('學生預約 · 課程預約').includes('學生預約'));
+});
