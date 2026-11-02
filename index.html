@@ -728,7 +728,6 @@
                       
                       const hasAvailableGroupClass = slots.some(s => doesSlotMatchDate(s, dateStr) && Number(s.remaining) >= studentCount && !s.title.startsWith('[專屬教練課]'));
                       const hasAvailableCoachSlot = slots.some(s => doesSlotMatchDate(s, dateStr) && Number(s.remaining) >= studentCount && s.title.startsWith('[專屬教練課]'));
-                      const hasBookedOutSlot = slots.some(s => doesSlotMatchDate(s, dateStr) && Number(s.remaining) <= 0); 
                       
                       if (!hasAvailableGroupClass && !hasAvailableCoachSlot) return <div key={i} className="h-14" aria-hidden="true" />;
                       const isSelected = dateStr === selectedDate;
@@ -742,7 +741,6 @@
                           <span className="flex gap-1 mt-1 justify-center w-full">
                               {hasAvailableGroupClass && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>}
                               {hasAvailableCoachSlot && <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>}
-                              {hasBookedOutSlot && <span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>}
                           </span>
                         </button>
                       )
@@ -751,7 +749,6 @@
                 <div className="flex justify-center gap-3 md:gap-4 mt-6 text-[10px] md:text-xs text-gray-500">
                     <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-blue-500 rounded-full"></div>團課</div>
                     <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-green-500 rounded-full"></div>個人教學</div>
-                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-red-500 rounded-full"></div>已額滿</div>
                 </div>
               </div>
 
