@@ -1074,8 +1074,31 @@
             );
         };
 
+        const STUDENT_ROUTES = { booking: '#/booking', records: '#/training-logs' };
+        const studentTabFromHash = hash => hash === STUDENT_ROUTES.records ? 'records' : 'booking';
+        const rememberStudentRoute = () => {
+            try {
+                if (Object.values(STUDENT_ROUTES).includes(window.location.hash)) sessionStorage.setItem('badminton.studentRoute', window.location.hash);
+            } catch (_) {}
+        };
+        const restoreStudentRoute = () => {
+            try {
+                const pending = sessionStorage.getItem('badminton.studentRoute');
+                if (!Object.values(STUDENT_ROUTES).includes(window.location.hash) && Object.values(STUDENT_ROUTES).includes(pending)) window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search + pending);
+                sessionStorage.removeItem('badminton.studentRoute');
+            } catch (_) {}
+        };
+
         const StudentDashboard = ({ profile, userRecord, onCompleteRegistration }) => {
-            const [activeTab, setActiveTab] = useState('booking'); 
+            const [activeTab, setActiveTab] = useState(() => studentTabFromHash(window.location.hash));
+            useEffect(() => {
+                const syncRoute = () => setActiveTab(studentTabFromHash(window.location.hash));
+                if (!Object.values(STUDENT_ROUTES).includes(window.location.hash)) window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search + STUDENT_ROUTES.booking);
+                syncRoute();
+                window.addEventListener('hashchange', syncRoute);
+                return () => window.removeEventListener('hashchange', syncRoute);
+            }, []);
+            const navigateStudentTab = tab => { window.location.hash = STUDENT_ROUTES[tab]; setActiveTab(tab); };
             const userLevel = userRecord ? (userRecord.level || 1) : 1;
 
             return (
@@ -1101,8 +1124,8 @@
                             </div>
                         </div>
                         <div className="flex w-full mt-2 border-b border-slate-600">
-                            <button onClick={()=>setActiveTab('booking')} className={`flex-1 min-w-0 py-3 px-1 text-sm md:text-base font-bold text-center border-b-4 transition-colors ${activeTab === 'booking' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>課程預約</button>
-                            <button onClick={()=>setActiveTab('records')} className={`flex-1 min-w-0 py-3 px-1 text-sm md:text-base font-bold text-center border-b-4 transition-colors ${activeTab === 'records' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>我的訓練紀錄</button>
+                            <button onClick={()=>navigateStudentTab('booking')} className={`flex-1 min-w-0 py-3 px-1 text-sm md:text-base font-bold text-center border-b-4 transition-colors ${activeTab === 'booking' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>課程預約</button>
+                            <button onClick={()=>navigateStudentTab('records')} className={`flex-1 min-w-0 py-3 px-1 text-sm md:text-base font-bold text-center border-b-4 transition-colors ${activeTab === 'records' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>我的訓練紀錄</button>
                         </div>
                     </div>
 
@@ -1725,8 +1748,10 @@
             loginBusy.current = true; setView('loading'); setLoginError('');
             try {
               if (typeof liff === 'undefined') throw new Error('LINE 登入元件未載入，請確認網路後重試。');
+              rememberStudentRoute();
               await liff.init({ liffId: LIFF_ID });
               if (!liff.isLoggedIn()) { liff.login({ redirectUri: window.location.href.split('#')[0] }); return; }
+              restoreStudentRoute();
               const profile = await liff.getProfile();
               if (window.BadmintonI18n) window.BadmintonI18n.remember(profile);
               if (!profile || !profile.userId) throw new Error('無法取得 LINE 身分，請確認 LIFF 的 profile 權限。');
