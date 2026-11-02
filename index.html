@@ -1107,6 +1107,25 @@
             );
         };
 
+        const VenueAddresses = () => (
+            <section aria-labelledby="venue-addresses-title" className="m-4 md:mx-8 mb-8 bg-white rounded-2xl shadow-sm border p-5 md:p-6">
+                <h3 id="venue-addresses-title" className="font-bold text-slate-800 text-base md:text-lg mb-4">場地地址</h3>
+                <dl data-i18n-ignore="true" className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {[
+                        ['關聖里活動中心', '701臺南市東區關聖里裕孝路118號'],
+                        ['中愛羽球館', '臺南市東區裕豐街214巷'],
+                        ['仁德羽潮', '台南市仁德區勝利路380號'],
+                        ['華中羽球館', '臺南市仁德區仁德里文善街116號'],
+                        ['永康嘉世', '臺南市永康區建國里高速一街二段378巷2號'],
+                        ['永康騰耀', '臺南市永康區大灣路942巷371弄178號之 8']
+                    ].map(([name, address]) => <div key={name} className="rounded-xl border border-slate-100 bg-slate-50 p-4 min-w-0">
+                        <dt className="font-bold text-slate-800 mb-1">{name}</dt>
+                        <dd><address className="not-italic text-sm md:text-base text-slate-600 leading-relaxed break-words">{address}</address></dd>
+                    </div>)}
+                </dl>
+            </section>
+        );
+
         const STUDENT_ROUTES = { booking: '#/booking', records: '#/training-logs' };
         const studentTabFromHash = hash => hash === STUDENT_ROUTES.records ? 'records' : 'booking';
         const rememberStudentRoute = () => {
@@ -1161,7 +1180,7 @@
 
                     <div className="flex-1 min-w-0 overflow-y-auto">
                         {userRecord.registrationComplete === false && <div className="m-4 p-4 border rounded-xl bg-amber-50"><p>目前帳號只有舊版單人資料；若先前選擇多人但未儲存，請補登全部學生資料。</p><button onClick={onCompleteRegistration} className="mt-3 bg-amber-700 text-white p-3 rounded-lg font-bold">補登同帳號學生資料</button></div>}
-                        {activeTab === 'booking' ? <><StudentBookingView profile={profile} userRecord={userRecord} onBooked={() => setBookingRevision(value => value + 1)} /><StudentBookingTracking lineId={profile ? profile.userId : ''} students={userRecord.students} revision={bookingRevision} /></> : <StudentRecordsView lineId={profile ? profile.userId : ''} userRecord={userRecord} />}
+                        {activeTab === 'booking' ? <><StudentBookingView profile={profile} userRecord={userRecord} onBooked={() => setBookingRevision(value => value + 1)} /><StudentBookingTracking lineId={profile ? profile.userId : ''} students={userRecord.students} revision={bookingRevision} /><VenueAddresses /></> : <StudentRecordsView lineId={profile ? profile.userId : ''} userRecord={userRecord} />}
                     </div>
                 </div>
             )
