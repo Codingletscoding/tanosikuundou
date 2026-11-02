@@ -1,50 +1,37 @@
-# 教練時段現場付現
+# 同帳號 1～3 位學生
 
-請依 [現金付款修改位置](cash-payment-changes.md) 更新原程式及 `CoachManagement.gs`，然後更新原 Web App 部署。預約核准與現金收款分開，未收款不計入付款統計；團課原有匯款方式保留。
+下載或開啟 [完整 Code.gs](complete/Code.gs)，全部複製即可，已內建多人帳號、教練管理、現金收款、取消／刪除預約、月繳請假補課及訓練日誌。
 
-# 取消預約與課程編輯
+1. 先備份現行 Apps Script 程式與試算表。
+2. 在**原有** Apps Script 專案，將 `Code.gs` 內容全部取代為上述檔案。
+3. 如果專案另有 `BookingDeletion.gs`、`MonthlyLeave.gs`、`CoachManagement.gs`，請移除，避免與完整檔重複定義；本版本只需一份 `Code.gs`。不要刪除 `appsscript.json`，也不要刪除試算表資料。
+4. 確認 `ADMIN_LINE_IDS` 是原本教練的 LINE user ID，並保留專案指令碼屬性 `LINE_LOGIN_CHANNEL_ID`（LINE Login Channel ID，不是 LIFF ID 或 Channel secret）。
+5. 「部署 → 管理部署 → 編輯 → 新版本 → 部署」，更新**原有** Web App，維持原 API_URL 及存取設定；如 Google 要求授權，請完成授權。
 
-請依 [原程式修改位置](coach-management-changes.md) 加入 `CoachManagement.gs` 並更新原部署。主檔及分檔入口均須搭配 `MonthlyLeave.gs` 與 `CoachManagement.gs`。
+GitHub 推送不會更新 Apps Script。網站前端也須使用本次更新的 `index.html`，才會出現多人註冊與紀錄切換介面。
 
-# 月繳請假與補課更新
+- 註冊可選 1～3 人，每人填真實姓名、暱稱、性別、年齡；第一位代表另填手機及身分證字號（後端檢查格式與檢查碼）。其他學生不需電話或身分證。學生識別碼由後端產生，姓名相同也能分開紀錄。
+- 每次預約包含帳號全部學生，每位一筆訂單、佔一個名額，總額為每人費用乘以人數。後端依帳號會員等級及課程價格計價，不採信前端金額。教練課沿用所選 1 對 1／1 對 2 費率作每人費用，確認畫面顯示總額。剩餘名額不足時整筆拒絕；寫入失敗會嘗試回復整筆。
+- 教練分別為每位學生核准、收款、結課及填寫日誌；各學生可獨立請假與補課。學生端「我的訓練紀錄」可切換人員，分別顯示堂數、能力時數、預約、請假及日誌。教練名單的付款金額仍是同 LINE 帳號合計。
+- 舊單人帳號與舊日誌不需搬移。此功能針對首次註冊；不會自動將既有單人帳號改成多人帳號。
 
-請依 [原程式修改位置](monthly-leave-changes.md) 更新現有 Apps Script，並新增本資料夾的 `MonthlyLeave.gs`。不需整份替換。此功能包含提前 14 天請假、獨立紀錄、教練安排單堂團課補課及學生查看。
+新增欄位（原有欄位順序保留）：會員資料 G「帳號學生資料」（JSON）、H「代表身分證字號」；預約名單 J「學生編號」；訓練日誌 O「學生編號」；請假補課 S「學生編號」。請先確認這些欄位沒有其他用途。身分證不會回傳到學生紀錄或教練列表，請限制試算表存取權限。
 
-以下完整版本或分檔版本**也都需要加入 MonthlyLeave.gs**；兩種入口安裝方式只能選一種。GitHub 推送不會部署 Apps Script。
+本機驗證：`node apps-script/tests/account-students.test.cjs`。另外需在可拋棄的測試試算表及測試 LINE 帳號確認新部署的註冊、多人扣額、總額及逐人結課；本機測試使用模擬資料，不代表已部署或已驗證線上試算表。
 
-# 完整替換版本（建議）
+# 驗證完整單檔
 
-[complete/Code.gs](complete/Code.gs) 直接依原程式整合，保留單一 `doPost(e)` 及既有 action，加入 `deleteBooking` 分支。整份替換原 Code.gs 即可，不必改名為 handleRequest。**若先前新增過 BookingDeletion.gs，請移除該額外檔案，避免函式重複。兩種安裝方式只能選一種。**
+在倉庫根目錄執行：
 
-仍須依下方步驟設定 `LINE_LOGIN_CHANNEL_ID` 並更新原有 Web App 部署為新版本，保留原 API_URL。
+```sh
+node apps-script/tests/account-students.test.cjs
+node apps-script/tests/monthly-leave.test.cjs
+node apps-script/tests/login.test.cjs
+node apps-script/tests/booking-deletion.test.cjs --complete
+```
 
-完整版本測試：`node apps-script/tests/booking-deletion.test.cjs --complete`。
+這些測試直接載入完整 `Code.gs`，不載入額外 `.gs` 檔案。使用模擬試算表及 LINE 回應，不會變動真實資料。
 
-以下為保留舊程式、分檔整合的替代方式；使用完整版本者略過改名及新增檔案步驟。
+# 舊分檔參考
 
-# 啟用教練刪除預約名單
-
-前端已呼叫 `deleteBooking`，但必須更新現有 Google Apps Script 部署才會生效。這些檔案不會由 GitHub Pages 執行。不要建立另一個不相干的試算表專案或更換前端 API_URL。
-
-1. 開啟目前綁定會員／時段／預約試算表、對應網站 API_URL 的 Apps Script 專案。先保存現行程式備份。
-2. 在原始程式將 `function doPost(e)` 改名為 `function handleRequest(e)`。其餘內容保留，包括工作表常數、`ADMIN_LINE_IDS` 與原本 action 分支。專案只能保留一個 `doPost`。
-3. 新增 `BookingDeletion.gs` 檔案，貼上本資料夾同名檔案的完整內容。新的 `doPost` 會把原有請求轉交 `handleRequest`，並讓寫入操作共用鎖。
-4. 在「專案設定 → 指令碼屬性」新增 `LINE_LOGIN_CHANNEL_ID`，值填入目前 LIFF 所屬 **LINE Login channel 的 Channel ID**。這不是 LIFF ID，也不是 Channel secret；不需把 secret 放進前端或 Git。
-5. 確認 LIFF 已啟用 `profile` scope，且教練 LINE user ID 列在原有 `ADMIN_LINE_IDS`。
-6. 儲存，從「部署 → 管理部署 → 編輯」選擇「新版本」，更新**原有 Web App 部署**，維持原有 API 網址與存取設定。新增的 LINE 驗證使用 `UrlFetchApp`；如 Google 要求新的授權，請完成授權。
-7. 以教練登入網站，用可刪除的測試訂單驗證：取消確認時資料不變；確認刪除後該列移除，對應時段的剩餘名額加一但不超過容量，學生紀錄亦不再列出該單。完課日誌不變，不會自動退款。請勿使用需要保留的真實訂單驗證。
-
-## 行為與限制
-
-- 參數：`{ action: 'deleteBooking', bookingId, accessToken }`；成功回應：`{ status: 'success', bookingId }`。token 由 LIFF 在操作時提供，不保存到程式庫或試算表。
-- 後端向 LINE 驗證 token、有效期限、Channel ID 與登入者 user ID，依 `ADMIN_LINE_IDS` 授權；不能僅以呼叫者傳來的 LINE ID 判定教練。
-- 只接受「審核中」、「預約成功」及原程式相容的舊狀態（空白、「成功」、「已完成」）。「已完課」不可刪除；沒有 ID、找不到或重複 ID 都會回報失敗。
-- 課程已下架時仍可刪除訂單，沒有時段可恢復名額。名額異常時拒絕刪除；訂單列刪除失敗時嘗試恢復名額。試算表的跨工作表更新不是資料庫交易，故仍應保留備份，避免部署切換期間或人工直接編輯同一批資料。
-- 新的共用鎖僅保護透過這個新部署的寫入；請避免繼續使用舊部署或其他未採相同鎖的腳本寫入。
-- 此更新為新的刪除介面加入身分驗證；原本 `handleRequest` 的其他介面保留既有行為，並非整套 API 的權限改造。
-
-目前只完成本機模擬測試；尚未代替專案擁有者執行 Google 授權、更新 Apps Script 線上部署或刪除真實訂單。
-
-## 本機測試
-
-在倉庫根目錄執行 `node apps-script/tests/booking-deletion.test.cjs`。測試使用模擬的試算表及 LINE 回應，不連線、不刪除真實資料。
+`BookingDeletion.gs`、`MonthlyLeave.gs`、`CoachManagement.gs` 與各 `*-changes.md` 保留作舊版整合參考；不要再將這些分檔貼入使用上述完整單檔的專案。舊分檔入口不支援本次多人帳號功能。

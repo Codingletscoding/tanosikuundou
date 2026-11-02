@@ -1,6 +1,6 @@
 // Add this file once. It uses the original worksheet constants and ADMIN_LINE_IDS.
 var MONTHLY_LEAVE_SHEET = '請假補課';
-var MONTHLY_LEAVE_HEADERS = ['編號', '登記時間', '月繳訂單編號', 'LINE_ID', '學生姓名', '原課程編號', '請假日期', '原上課時間', '原因', '狀態', '補課課程編號', '補課日期', '補課訂單編號', '安排時間', '補課課程名稱', '補課時間', '補課場地', '月繳課程名稱'];
+var MONTHLY_LEAVE_HEADERS = ['編號', '登記時間', '月繳訂單編號', 'LINE_ID', '學生姓名', '原課程編號', '請假日期', '原上課時間', '原因', '狀態', '補課課程編號', '補課日期', '補課訂單編號', '安排時間', '補課課程名稱', '補課時間', '補課場地', '月繳課程名稱', '學生編號'];
 
 function monthlyLeaveAction_(ss, payload) {
   monthlyVerifyCoach_(payload.accessToken);
@@ -15,7 +15,7 @@ function monthlyLeaveAction_(ss, payload) {
 
 function monthlyLeaveRows_(sheet) {
   return sheet.getDataRange().getValues().slice(1).filter(function(row) { return row[0]; }).map(function(row) {
-    return { id: row[0], bookingId: row[2], lineId: row[3], name: row[4], slotId: row[5],
+    return { id: row[0], studentId: row[18] || '', bookingId: row[2], lineId: row[3], name: row[4], slotId: row[5],
       originalDate: monthlyDate_(row[6]), originalTime: row[7], reason: row[8], status: row[9],
       makeupSlotId: row[10], makeupDate: monthlyDate_(row[11]), makeupBookingId: row[12],
       makeupTitle: row[14], makeupTime: row[15], makeupLocation: row[16], monthlyTitle: row[17] };
@@ -73,7 +73,7 @@ function registerMonthlyLeave_(ss, payload) {
     throw new Error('此學生這一天已登記請假，請勿重複登記。');
   }
   var id = Utilities.getUuid();
-  sheet.appendRow([id, new Date(), payload.bookingId, booking.row[2], booking.row[3], slot.row[0], day, slot.row[3], reason, '待補課', '', '', '', '', '', '', '', slot.row[1]]);
+  sheet.appendRow([id, new Date(), payload.bookingId, booking.row[2], booking.row[3], slot.row[0], day, slot.row[3], reason, '待補課', '', '', '', '', '', '', '', slot.row[1], booking.row[9] || '']);
   // Monthly capacity describes the whole series. A single absence must not free a seat for the whole month.
   return { status: 'success', leaveId: id };
 }
@@ -99,7 +99,7 @@ function arrangeMonthlyMakeup_(ss, payload) {
   if (bookingRows[0][8] && bookingRows[0][8] !== '來源請假編號') {
     throw new Error('預約名單第 I 欄已有其他用途，請先確認欄位，避免覆寫資料。');
   }
-  if (bookingRows.slice(1).some(function(row) { return String(row[1]) === payload.slotId && String(row[2]) === String(leave.row[3]) && row[5] !== '已取消'; })) {
+  if (bookingRows.slice(1).some(function(row) { return String(row[1]) === payload.slotId && String(row[2]) === String(leave.row[3]) && (source.row[9] ? row[9] === source.row[9] : !row[9]) && row[5] !== '已取消'; })) {
     throw new Error('此學生已預約該補課時段。');
   }
   if (!bookingRows[0][8]) bookings.getRange(1, 9).setValue('來源請假編號');
@@ -111,7 +111,7 @@ function arrangeMonthlyMakeup_(ss, payload) {
   try {
     counter.setValue(remaining - 1);
     SpreadsheetApp.flush();
-    bookings.appendRow([new Date(), payload.slotId, leave.row[3], leave.row[4], 0, '預約成功', '', bookingId, payload.leaveId]);
+    bookings.appendRow([new Date(), payload.slotId, leave.row[3], leave.row[4], 0, '預約成功', '', bookingId, payload.leaveId, source.row[9] || '']);
     appended = true;
     sheet.getRange(leave.index, 10, 1, 8).setValues([['已安排', payload.slotId, dateMatch[1], bookingId, new Date(), target.row[1], target.row[3], target.row[4]]]);
     SpreadsheetApp.flush();

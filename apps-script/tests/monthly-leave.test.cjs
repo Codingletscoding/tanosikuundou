@@ -2,7 +2,6 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const full=fs.readFileSync(path.join(__dirname,'../complete/Code.gs'),'utf8').replace('U3a76953e63578ec8607297044ac54e5a','coach');
-const helper=fs.readFileSync(path.join(__dirname,'../MonthlyLeave.gs'),'utf8');
 const now=Date.parse('2026-11-01T10:00:00+08:00');
 function fixture(options={}){
  let count=0,locked=false,failLeave=!!options.leaveWriteError;
@@ -32,7 +31,7 @@ function fixture(options={}){
   Utilities:{getUuid:()=> 'uuid-'+(++count),formatDate:(date,zone)=>new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).format(date)},
   ContentService:{MimeType:{JSON:'json'},createTextOutput:text=>({text,setMimeType(){return this;}})}
  };
- vm.createContext(ctx);vm.runInContext(full+'\n'+helper+'\n'+fs.readFileSync(path.join(__dirname,'../CoachManagement.gs'),'utf8'),ctx);
+ vm.createContext(ctx);vm.runInContext(full,ctx);
  const run=payload=>JSON.parse(ctx.doPost({postData:{contents:JSON.stringify({accessToken:'mock-token',...payload})}}).text);
  const register=(extra={})=>run({action:'registerMonthlyLeave',bookingId:'original',originalDate:'2026-11-15',reason:'家庭活動',...extra});
  const arrange=(extra={})=>run({action:'arrangeMonthlyMakeup',leaveId:'uuid-1',slotId:'target',...extra});
@@ -128,3 +127,18 @@ test('cash collection requires approval and is idempotent; student payment edits
  assert.equal(f.run({action:'confirmCashPayment',bookingId:'original'}).status,'success');
 });
 test('non-coach cannot confirm cash collection',()=>{const f=fixture({notCoach:true});f.rows['預約名單'][1][6]='現場現金';assert.equal(f.run({action:'confirmCashPayment',bookingId:'original'}).status,'error');assert.equal(f.rows['預約名單'][1][6],'現場現金');});
+
+test('siblings may make up the same slot independently and preserve student identity',()=>{
+ const f=fixture({remaining:3});
+ f.rows['預約名單'][1][9]='student-1';
+ f.rows['預約名單'].push([new Date('2026-10-01'),'monthly','student','第二位',1200,'預約成功','','second-original','','student-2']);
+ assert.equal(f.register().status,'success');
+ const second=f.register({bookingId:'second-original'});assert.equal(second.status,'success');
+ assert.equal(f.arrange().status,'success');
+ const result=f.arrange({leaveId:second.leaveId});assert.equal(result.status,'success');
+ const bookings=f.rows['預約名單'].filter(row=>row[1]==='target');
+ assert.deepEqual(bookings.map(row=>row[9]),['student-1','student-2']);
+ assert.equal(f.rows['可用時段'][2][6],1);
+ f.rows['會員資料'][1][6]=JSON.stringify([{id:'student-1',name:'學生'},{id:'student-2',name:'第二位'}]);
+ for(const id of ['student-1','student-2']) { const stats=f.run({action:'getStudentStats',lineId:'student',studentId:id});assert.equal(stats.monthlyLeaves.length,1);assert.equal(stats.monthlyLeaves[0].studentId,id); }
+});
