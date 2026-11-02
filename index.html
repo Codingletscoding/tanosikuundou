@@ -1259,6 +1259,62 @@
             </section>;
         };
 
+        const CoachMonthlyRegistration = ({ members, slots, onSuccess }) => {
+            const accounts = React.useMemo(() => {
+                const grouped = new Map();
+                members.forEach(member => {
+                    if (!member.lineId) return;
+                    if (!grouped.has(member.lineId)) grouped.set(member.lineId, []);
+                    grouped.get(member.lineId).push(member);
+                });
+                return [...grouped].map(([lineId, students]) => ({ lineId, students }));
+            }, [members]);
+            const [lineId, setLineId] = useState('');
+            const [studentIds, setStudentIds] = useState([]);
+            const [slotId, setSlotId] = useState('');
+            const [busy, setBusy] = useState(false);
+            const [message, setMessage] = useState('');
+            const [error, setError] = useState('');
+            const busyRef = React.useRef(false);
+            const account = accounts.find(account => account.lineId === lineId);
+            const selected = (account?.students || []).filter(student => studentIds.includes(student.studentId || ''));
+            const monthlySlots = slots.filter(slot => slot.title.startsWith('[月繳'));
+            const slot = monthlySlots.find(slot => slot.id === slotId);
+            const price = slot ? Number(slot.prices[selected[0]?.level || 1]) : NaN;
+            const validPrice = slot && slot.prices[selected[0]?.level || 1] !== '' && slot.prices[selected[0]?.level || 1] != null && Number.isFinite(price) && price >= 0;
+            const ready = selected.length > 0 && slot && Number(slot.remaining) >= selected.length && validPrice;
+            const submit = async event => {
+                event.preventDefault();
+                if (busyRef.current || !ready) return;
+                if (!confirm(`確認代登記月繳團課？\n${selected.map(student => student.name).join('、')}\n${slot.title} · ${slot.date} ${slot.time}\n共 ${selected.length} 人，合計 NT$ ${price * selected.length}\n登記後為審核中，收款後請再核准預約。`)) return;
+                busyRef.current = true; setBusy(true); setMessage(''); setError('');
+                try {
+                    const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                    if (!accessToken) throw new Error('請重新登入 LINE。');
+                    const result = await fetchAPI({ action: 'coachRegisterMonthly', lineId, studentIds, slotId, accessToken });
+                    if (result.status !== 'success') throw new Error(result.message || '登記失敗，請稍後再試。');
+                    if (result.registeredCount !== selected.length) throw new Error('登記結果人數不一致，請重新整理預約名單確認。');
+                    setMessage(`已登記 ${result.registeredCount} 位學生，合計 NT$ ${result.totalPrice}，狀態為審核中。`);
+                    setStudentIds([]); setSlotId('');
+                    await onSuccess();
+                } catch (error) { setError(error.message); }
+                finally { busyRef.current = false; setBusy(false); }
+            };
+            return <section aria-labelledby="coach-monthly-registration-title" className="bg-sky-50 border border-sky-200 rounded-2xl p-4 md:p-6">
+                <h2 id="coach-monthly-registration-title" className="font-bold text-lg text-sky-950 mb-2">代登記月繳團課</h2>
+                <p className="text-sm text-sky-900 mb-4">選擇已註冊的學員帳號及參加學生。每人佔一個名額，依會員等級計費；登記後為審核中，確認收款後再核准。</p>
+                <form onSubmit={submit} className="space-y-4">
+                    <label className="block font-bold">學員帳號<select aria-label="代登記學員帳號" disabled={busy} required value={lineId} onChange={e => { const next = accounts.find(account => account.lineId === e.target.value); setLineId(e.target.value); setStudentIds((next?.students || []).map(student => student.studentId || '')); setMessage(''); setError(''); }} className="block w-full border p-3 rounded-lg mt-1 bg-white"><option value="">請選擇學員帳號</option>{accounts.map(account => <option key={account.lineId} value={account.lineId}>{account.students.map(student => student.name + (student.nickname ? `（${student.nickname}）` : '')).join('、')}</option>)}</select></label>
+                    {account && <fieldset disabled={busy} className="border rounded-lg p-3 bg-white"><legend className="font-bold">參加學生</legend>{account.students.map((student, index) => <label key={student.studentId || index} className="flex gap-2 items-center p-2"><input type="checkbox" checked={studentIds.includes(student.studentId || '')} onChange={e => setStudentIds(previous => e.target.checked ? [...previous, student.studentId || ''] : previous.filter(id => id !== (student.studentId || '')))} />{student.name}{student.nickname ? `（${student.nickname}）` : ''}</label>)}</fieldset>}
+                    <label className="block font-bold">月繳課程<select aria-label="代登記月繳課程" disabled={busy} required value={slotId} onChange={e => { setSlotId(e.target.value); setMessage(''); setError(''); }} className="block w-full border p-3 rounded-lg mt-1 bg-white"><option value="">請選擇月繳課程</option>{monthlySlots.map(slot => <option key={slot.id} value={slot.id} disabled={Number(slot.remaining) < Math.max(1, selected.length)}>{slot.title} · {slot.date} {slot.time} · {slot.location}（剩 {slot.remaining} 名）</option>)}</select></label>
+                    {monthlySlots.length === 0 && <p className="text-sm">目前沒有月繳課程，請先新增課程。</p>}
+                    <p className="font-bold">登記 {selected.length} 人{validPrice ? ` · 每人 NT$ ${price} · 合計 NT$ ${price * selected.length}` : ''}</p>
+                    {message && <p role="status" className="text-emerald-800">{message}</p>}{error && <p role="alert" className="text-red-700">{error}</p>}
+                    <button type="submit" disabled={busy || !ready} className="bg-sky-700 text-white rounded-lg px-4 py-3 font-bold disabled:opacity-50">{busy ? '登記中...' : '確認代登記'}</button>
+                </form>
+            </section>;
+        };
+
         const CoachSlotsView = ({ onPaymentsChanged = () => {} }) => {
           const [form, setForm] = useState({ 
             mode: 'single', title: '新手團課', location: '關聖里活動中心',
@@ -1268,6 +1324,7 @@
           });
           const [allowedLocations, setAllowedLocations] = useState([...LOCATIONS_LIST]);
           const [bookings, setBookings] = useState([]);
+          const [members, setMembers] = useState([]);
           const [slots, setSlots] = useState([]);
           const [loading, setLoading] = useState(false);
           const [logModalTarget, setLogModalTarget] = useState(null); 
@@ -1292,6 +1349,7 @@
           const fetchData = () => {
             return Promise.all([fetchAPI({ action: 'getCoachData' }), fetchAPI({ action: 'getSlots' })]).then(([bRes, sRes]) => {
                 setBookings(bRes.bookings || []);
+                setMembers(bRes.members || []);
                 setSlots((sRes.slots || []).filter(s => s.id && s.title && s.date));
                 onPaymentsChanged();
             });
@@ -1438,6 +1496,7 @@
 
           return (
             <div className="space-y-6 md:space-y-8">
+              <CoachMonthlyRegistration members={members} slots={slots} onSuccess={fetchData} />
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
                 <div><h2 className="font-bold text-amber-950">月繳請假與補課</h2><p className="text-sm text-amber-900">提前至少 14 天登記請假，再安排其他補課日期。</p></div>
                 <button onClick={() => setShowMonthlyLeave(true)} className="bg-amber-600 text-white px-4 py-3 rounded-lg font-bold">請假登記／安排補課</button>

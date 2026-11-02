@@ -118,3 +118,32 @@ test('completed sibling still reserves a shared coach slot',()=>{
 test('three-student accounts cannot book one-to-two private lessons',()=>{
  const f=fixture();f.register(3);f.rows['可用時段'][1][1]='[專屬教練課] 1v1:1000|1v2:1500';assert.equal(f.run({action:'bookClass',slotId:'slot',coachType:'1對2'}).status,'error');assert.equal(f.rows['預約名單'].length,1);
 });
+
+function monthlyCoach(options={}) {
+ const f=fixture(options);f.register(3);f.rows['會員資料'][1][5]=2;f.rows['可用時段'][1][1]='[月繳4堂] 團課';f.rows['可用時段'][1][8]=980;
+ const admin=vm.runInContext('ADMIN_LINE_IDS[0]',f.context);
+ f.context.UrlFetchApp.fetch=url=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify(url.includes('/verify?')?{client_id:'channel',expires_in:3600}:{userId:admin})});
+ const students=f.run({action:'checkUser'}).user.students;
+ const enroll=(extra={})=>f.run({action:'coachRegisterMonthly',slotId:'slot',studentIds:[students[0].id,students[2].id],accessToken:'mock',...extra});
+ return {...f,students,enroll};
+}
+test('authenticated coach enrolls selected students in monthly class using stored prices',()=>{
+ const f=monthlyCoach();const result=f.enroll({paidPrice:1,level:1});assert.equal(result.status,'success');assert.equal(result.registeredCount,2);assert.equal(result.totalPrice,1960);
+ const orders=f.rows['預約名單'].slice(1);assert.deepEqual(orders.map(row=>row[9]),[f.students[0].id,f.students[2].id]);assert(orders.every(row=>row[4]===980&&row[5]==='審核中'));assert.equal(f.rows['可用時段'][1][6],3);
+ assert.equal(f.run({action:'getStudentStats',studentId:f.students[1].id}).bookings.length,0);
+});
+test('ordinary student cannot use coach monthly enrollment',()=>{
+ const f=fixture();f.register();f.rows['可用時段'][1][1]='[月繳4堂] 團課';const ids=f.run({action:'checkUser'}).user.students.map(s=>s.id);assert.equal(f.run({action:'coachRegisterMonthly',slotId:'slot',studentIds:ids,accessToken:'mock'}).status,'error');assert.equal(f.rows['預約名單'].length,1);assert.equal(f.rows['可用時段'][1][6],5);
+});
+test('coach monthly enrollment rejects duplicates and keeps quota unchanged on repeat',()=>{
+ const f=monthlyCoach();assert.equal(f.enroll().status,'success');assert.equal(f.enroll().status,'error');assert.equal(f.rows['預約名單'].length,3);assert.equal(f.rows['可用時段'][1][6],3);
+});
+test('coach monthly enrollment rejects invalid or foreign students and nonmonthly slots',()=>{
+ const f=monthlyCoach();for(const ids of [[],['foreign'],[f.students[0].id,f.students[0].id]])assert.equal(f.enroll({studentIds:ids}).status,'error');f.rows['可用時段'][1][1]='單堂團課';assert.equal(f.enroll().status,'error');assert.equal(f.rows['預約名單'].length,1);
+});
+test('coach enrollment refuses insufficient seats without partial writes',()=>{
+ const f=monthlyCoach({remaining:1});assert.equal(f.enroll().status,'error');assert.equal(f.rows['預約名單'].length,1);assert.equal(f.rows['可用時段'][1][6],1);
+});
+test('coach enrollment rolls back all orders if the second student append fails',()=>{
+ const f=monthlyCoach({failAppend:2});assert.equal(f.enroll().status,'error');assert.equal(f.rows['預約名單'].length,1);assert.equal(f.rows['可用時段'][1][6],5);
+});
