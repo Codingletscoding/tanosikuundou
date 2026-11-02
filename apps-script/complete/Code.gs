@@ -95,7 +95,7 @@ function doPost(e) {
           prices: { 1: data[i][7], 2: data[i][8], 3: data[i][9], 4: data[i][10], 5: data[i][11] }
         });
       }
-      result = { status: "success", slots: slots };
+      result = { status: "success", slots: slots, coachAccountPricingVersion: 1 };
     }
     
     else if (action === "bookClass") {
@@ -107,8 +107,10 @@ function doPost(e) {
       if (!account && payload.accountBooking) throw new Error('找不到帳號學生資料，請重新登入。');
       const students = account ? accountStudents_(account) : [{ id: '', name: payload.name }];
       const bookedSlot = monthlyUniqueRow_(sheetSlots, 0, payload.slotId, '課程');
-      if (Number(bookedSlot.row[6]) < students.length) throw new Error('剩餘名額不足以預約此帳號的全部學生。');
       const isCoach = /^\[專屬教練課\]/.test(String(bookedSlot.row[1]));
+      if (isCoach && students.length > 2) throw new Error('專屬教練課限同帳號 1～2 位學生預約。');
+      const seats = isCoach ? 1 : students.length;
+      if (Number(bookedSlot.row[6]) < seats) throw new Error('剩餘名額不足以預約此帳號的全部學生。');
       let price = Number(payload.paidPrice);
       if (account) {
         const level = Math.min(5, Math.max(1, Number(account[5]) || 1));
@@ -122,10 +124,13 @@ function doPost(e) {
       }
       const paymentCode = isCoach ? '現場現金' : (['現場現金', '現金已收'].includes(payload.paymentCode) ? '' : (payload.paymentCode || ''));
       accountReserveColumn_(sheetBookings, 10, '學生編號');
+      if (isCoach) accountReserveColumn_(sheetBookings, 11, '專屬教練課預約組別');
+      const groupId = isCoach ? Utilities.getUuid() : '';
+      const totalCents = Math.round(price * 100);
       const firstRow = sheetBookings.getDataRange().getValues().length + 1;
       try {
-        students.forEach(student => sheetBookings.appendRow([new Date(), payload.slotId, payload.lineId, student.name + (isCoach ? ' [' + (payload.coachType || '1對1') + ' - ' + (payload.location || '') + ']' : ''), price, '審核中', paymentCode, Utilities.getUuid(), '', student.id]));
-        sheetSlots.getRange(bookedSlot.index, 7).setValue(Number(bookedSlot.row[6]) - students.length);
+        students.forEach((student, index) => sheetBookings.appendRow([new Date(), payload.slotId, payload.lineId, student.name + (isCoach ? ' [' + (payload.coachType || '1對1') + ' - ' + (payload.location || '') + ']' : ''), isCoach ? (Math.floor(totalCents / students.length) + (index < totalCents % students.length ? 1 : 0)) / 100 : price, '審核中', paymentCode, Utilities.getUuid(), '', student.id, groupId]));
+        sheetSlots.getRange(bookedSlot.index, 7).setValue(Number(bookedSlot.row[6]) - seats);
         SpreadsheetApp.flush();
       } catch (error) {
         const lastRow = sheetBookings.getDataRange().getValues().length;
@@ -397,7 +402,7 @@ function deleteApprovedBooking_(ss, bookingId) {
   }
   try {
     if (counter) {
-      counter.setValue(Math.min(capacity, Number(previous) + 1));
+      counter.setValue(Math.min(capacity, Number(previous) + bookingSeatsToRestore_(rows, index)));
       SpreadsheetApp.flush();
     }
     bookings.deleteRow(index + 1);
@@ -650,7 +655,7 @@ function coachManagementAction_(ss, payload) {
     }
     try {
       bookings.getRange(booking.index, 6).setValue('已取消');
-      if (counter) counter.setValue(Math.min(capacity, remaining + 1));
+      if (counter) counter.setValue(Math.min(capacity, remaining + bookingSeatsToRestore_(bookings.getDataRange().getValues(), booking.index - 1)));
       SpreadsheetApp.flush();
     } catch(error) {
       bookings.getRange(booking.index, 6).setValue(booking.row[5]);
@@ -717,4 +722,11 @@ function verifyAccountOwner_(accessToken, lineId) {
   if (String(token.client_id) !== String(channelId) || !(Number(token.expires_in) > 0)) throw new Error('LINE 登入驗證失敗。');
   const response = monthlyFetchLine_('https://api.line.me/v2/profile', { headers: { Authorization: 'Bearer ' + accessToken }, muteHttpExceptions: true });
   if (response.getResponseCode() !== 200 || JSON.parse(response.getContentText()).userId !== lineId) throw new Error('只能補登自己帳號的學生資料。');
+}
+
+// New private lessons share one slot across all student rows. Old bookings still use one seat per row.
+function bookingSeatsToRestore_(rows, index) {
+  const groupId = rows[index][10];
+  if (!groupId || rows[0][10] !== '專屬教練課預約組別') return 1;
+  return rows.some((row, i) => i > 0 && i !== index && row[10] === groupId && row[5] !== '已取消') ? 0 : 1;
 }

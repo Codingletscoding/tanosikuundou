@@ -639,6 +639,7 @@
 
         const StudentBookingView = ({ profile, userRecord, onBooked }) => {
           const [slots, setSlots] = useState([]);
+          const [supportsSharedCoach, setSupportsSharedCoach] = useState(false);
           const [status, setStatus] = useState('idle');
           const [currentMonth, setCurrentMonth] = useState(new Date());
           const [selectedDate, setSelectedDate] = useState(formatDate(new Date()));
@@ -653,17 +654,21 @@
             fetchAPI({ action: 'getSlots' }).then(res => {
                 const validSlots = (res.slots || []).filter(s => s.id && s.title && s.date);
                 setSlots(validSlots);
+                setSupportsSharedCoach(res.coachAccountPricingVersion === 1);
             });
           }, []);
 
           const handleBookClick = (slot, type = null, customPrice = null, selectedLoc = null) => {
-            const myPrice = Number(customPrice ?? slot.prices[userLevel]) * studentCount;
+            const isCoach = slot.title.startsWith('[專屬教練課]');
+            if (isCoach && studentCount === 2 && !supportsSharedCoach) { alert('雙人帳號的專屬教練課預約尚未啟用，請聯絡教練。'); return; }
+            if (isCoach && studentCount > 2) { alert('專屬教練課限同帳號 1～2 位學生預約。'); return; }
+            const myPrice = Number(customPrice ?? slot.prices[userLevel]) * (isCoach ? 1 : studentCount);
             if (!Number.isFinite(myPrice) || myPrice < 0) { alert('課程價格設定不正確，請聯絡教練。'); return; }
-            if (Number(slot.remaining) < studentCount) { alert('剩餘名額不足以預約此帳號的全部學生。'); return; }
+            if (Number(slot.remaining) < (isCoach ? 1 : studentCount)) { alert('剩餘名額不足以預約此帳號的全部學生。'); return; }
             let titleDisplay = slot.title;
             let finalName = userRecord ? userRecord.name : '';
             if (type) {
-                titleDisplay = `個人教學 (${type} 於 ${selectedLoc})`;
+                titleDisplay = `專屬教練課 (${type} 於 ${selectedLoc})`;
                 finalName = `${userRecord ? userRecord.name : ''} [${type} - ${selectedLoc}]`;
             }
             setAgreementAccepted(false);
@@ -703,14 +708,14 @@
           if (status === 'success') return (
             <div className="p-8 text-center bg-white rounded-xl shadow-md m-6 md:m-10 border-t-4 border-emerald-500">
               <h2 className="text-2xl font-bold text-emerald-600 mb-4">預約成功！</h2>
-              <p className="text-gray-500 mb-6">您的訂單目前為<span className="text-amber-600 font-bold mx-1">審核中</span><br/>可在本頁下方「追蹤中預約單」查看狀態。個人教學請於現場付現；團課可在預約單補登匯款後五碼。</p>
+              <p className="text-gray-500 mb-6">您的訂單目前為<span className="text-amber-600 font-bold mx-1">審核中</span><br/>可在本頁下方「追蹤中預約單」查看狀態。專屬教練課請於現場付現；團課可在預約單補登匯款後五碼。</p>
               <button onClick={() => window.location.reload()} className="w-full max-w-xs mx-auto bg-slate-800 text-white py-3 rounded-lg font-bold block transition hover:bg-slate-700">繼續預約</button>
             </div>
           );
 
           return (
             <div>
-            <p className="m-4 p-3 rounded-lg bg-emerald-50 text-emerald-900">此帳號共 {studentCount} 位學生，預約將佔用 {studentCount} 個名額，費用依人數加總。</p>
+            <p className="m-4 p-3 rounded-lg bg-emerald-50 text-emerald-900">此帳號共 {studentCount} 位學生。團課預約佔用 {studentCount} 個名額，費用依人數加總；專屬教練課限同帳號 1～2 人，共用一個名額，按所選方案原價收費。</p>
             <div className="flex flex-col md:flex-row gap-0 md:gap-8 p-0 md:p-8 pb-10 relative">
               <div className="bg-white px-2 md:px-6 py-4 md:py-6 shadow-sm border-b md:border md:rounded-2xl w-full md:w-1/3 md:sticky md:top-6 h-fit">
                 <div className="flex justify-between items-center mb-4 px-4">
@@ -727,7 +732,7 @@
                       const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
                       
                       const hasAvailableGroupClass = slots.some(s => doesSlotMatchDate(s, dateStr) && Number(s.remaining) >= studentCount && !s.title.startsWith('[專屬教練課]'));
-                      const hasAvailableCoachSlot = slots.some(s => doesSlotMatchDate(s, dateStr) && Number(s.remaining) >= studentCount && s.title.startsWith('[專屬教練課]'));
+                      const hasAvailableCoachSlot = slots.some(s => doesSlotMatchDate(s, dateStr) && studentCount <= 2 && Number(s.remaining) >= 1 && s.title.startsWith('[專屬教練課]'));
                       
                       if (!hasAvailableGroupClass && !hasAvailableCoachSlot) return <div key={i} className="h-14" aria-hidden="true" />;
                       const isSelected = dateStr === selectedDate;
@@ -748,7 +753,7 @@
                 </div>
                 <div className="flex justify-center gap-3 md:gap-4 mt-6 text-[10px] md:text-xs text-gray-500">
                     <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-blue-500 rounded-full"></div>團課</div>
-                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-green-500 rounded-full"></div>個人教學</div>
+                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-green-500 rounded-full"></div>專屬教練課</div>
                 </div>
               </div>
 
@@ -760,7 +765,7 @@
                     <div className="space-y-4">
                         {dailySlots.map(slot => {
                           const isCoachSlot = slot.title.startsWith('[專屬教練課]');
-                          const isFull = Number(slot.remaining) < studentCount;
+                          const isFull = isCoachSlot ? studentCount > 2 || Number(slot.remaining) < 1 : Number(slot.remaining) < studentCount;
 
                           const safeLocation = slot.location || '';
                           let availableLocs = LOCATIONS_LIST;
@@ -784,12 +789,13 @@
 
                               return (
                                 <div key={slot.id} className={`border p-5 rounded-2xl flex flex-col shadow-sm transition relative overflow-hidden ${isFull ? 'bg-gray-50 border-l-4 border-l-gray-400 opacity-80' : 'bg-green-50 border-l-4 border-l-green-500'}`}>
-                                    <div className={`absolute top-0 right-0 text-xs px-3 py-1.5 rounded-bl-lg font-bold tracking-wide ${isFull ? 'bg-gray-200 text-gray-600' : 'bg-green-200 text-green-800'}`}>個人教學開放時段</div>
-                                    <div className={`font-bold text-lg md:text-xl mt-1 ${isFull ? 'text-gray-500' : 'text-green-800'}`}>個人教學</div>
+                                    <div className={`absolute top-0 right-0 text-xs px-3 py-1.5 rounded-bl-lg font-bold tracking-wide ${isFull ? 'bg-gray-200 text-gray-600' : 'bg-green-200 text-green-800'}`}>專屬教練課開放時段</div>
+                                    <div className={`font-bold text-lg md:text-xl mt-1 ${isFull ? 'text-gray-500' : 'text-green-800'}`}>專屬教練課</div>
                                     <p className="text-xs text-green-900 mt-1">每小時教練費，現場現金付款；不含場地費，場地由學員自行預約。</p>
                                     <div className="font-semibold text-gray-800 mt-2 text-sm md:text-base">{slot.date}</div>
                                     <div className="text-sm text-gray-500 mt-1">{slot.time} • {slotDisplayLocation}</div>
                                     
+                                    {studentCount === 2 && !supportsSharedCoach && <p className="mt-3 text-sm text-amber-800">雙人帳號的專屬教練課預約尚未啟用，請聯絡教練。</p>}
                                     {!isFull && (
                                       <div className="mt-4">
                                           <div className="text-xs md:text-sm text-red-600 bg-red-50 px-3 py-2 rounded border border-red-100 mb-3 font-medium">
@@ -808,16 +814,16 @@
                                         <div className={`flex-1 min-w-0 flex justify-between items-center p-3 rounded-lg border shadow-sm ${isFull ? 'bg-gray-100 border-gray-200' : 'bg-white border-green-100'}`}>
                                             <div className={isFull ? 'opacity-60' : ''}>
                                                 <span className={`font-bold text-sm md:text-base ${isFull ? 'text-gray-500' : 'text-green-700'}`}>1對1 教練課</span>
-                                                <div className="mt-0.5"><span className={`${isFull ? 'text-gray-500' : 'text-emerald-600'} font-bold text-lg`}>每人 NT$ {my1v1}</span></div>
+                                                <div className="mt-0.5"><span className={`${isFull ? 'text-gray-500' : 'text-emerald-600'} font-bold text-lg`}>每帳號 NT$ {my1v1}</span></div>
                                             </div>
-                                            <button onClick={() => handleBookClick(slot, '1對1', my1v1, selectedLoc)} disabled={status==='booking' || isFull} className={`font-bold py-2 px-5 rounded-lg text-sm md:text-base active:scale-95 transition-transform ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}>{isFull ? '已額滿' : '預約 1對1'}</button>
+                                            <button onClick={() => handleBookClick(slot, '1對1', my1v1, selectedLoc)} disabled={status==='booking' || isFull || (studentCount === 2 && !supportsSharedCoach)} className={`font-bold py-2 px-5 rounded-lg text-sm md:text-base active:scale-95 transition-transform ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}>{isFull ? '已額滿' : '預約 1對1'}</button>
                                         </div>
                                         <div className={`flex-1 min-w-0 flex justify-between items-center p-3 rounded-lg border shadow-sm ${isFull ? 'bg-gray-100 border-gray-200' : 'bg-white border-green-100'}`}>
                                             <div className={isFull ? 'opacity-60' : ''}>
                                                 <span className={`font-bold text-sm md:text-base ${isFull ? 'text-gray-500' : 'text-green-700'}`}>1對2 教練課</span>
-                                                <div className="mt-0.5"><span className={`${isFull ? 'text-gray-500' : 'text-emerald-600'} font-bold text-lg`}>每人 NT$ {my1v2}</span></div>
+                                                <div className="mt-0.5"><span className={`${isFull ? 'text-gray-500' : 'text-emerald-600'} font-bold text-lg`}>每帳號 NT$ {my1v2}</span></div>
                                             </div>
-                                            <button onClick={() => handleBookClick(slot, '1對2', my1v2, selectedLoc)} disabled={status==='booking' || isFull} className={`font-bold py-2 px-5 rounded-lg text-sm md:text-base active:scale-95 transition-transform ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}>{isFull ? '已額滿' : '預約 1對2'}</button>
+                                            <button onClick={() => handleBookClick(slot, '1對2', my1v2, selectedLoc)} disabled={status==='booking' || isFull || (studentCount === 2 && !supportsSharedCoach)} className={`font-bold py-2 px-5 rounded-lg text-sm md:text-base active:scale-95 transition-transform ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}>{isFull ? '已額滿' : '預約 1對2'}</button>
                                         </div>
                                     </div>
                                 </div>

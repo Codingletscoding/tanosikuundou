@@ -54,7 +54,12 @@ test('student log and completion affect only selected student even with identica
 });
 test('unbooked logs require a student and reject mismatched account booking',()=>{const f=fixture();f.register();f.run({action:'bookClass',slotId:'slot'});assert.equal(f.run({action:'addLog',stats:{}}).status,'error');assert.equal(f.run({action:'addLog',lineId:'other',bookingId:f.rows['預約名單'][1][7],stats:{}}).status,'error');assert.equal(f.rows['訓練日誌'].length,1);});
 test('legacy single account retains historical logs and bookings',()=>{const f=fixture();f.rows['會員資料'].push(['account','舊學生',20,'0912345678',0,1]);f.rows['訓練日誌'].push([0,'account','舊學生','2026-01-01',1,0,0,0,0,0,0,0,0,'舊紀錄']);assert.equal(f.run({action:'getStudentStats'}).totalClasses,1);assert.equal(f.run({action:'bookClass',slotId:'slot'}).status,'success');assert.equal(f.rows['可用時段'][1][6],4);});
-test('private coach price uses stored level and multiplies through per-student orders',()=>{const f=fixture();f.register(3);f.rows['會員資料'][1][5]=2;f.rows['可用時段'][1][1]='[專屬教練課] 1v1:1000|1v2:1500';assert.equal(f.run({action:'bookClass',slotId:'slot',coachType:'1對2',paidPrice:0}).status,'success');assert.equal(f.rows['預約名單'].slice(1).reduce((sum,row)=>sum+row[4],0),4410);assert(f.rows['預約名單'].slice(1).every(row=>row[6]==='現場現金'));});
+test('private coach charges one account price for two students and consumes one slot',()=>{
+ const f=fixture({remaining:1});f.register(2);f.rows['會員資料'][1][5]=2;f.rows['可用時段'][1][5]=1;f.rows['可用時段'][1][1]='[專屬教練課] 1v1:1000|1v2:1500';
+ assert.equal(f.run({action:'bookClass',slotId:'slot',coachType:'1對2',paidPrice:0}).status,'success');
+ const orders=f.rows['預約名單'].slice(1);assert.equal(orders.reduce((sum,row)=>sum+row[4],0),1470);assert.equal(orders.length,2);assert(orders.every(row=>row[6]==='現場現金'));assert.equal(orders[0][10],orders[1][10]);assert.equal(f.rows['可用時段'][1][6],0);
+ assert.equal(f.run({action:'bookClass',slotId:'slot',coachType:'1對2'}).status,'error');
+});
 test('reserved custom columns are never overwritten by account registration',()=>{const f=fixture();f.rows['會員資料'][0][6]='自訂欄位';assert.equal(f.register().status,'error');assert.equal(f.rows['會員資料'].length,1);assert.equal(f.rows['會員資料'][0][6],'自訂欄位');});
 test('cancel and delete restore only each student seat and preserve siblings',()=>{
  const f=fixture();f.register(3);f.run({action:'bookClass',slotId:'slot'});
@@ -85,4 +90,31 @@ test('repair rejects another LINE user and leaves existing profile untouched',()
  const f=fixture({otherUser:true});f.rows['會員資料'].push(['account','舊姓名',20,'0912345678',0,1]);
  const result=f.run({action:'completeAccountRegistration',accessToken:'mock',students:[{name:'新學生',nickname:'暱稱',gender:'女',age:10}],phone:'0912345678',idNumber:'A123456789'});
  assert.equal(result.status,'error');assert.equal(f.rows['會員資料'][1][1],'舊姓名');assert.equal(f.rows['會員資料'][1][6],undefined);
+});
+
+function sharedCoach(options={}) {
+ const f=fixture({remaining:1,...options});f.register(2);f.rows['可用時段'][1][5]=1;f.rows['可用時段'][1][1]='[專屬教練課] 1v1:1001|1v2:1500';
+ f.context.monthlyVerifyCoach_=()=>{};f.context.verifyBookingDeletionCoach_=()=>{};
+ return f;
+}
+test('shared coach slot is restored only after both students cancel',()=>{
+ const f=sharedCoach();f.run({action:'bookClass',slotId:'slot',coachType:'1對1'});const orders=f.rows['預約名單'].slice(1);
+ assert.equal(orders.reduce((sum,row)=>sum+row[4],0),1001);
+ assert.equal(f.run({action:'cancelBooking',bookingId:orders[0][7]}).status,'success');assert.equal(f.rows['可用時段'][1][6],0);
+ assert.equal(f.run({action:'cancelBooking',bookingId:orders[1][7]}).status,'success');assert.equal(f.rows['可用時段'][1][6],1);
+ assert.equal(f.run({action:'cancelBooking',bookingId:orders[1][7]}).status,'error');
+});
+test('deleting one shared coach order keeps slot reserved until the final order is deleted',()=>{
+ const f=sharedCoach();f.run({action:'bookClass',slotId:'slot',coachType:'1對2'});const ids=f.rows['預約名單'].slice(1).map(row=>row[7]);
+ assert.equal(f.run({action:'deleteBooking',bookingId:ids[0]}).status,'success');assert.equal(f.rows['可用時段'][1][6],0);
+ assert.equal(f.run({action:'deleteBooking',bookingId:ids[1]}).status,'success');assert.equal(f.rows['可用時段'][1][6],1);
+});
+test('shared coach partial write rolls back both student orders and the slot',()=>{
+ const f=sharedCoach({failAppend:2});assert.equal(f.run({action:'bookClass',slotId:'slot',coachType:'1對2'}).status,'error');assert.equal(f.rows['預約名單'].length,1);assert.equal(f.rows['可用時段'][1][6],1);
+});
+test('completed sibling still reserves a shared coach slot',()=>{
+ const f=sharedCoach();f.run({action:'bookClass',slotId:'slot',coachType:'1對2'});f.rows['預約名單'][1][5]='已完課';assert.equal(f.run({action:'cancelBooking',bookingId:f.rows['預約名單'][2][7]}).status,'success');assert.equal(f.rows['可用時段'][1][6],0);
+});
+test('three-student accounts cannot book one-to-two private lessons',()=>{
+ const f=fixture();f.register(3);f.rows['可用時段'][1][1]='[專屬教練課] 1v1:1000|1v2:1500';assert.equal(f.run({action:'bookClass',slotId:'slot',coachType:'1對2'}).status,'error');assert.equal(f.rows['預約名單'].length,1);
 });

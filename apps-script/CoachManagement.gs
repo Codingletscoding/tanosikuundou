@@ -28,7 +28,7 @@ function coachManagementAction_(ss, payload) {
     }
     try {
       bookings.getRange(booking.index, 6).setValue('已取消');
-      if (counter) counter.setValue(Math.min(capacity, remaining + 1));
+      if (counter) counter.setValue(Math.min(capacity, remaining + (typeof bookingSeatsToRestore_ === 'function' ? bookingSeatsToRestore_(bookings.getDataRange().getValues(), booking.index - 1) : 1)));
       SpreadsheetApp.flush();
     } catch(error) {
       bookings.getRange(booking.index, 6).setValue(booking.row[5]);
