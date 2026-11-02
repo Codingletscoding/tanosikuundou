@@ -663,7 +663,7 @@
             let titleDisplay = slot.title;
             let finalName = userRecord ? userRecord.name : '';
             if (type) {
-                titleDisplay = `教練專屬時段 (${type} 於 ${selectedLoc})`;
+                titleDisplay = `個人教學 (${type} 於 ${selectedLoc})`;
                 finalName = `${userRecord ? userRecord.name : ''} [${type} - ${selectedLoc}]`;
             }
             setAgreementAccepted(false);
@@ -703,7 +703,7 @@
           if (status === 'success') return (
             <div className="p-8 text-center bg-white rounded-xl shadow-md m-6 md:m-10 border-t-4 border-emerald-500">
               <h2 className="text-2xl font-bold text-emerald-600 mb-4">預約成功！</h2>
-              <p className="text-gray-500 mb-6">您的訂單目前為<span className="text-amber-600 font-bold mx-1">審核中</span><br/>可在本頁下方「追蹤中預約單」查看狀態。教練時段請於現場付現；團課可在預約單補登匯款後五碼。</p>
+              <p className="text-gray-500 mb-6">您的訂單目前為<span className="text-amber-600 font-bold mx-1">審核中</span><br/>可在本頁下方「追蹤中預約單」查看狀態。個人教學請於現場付現；團課可在預約單補登匯款後五碼。</p>
               <button onClick={() => window.location.reload()} className="w-full max-w-xs mx-auto bg-slate-800 text-white py-3 rounded-lg font-bold block transition hover:bg-slate-700">繼續預約</button>
             </div>
           );
@@ -721,35 +721,36 @@
                 <div className="grid grid-cols-7 text-center text-xs md:text-sm font-bold text-gray-400 mb-2">
                     <div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>
                 </div>
-                <div className="grid grid-cols-7 text-center gap-y-2">
+                <div role="group" aria-label="課程行事曆" className="grid grid-cols-7 text-center gap-y-2">
                     {allCells.map((day, i) => {
                       if (!day) return <div key={i} className="h-10"></div>;
                       const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
                       
-                      const hasAvailableGroupClass = slots.some(s => doesSlotMatchDate(s, dateStr) && Number(s.remaining) > 0 && !s.title.startsWith('[專屬教練課]'));
-                      const hasAvailableCoachSlot = slots.some(s => doesSlotMatchDate(s, dateStr) && Number(s.remaining) > 0 && s.title.startsWith('[專屬教練課]'));
+                      const hasAvailableGroupClass = slots.some(s => doesSlotMatchDate(s, dateStr) && Number(s.remaining) >= studentCount && !s.title.startsWith('[專屬教練課]'));
+                      const hasAvailableCoachSlot = slots.some(s => doesSlotMatchDate(s, dateStr) && Number(s.remaining) >= studentCount && s.title.startsWith('[專屬教練課]'));
                       const hasBookedOutSlot = slots.some(s => doesSlotMatchDate(s, dateStr) && Number(s.remaining) <= 0); 
                       
+                      if (!hasAvailableGroupClass && !hasAvailableCoachSlot) return <div key={i} className="h-14" aria-hidden="true" />;
                       const isSelected = dateStr === selectedDate;
                       const isToday = dateStr === formatDate(new Date());
 
                       return (
-                        <div key={i} onClick={() => setSelectedDate(dateStr)} className="h-14 flex flex-col items-center justify-start cursor-pointer relative active:scale-90 transition-transform">
-                          <div className={`w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full text-sm md:text-base transition-colors ${isSelected ? 'bg-emerald-600 text-white font-bold shadow-md' : isToday ? 'bg-emerald-100 text-emerald-800 font-bold' : 'text-gray-700 hover:bg-gray-100'}`}>
+                        <button type="button" key={i} aria-label={`${dateStr} 可預約`} aria-pressed={isSelected} onClick={() => setSelectedDate(dateStr)} className="h-14 flex flex-col items-center justify-start cursor-pointer relative active:scale-90 transition-transform">
+                          <span className={`w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full text-sm md:text-base transition-colors ${isSelected ? 'bg-emerald-600 text-white font-bold shadow-md' : isToday ? 'bg-emerald-100 text-emerald-800 font-bold' : 'text-gray-700 hover:bg-gray-100'}`}>
                             {day}
-                          </div>
-                          <div className="flex gap-1 mt-1 justify-center w-full">
-                              {hasAvailableGroupClass && <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>}
-                              {hasAvailableCoachSlot && <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>}
-                              {hasBookedOutSlot && <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>}
-                          </div>
-                        </div>
+                          </span>
+                          <span className="flex gap-1 mt-1 justify-center w-full">
+                              {hasAvailableGroupClass && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>}
+                              {hasAvailableCoachSlot && <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>}
+                              {hasBookedOutSlot && <span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>}
+                          </span>
+                        </button>
                       )
                     })}
                 </div>
                 <div className="flex justify-center gap-3 md:gap-4 mt-6 text-[10px] md:text-xs text-gray-500">
-                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-blue-500 rounded-full"></div>可約團課</div>
-                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-green-500 rounded-full"></div>教練時段</div>
+                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-blue-500 rounded-full"></div>團課</div>
+                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-green-500 rounded-full"></div>個人教學</div>
                     <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-red-500 rounded-full"></div>已額滿</div>
                 </div>
               </div>
@@ -786,8 +787,8 @@
 
                               return (
                                 <div key={slot.id} className={`border p-5 rounded-2xl flex flex-col shadow-sm transition relative overflow-hidden ${isFull ? 'bg-gray-50 border-l-4 border-l-gray-400 opacity-80' : 'bg-green-50 border-l-4 border-l-green-500'}`}>
-                                    <div className={`absolute top-0 right-0 text-xs px-3 py-1.5 rounded-bl-lg font-bold tracking-wide ${isFull ? 'bg-gray-200 text-gray-600' : 'bg-green-200 text-green-800'}`}>教練開放時段</div>
-                                    <div className={`font-bold text-lg md:text-xl mt-1 ${isFull ? 'text-gray-500' : 'text-green-800'}`}>教練專屬時段</div>
+                                    <div className={`absolute top-0 right-0 text-xs px-3 py-1.5 rounded-bl-lg font-bold tracking-wide ${isFull ? 'bg-gray-200 text-gray-600' : 'bg-green-200 text-green-800'}`}>個人教學開放時段</div>
+                                    <div className={`font-bold text-lg md:text-xl mt-1 ${isFull ? 'text-gray-500' : 'text-green-800'}`}>個人教學</div>
                                     <p className="text-xs text-green-900 mt-1">每小時教練費，現場現金付款；不含場地費，場地由學員自行預約。</p>
                                     <div className="font-semibold text-gray-800 mt-2 text-sm md:text-base">{slot.date}</div>
                                     <div className="text-sm text-gray-500 mt-1">{slot.time} • {slotDisplayLocation}</div>
