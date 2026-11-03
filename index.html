@@ -1048,8 +1048,8 @@
             );
         };
 
-        const StudentRecordsView = ({ lineId, userRecord }) => {
-            const [studentId, setStudentId] = useState(userRecord?.students?.[0]?.id || '');
+        const StudentRecordsView = ({ lineId, userRecord, initialStudentId }) => {
+            const [studentId, setStudentId] = useState(initialStudentId !== undefined ? initialStudentId : (userRecord?.students?.[0]?.id || ''));
             const [data, setData] = useState(null);
             const recordsRequest = React.useRef(0);
 
@@ -1143,7 +1143,7 @@
             } catch (_) {}
         };
 
-        const StudentDashboard = ({ profile, userRecord, onCompleteRegistration }) => {
+        const StudentDashboard = ({ profile, userRecord, onCompleteRegistration, initialStudentId }) => {
             const [activeTab, setActiveTab] = useState(() => studentTabFromHash(window.location.hash));
             useEffect(() => {
                 const syncRoute = () => setActiveTab(studentTabFromHash(window.location.hash));
@@ -1153,6 +1153,8 @@
                 return () => window.removeEventListener('hashchange', syncRoute);
             }, []);
             const [bookingRevision, setBookingRevision] = useState(0);
+            const currentStudentIndex = Math.max(0, userRecord.students.findIndex(student => student.id === initialStudentId));
+            const currentStudent = userRecord.students[currentStudentIndex];
             const userLevel = userRecord ? (userRecord.level || 1) : 1;
 
             return (
@@ -1160,15 +1162,15 @@
                     <header className="bg-amber-50 text-slate-900 shadow-md relative z-10">
                         <BrandBanner />
                         <div className="px-5 md:px-8 pt-4">
-                            <p className="text-sm md:text-base text-slate-700">{studentNickname(userRecord?.students?.[0])}，歡迎！</p>
+                            <p className="text-sm md:text-base text-slate-700">{studentNickname(currentStudent, currentStudentIndex)}，歡迎！</p>
                             <div className="mt-2 mb-4 inline-block bg-amber-500 text-slate-900 text-xs md:text-sm font-bold px-2.5 py-1 rounded shadow-sm">{LEVEL_NAMES[userLevel]} 會員</div>
                             <h2 className="py-3 text-lg font-bold border-t border-amber-200">{activeTab === 'booking' ? '課程預約' : '我的訓練日誌'}</h2>
                         </div>
                     </header>
 
                     <div className="flex-1 min-w-0 overflow-y-auto">
-                        {userRecord.registrationComplete === false && <div className="m-4 p-4 border rounded-xl bg-amber-50"><p>目前帳號只有舊版單人資料；若先前選擇多人但未儲存，請補登全部學生資料。</p><button onClick={onCompleteRegistration} className="mt-3 bg-amber-700 text-white p-3 rounded-lg font-bold">補登同帳號學生資料</button></div>}
-                        {activeTab === 'booking' ? <><StudentBookingView profile={profile} userRecord={userRecord} onBooked={() => setBookingRevision(value => value + 1)} /><StudentBookingTracking lineId={profile ? profile.userId : ''} students={userRecord.students} revision={bookingRevision} /><VenueAddresses /></> : <StudentRecordsView lineId={profile ? profile.userId : ''} userRecord={userRecord} />}
+                        {userRecord.registrationComplete === false && <div className="m-4 p-4 border rounded-xl bg-amber-50"><p>目前帳號只有舊版單人資料；若先前選擇多人但未儲存，請補登全部學生資料。</p>{onCompleteRegistration ? <button onClick={onCompleteRegistration} className="mt-3 bg-amber-700 text-white p-3 rounded-lg font-bold">補登同帳號學生資料</button> : <p className="mt-2 text-sm">請由學員登入自己的帳號補登資料。</p>}</div>}
+                        {activeTab === 'booking' ? <><StudentBookingView profile={profile} userRecord={userRecord} onBooked={() => setBookingRevision(value => value + 1)} /><StudentBookingTracking lineId={profile ? profile.userId : ''} students={userRecord.students} revision={bookingRevision} /><VenueAddresses /></> : <StudentRecordsView lineId={profile ? profile.userId : ''} userRecord={userRecord} initialStudentId={initialStudentId} />}
                     </div>
                 </div>
             )
@@ -1785,27 +1787,59 @@
             );
         };
 
+        const loadStudentAccountForCoach = async member => {
+            if (!member?.lineId) throw new Error('此學員缺少帳號資料，請重新整理名單。');
+            const result = await fetchAPI({ action: 'checkUser', lineId: member.lineId });
+            if (!result || result.status !== 'success') throw new Error(result?.message || '學生資料讀取失敗，請重試。');
+            if (!result.isRegistered || !result.user) throw new Error('此學員帳號尚未完成註冊，請返回後台確認。');
+            const userRecord = validateAccountRecord(result.user);
+            const studentId = member.studentId ?? userRecord.students[0].id;
+            if (!userRecord.students.some(student => student.id === studentId)) throw new Error('此學生已不在帳號內，請返回後台重新整理學員名單。');
+            return { userRecord, studentId };
+        };
+
         const CoachDashboard = () => {
             const [activeTab, setActiveTab] = useState('slots');
             const [selectedStudent, setSelectedStudent] = useState(null);
             const [paymentRevision, setPaymentRevision] = useState(0);
             const paymentsChanged = React.useCallback(() => setPaymentRevision(n => n + 1), []);
 
+            const studentRequestRef = React.useRef(0);
+            const returnHashRef = React.useRef('');
+            const openStudent = async member => {
+                if (!selectedStudent) returnHashRef.current = window.location.hash;
+                const requestId = ++studentRequestRef.current;
+                setSelectedStudent({ ...member, userRecord: null, loading: true, error: '' });
+                try {
+                    const account = await loadStudentAccountForCoach(member);
+                    if (requestId === studentRequestRef.current) setSelectedStudent({ ...member, ...account, loading: false, error: '' });
+                } catch (error) {
+                    if (requestId === studentRequestRef.current) setSelectedStudent({ ...member, userRecord: null, loading: false, error: error.message });
+                }
+            };
+            const closeStudent = () => {
+                studentRequestRef.current++;
+                setSelectedStudent(null);
+                window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search + returnHashRef.current);
+            };
+
             if (selectedStudent) {
                 return (
                     <div>
                         <div className="student-context sticky top-0 z-40 bg-amber-100 border-b border-amber-300 p-4 flex flex-wrap items-center justify-between gap-3" role="region" aria-label="教練學生畫面">
                             <div>
-                                <p className="font-bold text-amber-950">目前操作學生：{selectedStudent.name}</p>
-                                <p className="text-sm text-amber-900">教練檢視模式，預約將記錄在此學生名下。</p>
+                                <p className="font-bold text-amber-950">目前操作學生：{selectedStudent.userRecord ? studentNickname(selectedStudent.userRecord.students.find(student => student.id === selectedStudent.studentId)) : studentNickname(selectedStudent)}</p>
+                                <p className="text-sm text-amber-900">教練檢視模式；預約依此帳號全部學生人數與課程規則登記。</p>
                             </div>
-                            <button onClick={() => setSelectedStudent(null)} className="bg-slate-800 text-white font-bold px-4 py-2 rounded-lg">返回教練後台</button>
+                            <button onClick={closeStudent} className="bg-slate-800 text-white font-bold px-4 py-2 rounded-lg">返回教練後台</button>
                         </div>
-                        <StudentDashboard
-                            key={selectedStudent.lineId}
-                            profile={{ userId: selectedStudent.lineId, displayName: selectedStudent.name }}
-                            userRecord={selectedStudent}
-                        />
+                        {selectedStudent.loading ? <p role="status" className="p-8 text-center text-slate-600">讀取學生資料中...</p> : selectedStudent.error ? <div role="alert" className="p-6"><p className="text-red-700">{selectedStudent.error}</p><button onClick={() => openStudent(selectedStudent)} className="mt-4 border rounded-lg px-4 py-3">重新讀取學生資料</button></div> : <StudentDashboard
+                            key={`${selectedStudent.lineId}:${selectedStudent.studentId}`}
+                            profile={{ userId: selectedStudent.lineId }}
+                            userRecord={selectedStudent.userRecord}
+                            initialStudentId={selectedStudent.studentId}
+                        />}
+
                     </div>
                 );
             }
@@ -1824,7 +1858,7 @@
                     </header>
                     <div className="flex-1 min-w-0 p-3 md:p-8">
                         <CoachRevenue revision={`${activeTab}-${paymentRevision}`} />
-                        {activeTab === 'slots' ? <CoachSlotsView onPaymentsChanged={paymentsChanged} /> : <CoachMembersView onOpenStudent={setSelectedStudent} />}
+                        {activeTab === 'slots' ? <CoachSlotsView onPaymentsChanged={paymentsChanged} /> : <CoachMembersView onOpenStudent={openStudent} />}
                     </div>
                 </div>
             );
