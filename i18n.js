@@ -42,16 +42,11 @@
   };
   const textStates = new WeakMap(), attributeStates = new WeakMap();
   const readOriginal = (state, current) => state && current === state.translated ? state.original : current;
-  let observer, toolbar, pending = false;
+  let observer, pending = false;
   const ignored = element => element && element.closest('script,style,textarea,[translate="no"],[data-i18n-ignore]');
   const apply = () => {
     if (observer) observer.disconnect();
     try {
-      if (toolbar) {
-        const host = document.querySelector('[data-language-switch-host]');
-        toolbar.hidden = !host;
-        if (host && toolbar.parentElement !== host) host.append(toolbar);
-      }
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
       while (walker.nextNode()) {
         const node = walker.currentNode;
@@ -92,13 +87,6 @@
   window.confirm = message => originalConfirm(translate(message));
   window.BadmintonI18n = { translate, remember, setLanguage, getLanguage:()=>language };
   const start = () => {
-    toolbar = document.createElement('nav');
-    toolbar.className = 'language-switch'; toolbar.setAttribute('translate','no'); toolbar.setAttribute('aria-label','Language / 語言');
-    for (const [value,label] of [['zh-TW','中文'],['ja','日本語']]) {
-      const button = document.createElement('button');button.type='button';button.textContent=label;button.dataset.language=value;
-      button.addEventListener('click',()=>setLanguage(value));toolbar.append(button);
-    }
-    toolbar.hidden = true;
     observer = new MutationObserver(schedule);apply();
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',start,{once:true}); else start();

@@ -10,13 +10,11 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
     <script src="./ja.js"></script>
-    <script src="./i18n.js?v=member-row-1"></script>
+    <script src="./i18n.js?v=inline-controls-2"></script>
     <style>
         .language-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
         .language-switch-row > :first-child { min-width: 0; }
-        [data-language-switch-host] { flex-shrink: 0; }
-        .language-switch { display: flex; align-items: center; gap: 2px; }
-        .language-switch[hidden] { display: none; }
+        .language-switch { display: flex; align-items: center; flex-shrink: 0; gap: 2px; }
         .language-switch button { min-height: 24px; padding: 2px 4px; border-radius: 0; border: 0; background: transparent; color: #64748b; font-size: 11px; line-height: 20px; font-weight: 400; white-space: nowrap; }
         .language-switch button[aria-pressed="true"] { color: #475569; }
         .language-switch button:hover { color: #334155; }
@@ -449,6 +447,22 @@
         // 🔹 學生端主頁面與子視圖
         // ==========================================
 
+        const LanguageSwitch = () => {
+            const [language, setLanguage] = useState(() => window.BadmintonI18n?.getLanguage() || 'zh-TW');
+            useEffect(() => {
+                const syncLanguage = event => setLanguage(event.detail);
+                window.addEventListener('badminton-language-change', syncLanguage);
+                return () => window.removeEventListener('badminton-language-change', syncLanguage);
+            }, []);
+            return (
+                <nav className="language-switch" translate="no" aria-label="Language / 語言">
+                    {[['zh-TW', '中文'], ['ja', '日本語']].map(([value, label]) => (
+                        <button key={value} type="button" data-language={value} aria-pressed={language === value} onClick={() => window.BadmintonI18n?.setLanguage(value)}>{label}</button>
+                    ))}
+                </nav>
+            );
+        };
+
         const BrandBanner = () => (
             <div role="img" aria-label="樂動羽球，樂在運動，動出健康" className="w-full shrink-0" style={{ aspectRatio: '8 / 3', backgroundImage: 'url("./jj.png")', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }} />
         );
@@ -501,7 +515,7 @@
                 <BrandBanner />
                 <div className="language-switch-row mt-4">
                   <h2 className="text-xl font-bold text-slate-800">學員資料登記</h2>
-                  <div data-language-switch-host="" />
+                  <LanguageSwitch />
                 </div>
                 <p className="text-sm text-slate-500 mt-1">{existingUser ? '補登同帳號學生資料（保留既有預約與紀錄）' : '首次登入請綁定學員資料'}</p>
               </div>
@@ -1173,7 +1187,7 @@
                             <p className="text-sm md:text-base text-slate-700">{studentNickname(currentStudent, currentStudentIndex)}，歡迎！</p>
                             <div className="language-switch-row mt-2 mb-4">
                                 <div className="inline-block bg-amber-500 text-slate-900 text-xs md:text-sm font-bold px-2.5 py-1 rounded shadow-sm">{LEVEL_NAMES[userLevel]} 會員</div>
-                                <div data-language-switch-host="" />
+                                <LanguageSwitch />
                             </div>
                             <h2 className="py-3 text-lg font-bold border-t border-amber-200">{activeTab === 'booking' ? '課程預約' : '我的訓練日誌'}</h2>
                         </div>
@@ -1862,7 +1876,7 @@
                         <div className="px-4 md:px-8 pt-4">
                             <div className="language-switch-row mb-4">
                                 <h1 className="text-xl md:text-3xl font-bold tracking-wider">教練管理後台</h1>
-                                <div data-language-switch-host="" />
+                                <LanguageSwitch />
                             </div>
                             <div className="flex w-full mt-2 border-b border-amber-200">
                                 <button onClick={()=>setActiveTab('slots')} className={`flex-1 min-w-0 md:flex-none md:w-48 px-1 py-3 text-sm md:text-base font-bold border-b-4 text-center transition-colors ${activeTab === 'slots' ? 'border-emerald-700 text-emerald-800' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>排課與預約管理</button>
@@ -1914,7 +1928,7 @@
           if (view === 'login-error') return <div className="max-w-lg mx-auto p-5 bg-white min-h-screen">
             <div className="language-switch-row mb-4">
               <h1 className="text-xl font-bold">無法完成登入</h1>
-              <div data-language-switch-host="" />
+              <LanguageSwitch />
             </div>
             <p role="alert" className="bg-red-50 text-red-800 p-4 rounded-lg mb-4">{loginError}</p>
             <button onClick={login} className="w-full bg-emerald-700 text-white p-3 rounded-lg font-bold">重新嘗試登入</button>
