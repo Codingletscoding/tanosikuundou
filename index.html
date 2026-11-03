@@ -10,11 +10,16 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
     <script src="./ja.js"></script>
-    <script src="./i18n.js"></script>
+    <script src="./i18n.js?v=member-row-1"></script>
     <style>
-        .language-switch { display: flex; justify-content: flex-end; gap: 6px; padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
-        .language-switch button { min-height: 44px; padding: 8px 14px; border-radius: 8px; border: 1px solid #cbd5e1; background: white; color: #334155; font-weight: 700; }
-        .language-switch button[aria-pressed="true"] { background: #047857; border-color: #047857; color: white; }
+        .language-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .language-switch-row > :first-child { min-width: 0; }
+        [data-language-switch-host] { flex-shrink: 0; }
+        .language-switch { display: flex; align-items: center; gap: 2px; }
+        .language-switch[hidden] { display: none; }
+        .language-switch button { min-height: 24px; padding: 2px 4px; border-radius: 0; border: 0; background: transparent; color: #64748b; font-size: 11px; line-height: 20px; font-weight: 400; white-space: nowrap; }
+        .language-switch button[aria-pressed="true"] { color: #475569; }
+        .language-switch button:hover { color: #334155; }
         html[lang="ja"] { overflow-wrap: anywhere; }
         html { -webkit-text-size-adjust: 100%; }
         body { margin: 0; overflow-wrap: anywhere; }
@@ -494,7 +499,10 @@
             <div className="max-w-md md:max-w-lg mx-auto md:my-16 p-5 md:p-8 bg-white md:rounded-2xl shadow-xl border-t-4 border-slate-800 min-h-screen md:min-h-0">
               <div className="mb-6 border-b pb-5">
                 <BrandBanner />
-                <h2 className="text-xl font-bold text-slate-800 mt-4">學員資料登記</h2>
+                <div className="language-switch-row mt-4">
+                  <h2 className="text-xl font-bold text-slate-800">學員資料登記</h2>
+                  <div data-language-switch-host="" />
+                </div>
                 <p className="text-sm text-slate-500 mt-1">{existingUser ? '補登同帳號學生資料（保留既有預約與紀錄）' : '首次登入請綁定學員資料'}</p>
               </div>
               <form onSubmit={handleSubmit} className="space-y-5">
@@ -1163,7 +1171,10 @@
                         <BrandBanner />
                         <div className="px-5 md:px-8 pt-4">
                             <p className="text-sm md:text-base text-slate-700">{studentNickname(currentStudent, currentStudentIndex)}，歡迎！</p>
-                            <div className="mt-2 mb-4 inline-block bg-amber-500 text-slate-900 text-xs md:text-sm font-bold px-2.5 py-1 rounded shadow-sm">{LEVEL_NAMES[userLevel]} 會員</div>
+                            <div className="language-switch-row mt-2 mb-4">
+                                <div className="inline-block bg-amber-500 text-slate-900 text-xs md:text-sm font-bold px-2.5 py-1 rounded shadow-sm">{LEVEL_NAMES[userLevel]} 會員</div>
+                                <div data-language-switch-host="" />
+                            </div>
                             <h2 className="py-3 text-lg font-bold border-t border-amber-200">{activeTab === 'booking' ? '課程預約' : '我的訓練日誌'}</h2>
                         </div>
                     </header>
@@ -1849,7 +1860,10 @@
                     <header className="bg-amber-50 text-slate-900 shadow-md relative z-10">
                         <BrandBanner />
                         <div className="px-4 md:px-8 pt-4">
-                            <h1 className="text-xl md:text-3xl font-bold tracking-wider mb-4">教練管理後台</h1>
+                            <div className="language-switch-row mb-4">
+                                <h1 className="text-xl md:text-3xl font-bold tracking-wider">教練管理後台</h1>
+                                <div data-language-switch-host="" />
+                            </div>
                             <div className="flex w-full mt-2 border-b border-amber-200">
                                 <button onClick={()=>setActiveTab('slots')} className={`flex-1 min-w-0 md:flex-none md:w-48 px-1 py-3 text-sm md:text-base font-bold border-b-4 text-center transition-colors ${activeTab === 'slots' ? 'border-emerald-700 text-emerald-800' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>排課與預約管理</button>
                                 <button onClick={()=>setActiveTab('members')} className={`flex-1 min-w-0 md:flex-none md:w-48 px-1 py-3 text-sm md:text-base font-bold border-b-4 text-center transition-colors ${activeTab === 'members' ? 'border-emerald-700 text-emerald-800' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>學員名單與資料</button>
@@ -1898,7 +1912,10 @@
           useEffect(() => { login(); }, []);
           if (view === 'loading') return <div className="p-10 text-center text-gray-500 font-bold animate-pulse">正在確認 LINE 身分與帳號權限...</div>;
           if (view === 'login-error') return <div className="max-w-lg mx-auto p-5 bg-white min-h-screen">
-            <h1 className="text-xl font-bold mb-4">無法完成登入</h1>
+            <div className="language-switch-row mb-4">
+              <h1 className="text-xl font-bold">無法完成登入</h1>
+              <div data-language-switch-host="" />
+            </div>
             <p role="alert" className="bg-red-50 text-red-800 p-4 rounded-lg mb-4">{loginError}</p>
             <button onClick={login} className="w-full bg-emerald-700 text-white p-3 rounded-lg font-bold">重新嘗試登入</button>
             {liffState.profile && <div className="mt-5 text-sm text-gray-600"><p>若教練身分未被辨識，請確認此 LINE 帳號的 user ID 已列入後端 ADMIN_LINE_IDS，且 LIFF 使用相同 LINE Provider。</p><details className="mt-3"><summary>查看目前登入帳號 ID</summary><p className="mt-2 break-all select-all">{liffState.profile.userId}</p></details></div>}
