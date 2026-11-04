@@ -66,6 +66,67 @@
             .mobile-card-table td[data-label="操作"] button { width: 100%; white-space: normal; }
             .student-context { position: relative; z-index: auto; }
         }
+        @media (min-width: 768px) {
+            .registration-shell { width: calc(100% - 48px); max-width: 896px; margin: 24px auto; }
+            .booking-layout > *, .coach-workspace > *, .records-detail-grid > * { min-width: 0; }
+        }
+        @media (min-width: 768px) and (max-width: 1023px) {
+            .booking-layout { flex-direction: column; gap: 24px; padding: 24px; }
+            .booking-calendar { width: 100%; max-width: 440px; margin: 0 auto; position: static; }
+            .booking-slots { width: 100%; }
+            .coach-workspace { grid-template-columns: minmax(0, 1fr); }
+            .coach-results { grid-column: auto; }
+        }
+        @media (min-width: 1024px) {
+            .student-shell, .coach-shell { width: calc(100% - 64px); max-width: 1440px; margin: 24px auto; min-height: calc(100vh - 48px); border-radius: 16px; }
+            .student-shell { overflow: clip; }
+            .dashboard-header { display: grid; grid-template-columns: minmax(280px, 400px) minmax(0, 1fr); align-items: center; gap: 40px; padding: 24px 32px; }
+            .dashboard-header > .brand-banner { border-radius: 12px; }
+            .dashboard-header > .dashboard-heading { min-width: 0; padding: 0; }
+            .student-content { overflow: visible; }
+            .booking-notice { margin: 24px 32px 0; padding: 16px 20px; }
+            .booking-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 24px; padding: 24px 32px 32px; }
+            .booking-calendar { width: auto; padding: 20px 16px; top: 24px; }
+            .booking-calendar > :first-child { padding-left: 0; padding-right: 0; }
+            .booking-slots { width: auto; padding: 0; }
+            .coach-lesson-options { flex-direction: column; }
+            .booking-confirmation { max-width: 640px; }
+            .tracking-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; align-items: start; }
+            .tracking-groups > :not([hidden]) ~ :not([hidden]) { margin-top: 0; }
+            .records-view { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 24px; align-items: start; }
+            .records-view > label, .records-view > .monthly-leave-summary { grid-column: 1 / -1; margin-bottom: 0; }
+            .records-total { margin-bottom: 0; }
+            .records-detail-grid { grid-template-columns: minmax(0, 1fr); }
+            .registration-shell { max-width: 1120px; padding: 32px 40px; }
+            .registration-heading { display: grid; grid-template-columns: 320px minmax(0, 1fr); column-gap: 40px; align-items: center; }
+            .registration-heading > .brand-banner { grid-row: 1 / 3; border-radius: 12px; }
+            .registration-heading > .language-switch-row { margin-top: 0; align-self: end; }
+            .registration-heading > p { align-self: start; }
+            .registration-form > label { max-width: 280px; }
+            .registration-form > .registration-student { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; padding: 24px; }
+            .registration-form > .registration-student > :not(legend) { min-width: 0; margin-top: 0; }
+            .registration-student > .registration-goals, .registration-student > .registration-style { grid-column: 1 / -1; }
+            .registration-style { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+            .registration-style > p { grid-column: 1 / -1; }
+            .registration-student > .registration-style > :not([hidden]) ~ :not([hidden]) { margin-top: 0; }
+            .registration-form > button { max-width: 320px; margin-left: auto; display: block; }
+            .coach-workspace { grid-template-columns: minmax(300px, 340px) minmax(0, 1fr); gap: 24px; align-items: start; }
+            .coach-monthly-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; align-items: start; }
+            .coach-monthly-form > :not([hidden]) ~ :not([hidden]) { margin-top: 0; }
+            .coach-monthly-form > label { grid-row: 1; min-width: 0; }
+            .coach-monthly-form > fieldset, .coach-monthly-form > p { grid-column: 1 / -1; }
+            .coach-monthly-form > button { grid-column: 1 / -1; justify-self: end; }
+            .coach-editor { padding: 24px; }
+            .coach-results { grid-column: auto; }
+            .coach-shell .mobile-card-table { min-width: 680px; width: 100%; font-size: 14px; }
+            .coach-shell .mobile-card-table th, .coach-shell .mobile-card-table td { padding: 12px; white-space: normal; overflow-wrap: anywhere; }
+            .login-panel { max-width: 640px; min-height: 0; margin-top: 64px; padding: 32px; border-radius: 16px; }
+        }
+        @media (min-width: 1280px) {
+            .records-detail-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+            .coach-lesson-options { flex-direction: row; }
+            .coach-workspace { grid-template-columns: 360px minmax(0, 1fr); }
+        }
     </style>
 </head>
 <body class="bg-gray-200 md:bg-gray-300 min-h-screen text-gray-800 selection:bg-emerald-200">
@@ -464,7 +525,7 @@
         };
 
         const BrandBanner = () => (
-            <div role="img" aria-label="樂動羽球，樂在運動，動出健康" className="w-full shrink-0" style={{ aspectRatio: '8 / 3', backgroundImage: 'url("./jj.png")', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }} />
+            <div role="img" aria-label="樂動羽球，樂在運動，動出健康" className="brand-banner w-full shrink-0" style={{ aspectRatio: '8 / 3', backgroundImage: 'url("./jj.png")', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }} />
         );
 
         const studentNickname = (student, index = 0) => {
@@ -557,8 +618,8 @@
           const inputClass = 'block w-full border p-3 rounded-lg mt-1 font-normal';
           const noteClass = 'block text-xs leading-relaxed text-slate-500 font-normal mt-1';
           return (
-            <div className="max-w-md md:max-w-lg mx-auto md:my-16 p-5 md:p-8 bg-white md:rounded-2xl shadow-xl border-t-4 border-slate-800 min-h-screen md:min-h-0">
-              <div className="mb-6 border-b pb-5">
+            <div className="registration-shell max-w-md md:max-w-lg mx-auto md:my-16 p-5 md:p-8 bg-white md:rounded-2xl shadow-xl border-t-4 border-slate-800 min-h-screen md:min-h-0">
+              <div className="registration-heading mb-6 border-b pb-5">
                 <BrandBanner />
                 <div className="language-switch-row mt-4">
                   <h2 className="text-xl font-bold text-slate-800">學員資料登記</h2>
@@ -566,14 +627,14 @@
                 </div>
                 <p className="text-sm text-slate-500 mt-1">{existingUser ? '補登同帳號學生資料（保留既有預約與紀錄）' : '首次登入請綁定學員資料'}</p>
               </div>
-              <form onSubmit={handleSubmit} className="space-y-5">
+              <form onSubmit={handleSubmit} className="registration-form space-y-5">
                 <label className="block font-bold">學生人數
                   <select aria-label="學生人數" disabled={submitting} className={inputClass} value={students.length} onChange={e => setStudents(previous => Array.from({ length: Number(e.target.value) }, (_, i) => previous[i] || emptyStudent()))}>
                     {[1,2,3].map(count => <option key={count} value={count}>{count} 人</option>)}
                   </select>
                 </label>
                 <p className="text-sm text-slate-600">預約時將自動預訂全部學生的名額並加總費用。第一位學生為代表；其他學員可省略手機號碼及緊急連絡人電話。傷病史無則免填。</p>
-                {students.map((student, index) => <fieldset key={index} disabled={submitting} className="border rounded-xl p-4 space-y-5">
+                {students.map((student, index) => <fieldset key={index} disabled={submitting} className="registration-student border rounded-xl p-4 space-y-5">
                   <legend className="font-bold">學生 {index + 1}{index === 0 ? '（代表）' : ''}</legend>
                   {['name','nickname'].map(key => <label key={key} className="block text-sm font-bold">{key === 'name' ? '姓名' : '暱稱'}
                     <input required maxLength="60" autoComplete={key === 'name' ? 'name' : 'nickname'} pattern={key === 'name' ? '[\\p{Script=Han}·・‧ ]+' : undefined} aria-describedby={`registration-${index}-${key}-note`} className={inputClass} value={student[key]} onChange={e => updateStudent(index, key, e.target.value)} />
@@ -591,8 +652,8 @@
                   <label className="block text-sm font-bold">手機號碼{index > 0 && '（選填）'}<input required={index === 0} type="tel" autoComplete="tel" maxLength="20" aria-describedby={`registration-${index}-phone-note`} className={inputClass} value={student.phone} onChange={e => updateStudent(index, 'phone', e.target.value)} /><span id={`registration-${index}-phone-note`} className={noteClass}>{REGISTRATION_NOTES.phone}</span></label>
                   <label className="block text-sm font-bold">傷病史（選填）<textarea maxLength="2000" rows="3" aria-describedby={`registration-${index}-injury-note`} className={inputClass} value={student.injuryHistory} onChange={e => updateStudent(index, 'injuryHistory', e.target.value)} /><span id={`registration-${index}-injury-note`} className={noteClass}>{REGISTRATION_NOTES.injuryHistory}</span></label>
                   <label className="block text-sm font-bold">緊急連絡人電話{index > 0 && '（選填）'}<input required={index === 0} type="tel" maxLength="20" aria-describedby={`registration-${index}-emergency-note`} className={inputClass} value={student.emergencyPhone} onChange={e => updateStudent(index, 'emergencyPhone', e.target.value)} /><span id={`registration-${index}-emergency-note`} className={noteClass}>{REGISTRATION_NOTES.emergencyPhone}</span></label>
-                  <label className="block text-sm font-bold">學習目標<textarea required maxLength="2000" rows="3" aria-describedby={`registration-${index}-goals-note`} className={inputClass} value={student.learningGoals} onChange={e => updateStudent(index, 'learningGoals', e.target.value)} /><span id={`registration-${index}-goals-note`} className={noteClass}>{REGISTRATION_NOTES.learningGoals}</span></label>
-                  <div role="group" aria-labelledby={`registration-${index}-style-label`} className="bg-slate-50 rounded-lg p-3 space-y-4">
+                  <label className="registration-goals block text-sm font-bold">學習目標<textarea required maxLength="2000" rows="3" aria-describedby={`registration-${index}-goals-note`} className={inputClass} value={student.learningGoals} onChange={e => updateStudent(index, 'learningGoals', e.target.value)} /><span id={`registration-${index}-goals-note`} className={noteClass}>{REGISTRATION_NOTES.learningGoals}</span></label>
+                  <div role="group" aria-labelledby={`registration-${index}-style-label`} className="registration-style bg-slate-50 rounded-lg p-3 space-y-4">
                     <p id={`registration-${index}-style-label`} className="text-sm font-bold">偏好上課風格</p>
                     <p className={noteClass}>{REGISTRATION_NOTES.lessonStyle}</p>
                     {LESSON_STYLE_OPTIONS.map(([key, label, note]) => <label key={key} className="block text-sm font-bold">
@@ -718,7 +779,7 @@
             }, [lineId, students, revision]);
             return <section aria-labelledby="booking-tracking-title" className="m-4 md:mx-8 mb-8 bg-white rounded-2xl shadow-sm border p-5 md:p-6">
                 <h3 id="booking-tracking-title" className="font-bold text-slate-800 mb-4 text-base md:text-lg">追蹤中預約單 <span className="text-xs text-gray-400 font-normal">（完課後自動隱藏）</span></h3>
-                {loading ? <p role="status" className="text-gray-500">讀取預約紀錄中...</p> : error ? <div role="alert"><p>{error}</p><button onClick={fetchTracking} className="mt-3 border rounded-lg p-3">重新讀取預約單</button></div> : <div className="space-y-6">
+                {loading ? <p role="status" className="text-gray-500">讀取預約紀錄中...</p> : error ? <div role="alert"><p>{error}</p><button onClick={fetchTracking} className="mt-3 border rounded-lg p-3">重新讀取預約單</button></div> : <div className="tracking-groups space-y-6">
                     {groups.map(({ student, bookings }, index) => <div key={student.id}>
                         <h4 className="font-bold text-slate-700 mb-3">{studentNickname(student, index)}</h4>
                         <div className="space-y-4">{bookings.length === 0 ? <p className="text-gray-400 text-sm">目前尚無未結案之預約紀錄</p> : bookings.map((booking, index) => <BookingStatusItem key={booking.bookingId || `${student.id}-${index}`} booking={booking} onUpdate={fetchTracking} />)}</div>
@@ -805,9 +866,9 @@
 
           return (
             <div>
-            <p className="m-4 p-3 rounded-lg bg-emerald-50 text-emerald-900">此帳號共 {studentCount} 位學生。團課預約佔用 {studentCount} 個名額，費用依人數加總；專屬教練課限同帳號 1～2 人，共用一個名額，按所選方案原價收費。</p>
-            <div className="flex flex-col md:flex-row gap-0 md:gap-8 p-0 md:p-8 pb-10 relative">
-              <div className="bg-white px-2 md:px-6 py-4 md:py-6 shadow-sm border-b md:border md:rounded-2xl w-full md:w-1/3 md:sticky md:top-6 h-fit">
+            <p className="booking-notice m-4 p-3 rounded-lg bg-emerald-50 text-emerald-900">此帳號共 {studentCount} 位學生。團課預約佔用 {studentCount} 個名額，費用依人數加總；專屬教練課限同帳號 1～2 人，共用一個名額，按所選方案原價收費。</p>
+            <div className="booking-layout flex flex-col md:flex-row gap-0 md:gap-8 p-0 md:p-8 pb-10 relative">
+              <div className="booking-calendar bg-white px-2 md:px-6 py-4 md:py-6 shadow-sm border-b md:border md:rounded-2xl w-full md:w-1/3 md:sticky md:top-6 h-fit">
                 <div className="flex justify-between items-center mb-4 px-4">
                     <button onClick={prevMonth} className="font-bold text-gray-500 hover:text-emerald-600 px-4 py-1 bg-gray-100 rounded active:scale-95">&lt;</button>
                     <div className="font-bold text-lg md:text-xl text-gray-800">{year}年 {month + 1}月</div>
@@ -847,7 +908,7 @@
                 </div>
               </div>
 
-              <div className="p-4 md:p-0 w-full md:w-2/3">
+              <div className="booking-slots p-4 md:p-0 w-full md:w-2/3">
                 <h3 className="font-bold text-gray-800 mb-4 ml-1 text-sm md:text-lg border-b-2 border-emerald-500 w-fit pb-1">可預約時段</h3>
                 {dailySlots.length === 0 ? (
                     <div className="text-center text-gray-400 py-12 bg-white rounded-xl border border-dashed text-sm md:text-base">本日無排定課程</div>
@@ -900,7 +961,7 @@
                                       </div>
                                     )}
 
-                                    <div className={`mt-5 pt-4 border-t flex flex-col md:flex-row gap-3 ${isFull ? 'border-gray-200' : 'border-green-200'}`}>
+                                    <div className={`coach-lesson-options mt-5 pt-4 border-t flex flex-col md:flex-row gap-3 ${isFull ? 'border-gray-200' : 'border-green-200'}`}>
                                         <div className={`flex-1 min-w-0 flex justify-between items-center p-3 rounded-lg border shadow-sm ${isFull ? 'bg-gray-100 border-gray-200' : 'bg-white border-green-100'}`}>
                                             <div className={isFull ? 'opacity-60' : ''}>
                                                 <span className={`font-bold text-sm md:text-base ${isFull ? 'text-gray-500' : 'text-green-700'}`}>1對1 教練課</span>
@@ -955,7 +1016,7 @@
               {bookingTarget && !agreementAccepted && <BookingAgreement target={bookingTarget} onCancel={() => setBookingTarget(null)} onContinue={() => setAgreementAccepted(true)} />}
               {bookingTarget && agreementAccepted && (
                 <div className="fixed inset-0 bg-slate-900 bg-opacity-60 backdrop-blur-sm z-50 flex items-center justify-center p-3 md:p-4 overflow-y-auto">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[90dvh] overflow-y-auto my-auto animate-[pulse_0.2s_ease-out_1]">
+                    <div className="booking-confirmation bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[90dvh] overflow-y-auto my-auto animate-[pulse_0.2s_ease-out_1]">
                         <div className="bg-slate-800 p-4 text-white">
                             <h3 className="font-bold text-lg">確認預約資訊</h3>
                         </div>
@@ -1008,7 +1069,7 @@
         };
 
         const MonthlyLeaveSummary = ({ records }) => !records.length ? null : (
-            <section className="bg-amber-50 border border-amber-200 rounded-2xl p-4 md:p-6 mb-6" aria-label="請假與補課紀錄">
+            <section className="monthly-leave-summary bg-amber-50 border border-amber-200 rounded-2xl p-4 md:p-6 mb-6" aria-label="請假與補課紀錄">
                 <h3 className="font-bold text-amber-950 mb-3">月繳請假與補課</h3>
                 <div className="space-y-3">
                     {records.map(record => <div key={record.id} className="bg-white rounded-xl border p-3 text-sm">
@@ -1155,15 +1216,15 @@
             if (!data) return <div className="p-10 text-center text-gray-400 font-bold animate-pulse">讀取資料中...</div>;
 
             return (
-                <div className="p-4 md:p-8 pb-10">
+                <div className="records-view p-4 md:p-8 pb-10">
                     {userRecord?.students?.length > 1 && <label className="block font-bold mb-6">查看學生訓練紀錄<select aria-label="查看學生訓練紀錄" className="block w-full border p-3 rounded-lg mt-2" value={studentId} onChange={e => { recordsRequest.current++; setData(null); setStudentId(e.target.value); }}>{userRecord.students.map((student, index) => <option key={student.id} value={student.id}>{studentNickname(student, index)}</option>)}</select></label>}
                     <MonthlyLeaveSummary records={data.monthlyLeaves || []} />
-                    <div className="bg-white rounded-2xl shadow-sm border p-6 md:p-8 text-center border-t-4 border-t-emerald-500 mb-6">
+                    <div className="records-total bg-white rounded-2xl shadow-sm border p-6 md:p-8 text-center border-t-4 border-t-emerald-500 mb-6">
                         <div className="text-sm md:text-base text-gray-500 font-bold mb-2">累積完成課程 (已完課)</div>
                         <div className="text-5xl md:text-6xl font-extrabold text-slate-800">{data.totalClasses || 0} <span className="text-lg text-gray-500 font-normal">堂</span></div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="records-detail-grid grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6 h-fit">
                             <h3 className="font-bold text-slate-800 mb-4 ml-1 flex items-center text-base md:text-lg">
                                 <span className="w-1.5 h-5 bg-emerald-500 rounded mr-2"></span>能力時數雷達
@@ -1246,10 +1307,10 @@
             const userLevel = userRecord ? (userRecord.level || 1) : 1;
 
             return (
-                <div className="max-w-md md:max-w-5xl mx-auto bg-gray-50 min-h-screen md:min-h-[85vh] md:my-8 flex flex-col shadow-lg md:rounded-2xl overflow-hidden relative">
-                    <header className="bg-amber-50 text-slate-900 shadow-md relative z-10">
+                <div className="student-shell max-w-md md:max-w-5xl mx-auto bg-gray-50 min-h-screen md:min-h-[85vh] md:my-8 flex flex-col shadow-lg md:rounded-2xl overflow-hidden relative">
+                    <header className="dashboard-header bg-amber-50 text-slate-900 shadow-md relative z-10">
                         <BrandBanner />
-                        <div className="px-5 md:px-8 pt-4">
+                        <div className="dashboard-heading px-5 md:px-8 pt-4">
                             <p className="text-sm md:text-base text-slate-700">{studentNickname(currentStudent, currentStudentIndex)}，歡迎！</p>
                             <div className="language-switch-row mt-2 mb-4">
                                 <div className="inline-block bg-amber-500 text-slate-900 text-xs md:text-sm font-bold px-2.5 py-1 rounded shadow-sm">{LEVEL_NAMES[userLevel]} 會員</div>
@@ -1259,7 +1320,7 @@
                         </div>
                     </header>
 
-                    <div className="flex-1 min-w-0 overflow-y-auto">
+                    <div className="student-content flex-1 min-w-0 overflow-y-auto">
                         {userRecord.registrationComplete === false && <div className="m-4 p-4 border rounded-xl bg-amber-50"><p>目前帳號只有舊版單人資料；若先前選擇多人但未儲存，請補登全部學生資料。</p>{onCompleteRegistration ? <button onClick={onCompleteRegistration} className="mt-3 bg-amber-700 text-white p-3 rounded-lg font-bold">補登同帳號學生資料</button> : <p className="mt-2 text-sm">請由學員登入自己的帳號補登資料。</p>}</div>}
                         {activeTab === 'booking' ? <><StudentBookingView profile={profile} userRecord={userRecord} onBooked={() => setBookingRevision(value => value + 1)} /><StudentBookingTracking lineId={profile ? profile.userId : ''} students={userRecord.students} revision={bookingRevision} /><VenueAddresses /></> : <StudentRecordsView lineId={profile ? profile.userId : ''} userRecord={userRecord} initialStudentId={initialStudentId} />}
                     </div>
@@ -1403,7 +1464,7 @@
             return <section aria-labelledby="coach-monthly-registration-title" className="bg-sky-50 border border-sky-200 rounded-2xl p-4 md:p-6">
                 <h2 id="coach-monthly-registration-title" className="font-bold text-lg text-sky-950 mb-2">代登記月繳團課</h2>
                 <p className="text-sm text-sky-900 mb-4">選擇已註冊的學員帳號及參加學生。每人佔一個名額，依會員等級計費；登記後為審核中，確認收款後再核准。</p>
-                <form onSubmit={submit} className="space-y-4">
+                <form onSubmit={submit} className="coach-monthly-form space-y-4">
                     <label className="block font-bold">學員帳號<select aria-label="代登記學員帳號" disabled={busy} required value={lineId} onChange={e => { const next = accounts.find(account => account.lineId === e.target.value); setLineId(e.target.value); setStudentIds((next?.students || []).map(student => student.studentId || '')); setMessage(''); setError(''); }} className="block w-full border p-3 rounded-lg mt-1 bg-white"><option value="">請選擇學員帳號</option>{accounts.map(account => <option key={account.lineId} value={account.lineId}>{account.students.map(student => student.name + (student.nickname ? `（${student.nickname}）` : '')).join('、')}</option>)}</select></label>
                     {account && <fieldset disabled={busy} className="border rounded-lg p-3 bg-white"><legend className="font-bold">參加學生</legend>{account.students.map((student, index) => <label key={student.studentId || index} className="flex gap-2 items-center p-2"><input type="checkbox" checked={studentIds.includes(student.studentId || '')} onChange={e => setStudentIds(previous => e.target.checked ? [...previous, student.studentId || ''] : previous.filter(id => id !== (student.studentId || '')))} />{student.name}{student.nickname ? `（${student.nickname}）` : ''}</label>)}</fieldset>}
                     <label className="block font-bold">月繳課程<select aria-label="代登記月繳課程" disabled={busy} required value={slotId} onChange={e => { setSlotId(e.target.value); setMessage(''); setError(''); }} className="block w-full border p-3 rounded-lg mt-1 bg-white"><option value="">請選擇月繳課程</option>{monthlySlots.map(slot => <option key={slot.id} value={slot.id} disabled={Number(slot.remaining) < Math.max(1, selected.length)}>{slot.title} · {slot.date} {slot.time} · {slot.location}（剩 {slot.remaining} 名）</option>)}</select></label>
@@ -1601,8 +1662,8 @@
                 <div><h2 className="font-bold text-amber-950">月繳請假與補課</h2><p className="text-sm text-amber-900">提前至少 14 天登記請假，再安排其他補課日期。</p></div>
                 <button onClick={() => setShowMonthlyLeave(true)} className="bg-amber-600 text-white px-4 py-3 rounded-lg font-bold">請假登記／安排補課</button>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
-                <div className="bg-white p-5 md:p-8 rounded-2xl shadow-sm border min-w-0 col-span-1 h-fit">
+              <div className="coach-workspace grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+                <div className="coach-editor bg-white p-5 md:p-8 rounded-2xl shadow-sm border min-w-0 col-span-1 h-fit">
                   <h2 className="font-bold text-lg md:text-xl mb-5 border-b pb-3">新增課程 / 開放時段</h2>
                   <form onSubmit={handleAddSlot} className="space-y-4">
                     <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
@@ -1703,7 +1764,7 @@
                   </form>
                 </div>
 
-                <div className="min-w-0 col-span-1 md:col-span-2 space-y-6 md:space-y-8">
+                <div className="coach-results min-w-0 col-span-1 md:col-span-2 space-y-6 md:space-y-8">
                     <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
                         <div className="flex justify-between items-center mb-5 border-b pb-3">
                             <h2 className="font-bold text-lg md:text-xl text-emerald-700">已開課程與時段</h2>
@@ -1936,10 +1997,10 @@
             }
 
             return (
-                <div className="max-w-6xl mx-auto min-h-screen flex flex-col bg-gray-50 md:shadow-lg md:rounded-b-2xl">
-                    <header className="bg-amber-50 text-slate-900 shadow-md relative z-10">
+                <div className="coach-shell max-w-6xl mx-auto min-h-screen flex flex-col bg-gray-50 md:shadow-lg md:rounded-b-2xl">
+                    <header className="dashboard-header bg-amber-50 text-slate-900 shadow-md relative z-10">
                         <BrandBanner />
-                        <div className="px-4 md:px-8 pt-4">
+                        <div className="dashboard-heading px-4 md:px-8 pt-4">
                             <div className="language-switch-row mb-4">
                                 <h1 className="text-xl md:text-3xl font-bold tracking-wider">教練管理後台</h1>
                                 <LanguageSwitch />
@@ -1991,7 +2052,7 @@
           };
           useEffect(() => { login(); }, []);
           if (view === 'loading') return <div className="p-10 text-center text-gray-500 font-bold animate-pulse">正在確認 LINE 身分與帳號權限...</div>;
-          if (view === 'login-error') return <div className="max-w-lg mx-auto p-5 bg-white min-h-screen">
+          if (view === 'login-error') return <div className="login-panel max-w-lg mx-auto p-5 bg-white min-h-screen">
             <div className="language-switch-row mb-4">
               <h1 className="text-xl font-bold">無法完成登入</h1>
               <LanguageSwitch />
