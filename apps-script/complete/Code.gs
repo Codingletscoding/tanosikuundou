@@ -58,7 +58,7 @@ function doPost(e) {
         }
       }
       const isAdmin = ADMIN_LINE_IDS.includes(payload.lineId);
-      result = { status: "success", isRegistered: isRegistered, user: userData, isAdmin: isAdmin, accountRegistrationVersion: 1 };
+      result = { status: "success", isRegistered: isRegistered, user: userData, isAdmin: isAdmin, accountRegistrationVersion: 1, registrationProfileVersion: 2 };
     } 
     
     else if (action === "registerUser" || action === "completeAccountRegistration") {
@@ -76,8 +76,11 @@ function doPost(e) {
         students[0].id = '';
       } else if (matches.length) throw new Error('此帳號已註冊，請重新登入並使用補登學生資料。');
       accountReserveColumn_(sheet, 7, '帳號學生資料');
-      accountReserveColumn_(sheet, 8, '代表身分證字號');
-      const row = [payload.lineId, students[0].name, students[0].age, payload.phone.replace(/[\s-]/g, ''), oldRow ? oldRow[4] : new Date(), oldRow ? (oldRow[5] || 1) : 1, JSON.stringify(students), payload.idNumber.toUpperCase()];
+      const isProfile = payload.registrationProfileVersion === 2;
+      if (!isProfile) accountReserveColumn_(sheet, 8, '代表身分證字號');
+      const phone = isProfile ? students[0].phone : payload.phone.replace(/[\s-]/g, '');
+      const idNumber = isProfile ? (oldRow ? (oldRow[7] || '') : '') : payload.idNumber.toUpperCase();
+      const row = [payload.lineId, students[0].name, students[0].age, phone, oldRow ? oldRow[4] : new Date(), oldRow ? (oldRow[5] || 1) : 1, JSON.stringify(students), idNumber];
       if (oldRow) sheet.getRange(matches[0] + 1, 1, 1, 8).setValues([row]);
       else sheet.appendRow(row);
       result = { status: 'success', user: accountUser_(row), studentCount: students.length };
@@ -330,7 +333,7 @@ function doPost(e) {
         }
       }
       
-      result = { status: "success", students: students, studentId: selectedStudent ? selectedStudent.id : "", totalClasses: totalClasses, stats: stats, logs: logs.reverse(), bookings: myBookings.reverse(), monthlyLeaves: ss.getSheetByName('請假補課') ? monthlyLeaveRows_(ss.getSheetByName('請假補課')).filter(function(row) { return row.lineId === payload.lineId && (!selectedStudent || studentMatches_(row.studentId, row.name, selectedStudent)); }) : [] };
+      result = { status: "success", students: publicAccountStudents_(students), studentId: selectedStudent ? selectedStudent.id : "", totalClasses: totalClasses, stats: stats, logs: logs.reverse(), bookings: myBookings.reverse(), monthlyLeaves: ss.getSheetByName('請假補課') ? monthlyLeaveRows_(ss.getSheetByName('請假補課')).filter(function(row) { return row.lineId === payload.lineId && (!selectedStudent || studentMatches_(row.studentId, row.name, selectedStudent)); }) : [] };
     }
 
     if (!result.status) throw new Error("不支援的操作：" + String(action || "未提供"));
@@ -443,6 +446,8 @@ function studentMatches_(id, name, student) {
 }
 function validateAccountStudents_(payload) {
   if (!payload.lineId || !Array.isArray(payload.students) || payload.students.length < 1 || payload.students.length > 3) throw new Error('請選擇 1 到 3 位學生。');
+  if (payload.registrationProfileVersion === 2) return validateRegistrationProfile_(payload);
+  if (payload.registrationProfileVersion != null) throw new Error('不支援的註冊資料版本。');
   if (!/^09\d{8}$/.test(String(payload.phone || '').replace(/[\s-]/g, ''))) throw new Error('請填寫有效手機號碼。');
   const id = String(payload.idNumber || '').toUpperCase();
   if (!/^[A-Z][12]\d{8}$/.test(id)) throw new Error('請填寫有效身分證字號。');
@@ -452,6 +457,37 @@ function validateAccountStudents_(payload) {
   return payload.students.map(student => {
     if (!student || !String(student.name || '').trim() || !String(student.nickname || '').trim() || !['男','女','其他'].includes(student.gender) || !Number.isInteger(Number(student.age)) || Number(student.age) < 5 || Number(student.age) > 100) throw new Error('請完整填寫每位學生的姓名、暱稱、性別與年齡（5～100 歲）。');
     return { id: Utilities.getUuid(), name: String(student.name).trim(), nickname: String(student.nickname).trim(), gender: student.gender, age: Number(student.age) };
+  });
+}
+
+function validateRegistrationProfile_(payload) {
+  const today = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const cleanPhone = value => String(value || '').replace(/[\s()-]/g, '');
+  const text = (value, max, required, label) => {
+    if (value != null && typeof value !== 'string') throw new Error('請填寫有效的' + label + '。');
+    const result = String(value || '').trim();
+    if ((required && !result) || result.length > max) throw new Error('請完整填寫' + label + '，並確認字數限制。');
+    return result;
+  };
+  return payload.students.map((student, index) => {
+    if (!student || typeof student !== 'object' || Array.isArray(student)) throw new Error('請完整填寫每位學生的資料。');
+    const name = text(student.name, 60, true, '姓名');
+    if (!/^[\p{Script=Han}·・‧ ]+$/u.test(name)) throw new Error('請填寫真實中文姓名。');
+    const nickname = text(student.nickname, 60, true, '暱稱');
+    const birthDate = text(student.birthDate, 10, true, '出生年月日');
+    const date = new Date(birthDate + 'T00:00:00Z');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== birthDate || birthDate > today || Number(birthDate.slice(0, 4)) < Number(today.slice(0, 4)) - 120) throw new Error('請選擇有效的出生年月日。');
+    const age = Number(today.slice(0, 4)) - Number(birthDate.slice(0, 4)) - (today.slice(5) < birthDate.slice(5) ? 1 : 0);
+    const phone = cleanPhone(student.phone);
+    if ((index === 0 || phone) && !/^09\d{8}$/.test(phone)) throw new Error('請填寫有效手機號碼。');
+    const emergencyPhone = cleanPhone(student.emergencyPhone);
+    if ((index === 0 || emergencyPhone) && !/^0\d{8,9}$/.test(emergencyPhone)) throw new Error('請填寫有效緊急連絡人電話。');
+    const injuryHistory = text(student.injuryHistory, 2000, false, '傷病史');
+    const learningGoals = text(student.learningGoals, 2000, true, '學習目標');
+    const style = student.lessonStyle;
+    const keys = ['theory', 'multiball', 'correction'];
+    if (!style || typeof style !== 'object' || keys.some(key => !Number.isInteger(style[key]) || style[key] < 0 || style[key] > 100) || keys.reduce((sum, key) => sum + style[key], 0) !== 100) throw new Error('偏好上課風格 A、B、C 合計必須為 100%。');
+    return { id: Utilities.getUuid(), name, nickname, birthDate, age, phone, injuryHistory, emergencyPhone, learningGoals, lessonStyle: { theory: style.theory, multiball: style.multiball, correction: style.correction }, registrationProfileVersion: 2 };
   });
 }
 
@@ -718,9 +754,16 @@ function rejectCancelledBookingWrite_(ss, payload) {
   }
 }
 
+function publicAccountStudents_(students) {
+  return students.map(student => ({ id: student.id, name: student.name, nickname: student.nickname || '', gender: student.gender || '', age: student.age }));
+}
+
 function accountUser_(row) {
   const students = accountStudents_(row);
-  return { name: row[1], age: row[2], phone: row[3], level: row[5] || 1, students: students, studentCount: students.length, registrationComplete: !!row[6] };
+  // Registration notes and emergency contacts stay in the sheet, not general account responses.
+  const publicStudents = publicAccountStudents_(students);
+  const registrationProfileVersion = students.every(student => student.registrationProfileVersion === 2) ? 2 : 1;
+  return { name: row[1], age: row[2], phone: row[3], level: row[5] || 1, students: publicStudents, studentCount: students.length, registrationComplete: !!row[6], registrationProfileVersion };
 }
 function verifyAccountOwner_(accessToken, lineId) {
   const channelId = PropertiesService.getScriptProperties().getProperty('LINE_LOGIN_CHANNEL_ID');

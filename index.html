@@ -479,36 +479,83 @@
           return user;
         };
 
+        const REGISTRATION_NOTES = {
+            name: '請填寫真實中文姓名，以便於核對預約名單與後續行政作業。',
+            nickname: '請填寫您希望在課堂上教練稱呼您的名字，讓我們更親切地互動！',
+            birthDate: '協助教練了解您的年齡層，以安排最適合您的體能訓練強度。',
+            phone: '用於課程預約成功通知與重要異動提醒。',
+            injuryHistory: '若您有任何關節（如肩膀、手腕、腰部、膝蓋）舊傷或近期不適，請務必簡述。教練會依此調整您的專屬訓練動作與發力方式，預防代償受傷。無則免填。',
+            emergencyPhone: '運動安全至上，此資訊僅供課堂突發緊急狀況時聯繫使用，請放心填寫。',
+            learningGoals: '請簡述您最想改善的技術或上課目的（例如：「想學正確發力方式」、「想把動作矯正漂亮」、「避免受傷」、「加強穩定度」或「純粹想運動流汗」），這將幫助教練快速為您量身設定訓練菜單與進度。',
+            lessonStyle: '每位學員吸收技巧的方式與期望的節奏不同，請選擇您最希望在課堂中 ABC 的佔比。'
+        };
+        const LESSON_STYLE_OPTIONS = [
+            ['theory', 'A. 動作原理解說教學時間', '適合喜歡先清楚理解發力原理與腳步邏輯的學員'],
+            ['multiball', 'B. 多球訓練時間', '適合喜歡透過大量擊球建立肌肉記憶，追求運動量與流汗快感的學員'],
+            ['correction', 'C. 動作矯正說明時間', '適合已有基礎，希望教練針對現有動作抓漏、微調發力習慣並突破瓶頸的學員']
+        ];
+        const rebalanceLessonStyle = (style, key, value) => {
+            const others = ['theory', 'multiball', 'correction'].filter(item => item !== key);
+            const chosen = Math.max(0, Math.min(100, Math.round(Number(value))));
+            const remaining = 100 - chosen;
+            const previous = style[others[0]] + style[others[1]];
+            const first = previous ? Math.round(remaining * style[others[0]] / previous) : Math.round(remaining / 2);
+            return { ...style, [key]: chosen, [others[0]]: first, [others[1]]: remaining - first };
+        };
+        const registrationToday = () => new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const registrationBirthday = (student, today = registrationToday()) => {
+            const birthDate = `${student.birthYear}-${String(student.birthMonth).padStart(2, '0')}-${String(student.birthDay).padStart(2, '0')}`;
+            const date = new Date(birthDate + 'T00:00:00Z');
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== birthDate || birthDate > today || Number(student.birthYear) < Number(today.slice(0, 4)) - 120) throw new Error('請選擇有效的出生年月日。');
+            return birthDate;
+        };
+
         const RegisterView = ({ profile, onRegistered, existingUser = null, onCancel }) => {
-          const emptyStudent = () => ({ name: '', nickname: '', gender: '', age: '' });
-          const [students, setStudents] = useState([{ ...emptyStudent(), name: existingUser?.name || profile?.displayName || '', age: existingUser?.age || '' }]);
-          const [form, setForm] = useState({ phone: existingUser?.phone || '', idNumber: '' });
+          const emptyStudent = () => ({ name: '', nickname: '', birthYear: '', birthMonth: '', birthDay: '', phone: '', injuryHistory: '', emergencyPhone: '', learningGoals: '', lessonStyle: { theory: 34, multiball: 33, correction: 33 } });
+          const [students, setStudents] = useState([{ ...emptyStudent(), name: existingUser?.name || '', phone: existingUser?.phone || '' }]);
           const [submitting, setSubmitting] = useState(false);
+          const today = registrationToday();
+          const currentYear = Number(today.slice(0, 4));
           const updateStudent = (index, key, value) => setStudents(previous => previous.map((student, i) => i === index ? { ...student, [key]: value } : student));
+          const updateBirthday = (index, key, value) => setStudents(previous => previous.map((student, i) => {
+            if (i !== index) return student;
+            const next = { ...student, [key]: value };
+            const days = next.birthYear && next.birthMonth ? new Date(Number(next.birthYear), Number(next.birthMonth), 0).getDate() : 31;
+            if (Number(next.birthDay) > days) next.birthDay = '';
+            return next;
+          }));
           const handleSubmit = async (e) => {
             e.preventDefault();
             if (submitting) return;
-            const cleanPhone = form.phone.replace(/[\s-]/g, '');
-            if (!/^09\d{8}$/.test(cleanPhone)) { alert('請輸入 09 開頭的 10 位手機號碼'); return; }
             setSubmitting(true);
             try {
+              const registrationStudents = students.map((student, index) => {
+                const birthDate = registrationBirthday(student);
+                const phone = student.phone.replace(/[\s-]/g, '');
+                const emergencyPhone = student.emergencyPhone.replace(/[\s()-]/g, '');
+                if ((index === 0 || phone) && !/^09\d{8}$/.test(phone)) throw new Error('請填寫有效手機號碼。');
+                if ((index === 0 || emergencyPhone) && !/^0\d{8,9}$/.test(emergencyPhone)) throw new Error('請填寫有效緊急連絡人電話。');
+                return { name: student.name.trim(), nickname: student.nickname.trim(), birthDate, phone, injuryHistory: student.injuryHistory.trim(), emergencyPhone, learningGoals: student.learningGoals.trim(), lessonStyle: student.lessonStyle };
+              });
               const lineId = profile ? profile.userId : '';
               const support = await fetchAPI({ action: 'checkUser', lineId });
-              if (support.status !== 'success' || support.accountRegistrationVersion !== 1) throw new Error('目前後端尚未支援完整多人註冊，請先更新原有 Apps Script 部署為最新完整 Code.gs；本次尚未送出資料。');
+              if (support.status !== 'success' || support.registrationProfileVersion !== 2) throw new Error('目前後端尚未支援新版註冊資料，請先更新原有 Apps Script 部署；本次尚未送出資料。');
               const action = existingUser ? 'completeAccountRegistration' : 'registerUser';
               const accessToken = existingUser && typeof liff !== 'undefined' ? liff.getAccessToken() : undefined;
-              const result = await fetchAPI({ action, lineId, students, phone: cleanPhone, idNumber: form.idNumber.toUpperCase(), accessToken });
+              const result = await fetchAPI({ action, lineId, students: registrationStudents, registrationProfileVersion: 2, accessToken });
               if (result.status !== 'success') throw new Error(result.message || '註冊失敗，請稍後再試');
               validateAccountRecord(result.user, students.length);
+              if (result.user.registrationProfileVersion !== 2) throw new Error('新版註冊資料尚未完整儲存，請聯絡教練確認。');
               const registered = await fetchAPI({ action: 'checkUser', lineId });
               if (registered.status !== 'success') throw new Error('資料已送出，讀取失敗，請重新登入確認。');
               const savedUser = validateAccountRecord(registered.user, students.length);
+              if (savedUser.registrationProfileVersion !== 2) throw new Error('新版註冊資料尚未完整儲存，請聯絡教練確認。');
               if (onRegistered) onRegistered(savedUser);
             } catch (error) { alert(error.message); }
             finally { setSubmitting(false); }
-
           };
-
+          const inputClass = 'block w-full border p-3 rounded-lg mt-1 font-normal';
+          const noteClass = 'block text-xs leading-relaxed text-slate-500 font-normal mt-1';
           return (
             <div className="max-w-md md:max-w-lg mx-auto md:my-16 p-5 md:p-8 bg-white md:rounded-2xl shadow-xl border-t-4 border-slate-800 min-h-screen md:min-h-0">
               <div className="mb-6 border-b pb-5">
@@ -521,24 +568,43 @@
               </div>
               <form onSubmit={handleSubmit} className="space-y-5">
                 <label className="block font-bold">學生人數
-                  <select aria-label="學生人數" disabled={submitting} className="block w-full border p-3 rounded-lg mt-2" value={students.length} onChange={e => setStudents(previous => Array.from({ length: Number(e.target.value) }, (_, i) => previous[i] || emptyStudent()))}>
+                  <select aria-label="學生人數" disabled={submitting} className={inputClass} value={students.length} onChange={e => setStudents(previous => Array.from({ length: Number(e.target.value) }, (_, i) => previous[i] || emptyStudent()))}>
                     {[1,2,3].map(count => <option key={count} value={count}>{count} 人</option>)}
                   </select>
                 </label>
-                <p className="text-sm text-slate-600">預約時將自動預訂全部學生的名額並加總費用。第一位學生為代表，僅代表需提供身分證字號及聯絡電話。</p>
-                {students.map((student, index) => <fieldset key={index} disabled={submitting} className="border rounded-xl p-4 space-y-3">
+                <p className="text-sm text-slate-600">預約時將自動預訂全部學生的名額並加總費用。第一位學生為代表；其他學員可省略手機號碼及緊急連絡人電話。傷病史無則免填。</p>
+                {students.map((student, index) => <fieldset key={index} disabled={submitting} className="border rounded-xl p-4 space-y-5">
                   <legend className="font-bold">學生 {index + 1}{index === 0 ? '（代表）' : ''}</legend>
-                  {['name','nickname'].map(key => <label key={key} className="block text-sm font-bold">{key === 'name' ? '真實姓名' : '暱稱'}<input required maxLength="60" className="block w-full border p-3 rounded-lg mt-1" value={student[key]} onChange={e => updateStudent(index, key, e.target.value)} /></label>)}
-                  <label className="block text-sm font-bold">性別<select required className="block w-full border p-3 rounded-lg mt-1" value={student.gender} onChange={e => updateStudent(index, 'gender', e.target.value)}><option value="">請選擇</option>{['男','女','其他'].map(gender => <option key={gender}>{gender}</option>)}</select></label>
-                  <label className="block text-sm font-bold">年齡<input required type="number" min="5" max="100" step="1" className="block w-full border p-3 rounded-lg mt-1" value={student.age} onChange={e => updateStudent(index, 'age', e.target.value)} /></label>
-                  {index === 0 && <>
-                    <label className="block text-sm font-bold">身分證字號<input required autoComplete="off" maxLength="10" pattern="[A-Za-z][12][0-9]{8}" className="block w-full border p-3 rounded-lg mt-1" value={form.idNumber} onChange={e => setForm({ ...form, idNumber: e.target.value.toUpperCase() })} /></label>
-                    <label className="block text-sm font-bold">聯絡電話<input required type="tel" autoComplete="tel" className="block w-full border p-3 rounded-lg mt-1" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></label>
-                  </>}
+                  {['name','nickname'].map(key => <label key={key} className="block text-sm font-bold">{key === 'name' ? '姓名' : '暱稱'}
+                    <input required maxLength="60" autoComplete={key === 'name' ? 'name' : 'nickname'} pattern={key === 'name' ? '[\\p{Script=Han}·・‧ ]+' : undefined} aria-describedby={`registration-${index}-${key}-note`} className={inputClass} value={student[key]} onChange={e => updateStudent(index, key, e.target.value)} />
+                    <span id={`registration-${index}-${key}-note`} className={noteClass}>{REGISTRATION_NOTES[key]}</span>
+                  </label>)}
+                  <div role="group" aria-labelledby={`registration-${index}-birth-label`} aria-describedby={`registration-${index}-birth-note`}>
+                    <p id={`registration-${index}-birth-label`} className="text-sm font-bold">出生年月日</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <label className="text-xs text-slate-500">年<select required aria-label={`學生 ${index + 1} 出生年`} className={inputClass} value={student.birthYear} onChange={e => updateBirthday(index, 'birthYear', e.target.value)}><option value="">年</option>{Array.from({ length: 121 }, (_, i) => currentYear - i).map(year => <option key={year} value={year}>{year}</option>)}</select></label>
+                      <label className="text-xs text-slate-500">月<select required aria-label={`學生 ${index + 1} 出生月`} className={inputClass} value={student.birthMonth} onChange={e => updateBirthday(index, 'birthMonth', e.target.value)}><option value="">月</option>{Array.from({ length: 12 }, (_, i) => i + 1).map(month => <option key={month} value={month}>{month}</option>)}</select></label>
+                      <label className="text-xs text-slate-500">日<select required aria-label={`學生 ${index + 1} 出生日`} className={inputClass} value={student.birthDay} onChange={e => updateBirthday(index, 'birthDay', e.target.value)}><option value="">日</option>{Array.from({ length: student.birthYear && student.birthMonth ? new Date(Number(student.birthYear), Number(student.birthMonth), 0).getDate() : 31 }, (_, i) => i + 1).map(day => <option key={day} value={day}>{day}</option>)}</select></label>
+                    </div>
+                    <p id={`registration-${index}-birth-note`} className={noteClass}>{REGISTRATION_NOTES.birthDate}</p>
+                  </div>
+                  <label className="block text-sm font-bold">手機號碼{index > 0 && '（選填）'}<input required={index === 0} type="tel" autoComplete="tel" maxLength="20" aria-describedby={`registration-${index}-phone-note`} className={inputClass} value={student.phone} onChange={e => updateStudent(index, 'phone', e.target.value)} /><span id={`registration-${index}-phone-note`} className={noteClass}>{REGISTRATION_NOTES.phone}</span></label>
+                  <label className="block text-sm font-bold">傷病史（選填）<textarea maxLength="2000" rows="3" aria-describedby={`registration-${index}-injury-note`} className={inputClass} value={student.injuryHistory} onChange={e => updateStudent(index, 'injuryHistory', e.target.value)} /><span id={`registration-${index}-injury-note`} className={noteClass}>{REGISTRATION_NOTES.injuryHistory}</span></label>
+                  <label className="block text-sm font-bold">緊急連絡人電話{index > 0 && '（選填）'}<input required={index === 0} type="tel" maxLength="20" aria-describedby={`registration-${index}-emergency-note`} className={inputClass} value={student.emergencyPhone} onChange={e => updateStudent(index, 'emergencyPhone', e.target.value)} /><span id={`registration-${index}-emergency-note`} className={noteClass}>{REGISTRATION_NOTES.emergencyPhone}</span></label>
+                  <label className="block text-sm font-bold">學習目標<textarea required maxLength="2000" rows="3" aria-describedby={`registration-${index}-goals-note`} className={inputClass} value={student.learningGoals} onChange={e => updateStudent(index, 'learningGoals', e.target.value)} /><span id={`registration-${index}-goals-note`} className={noteClass}>{REGISTRATION_NOTES.learningGoals}</span></label>
+                  <div role="group" aria-labelledby={`registration-${index}-style-label`} className="bg-slate-50 rounded-lg p-3 space-y-4">
+                    <p id={`registration-${index}-style-label`} className="text-sm font-bold">偏好上課風格</p>
+                    <p className={noteClass}>{REGISTRATION_NOTES.lessonStyle}</p>
+                    {LESSON_STYLE_OPTIONS.map(([key, label, note]) => <label key={key} className="block text-sm font-bold">
+                      <span className="flex items-start justify-between gap-2"><span>{label}</span><output className="shrink-0 tabular-nums" htmlFor={`registration-${index}-${key}`}>{student.lessonStyle[key]}%</output></span>
+                      <input id={`registration-${index}-${key}`} type="range" min="0" max="100" step="1" aria-label={`學生 ${index + 1} ${label}`} aria-describedby={`registration-${index}-${key}-note`} className="w-full accent-emerald-600 mt-2" value={student.lessonStyle[key]} onChange={e => updateStudent(index, 'lessonStyle', rebalanceLessonStyle(student.lessonStyle, key, e.target.value))} />
+                      <span id={`registration-${index}-${key}-note`} className={noteClass}>{note}</span>
+                    </label>)}
+                    <p role="status" className="text-sm font-bold text-emerald-800">合計：{Object.values(student.lessonStyle).reduce((sum, value) => sum + value, 0)}%</p>
+                    <p className={noteClass}>拖動任一項時，其餘兩項會自動按比例調整，合計 100%。</p>
+                  </div>
                 </fieldset>)}
-                <button type="submit" disabled={submitting} className="w-full bg-slate-800 text-white p-4 mt-4 rounded-lg font-bold text-lg hover:bg-slate-700 transition active:scale-[0.98]">
-                    {submitting ? '處理中...' : (existingUser ? '儲存學生資料' : '確認綁定')}
-                </button>
+                <button type="submit" disabled={submitting} className="w-full bg-slate-800 text-white p-4 mt-4 rounded-lg font-bold text-lg hover:bg-slate-700 transition active:scale-[0.98]">{submitting ? '處理中...' : (existingUser ? '儲存學生資料' : '確認綁定')}</button>
                 {onCancel && <button type="button" disabled={submitting} onClick={onCancel} className="w-full border p-3 rounded-lg">返回</button>}
               </form>
             </div>

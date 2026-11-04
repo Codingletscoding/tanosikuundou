@@ -19,3 +19,15 @@ test('inconsistent backend count and incomplete registration are rejected',()=>{
 test('legacy profile with an explicit student list remains readable before repair',()=>{
  const legacy={students:[{id:'',name:'舊學生'}],studentCount:1,registrationComplete:false};assert.equal(ctx.validate(legacy),legacy);
 });
+
+vm.runInContext('this.balance = rebalanceLessonStyle; this.birthday = registrationBirthday;',ctx);
+test('birthday selection rejects invalid, incomplete and future dates while accepting leap years',()=>{
+ assert.equal(ctx.birthday({birthYear:'2000',birthMonth:'2',birthDay:'29'},'2026-11-04'),'2000-02-29');
+ for(const [birthYear,birthMonth,birthDay] of [['2023','2','29'],['2024','4','31'],['2027','1','1'],['','1','1'],['2020','','1'],['2020','1',''],['1900','1','1']])assert.throws(()=>ctx.birthday({birthYear,birthMonth,birthDay},'2026-11-04'),/出生年月日/);
+});
+test('moving any style slider preserves integer percentages and a total of 100, including endpoints',()=>{
+ let style={theory:34,multiball:33,correction:33};
+ for(const key of ['theory','multiball','correction'])for(const value of [0,100,0,1,99,50,10,90,33]){
+  style=ctx.balance(style,key,value);assert.equal(style[key],value);assert.equal(Object.values(style).reduce((sum,n)=>sum+n,0),100);assert(Object.values(style).every(n=>Number.isInteger(n)&&n>=0&&n<=100));
+ }
+});

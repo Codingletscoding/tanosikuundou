@@ -147,3 +147,62 @@ test('coach enrollment refuses insufficient seats without partial writes',()=>{
 test('coach enrollment rolls back all orders if the second student append fails',()=>{
  const f=monthlyCoach({failAppend:2});assert.equal(f.enroll().status,'error');assert.equal(f.rows['預約名單'].length,1);assert.equal(f.rows['可用時段'][1][6],5);
 });
+
+function registrationProfile(count=2) {
+ return {action:'registerUser',registrationProfileVersion:2,students:Array.from({length:count},(_,i)=>({name:['王小明','陳小美','林小華'][i],nickname:['小明','小美','小華'][i],birthDate:i===0?'2000-02-29':'2015-12-31',phone:i===0?'0912-345-678':'',emergencyPhone:i===0?'(02) 2345-6789':'',injuryHistory:i===0?'右膝舊傷':'',learningGoals:'學習正確發力，避免受傷',lessonStyle:{theory:20,multiball:50,correction:30}}))};
+}
+test('new registration persists individual profiles and returns a compatible account without private notes',()=>{
+ const f=fixture(),payload=registrationProfile(3);
+ assert.equal(f.run({action:'checkUser'}).registrationProfileVersion,2);
+ const result=f.run(payload);assert.equal(result.status,'success',result.message);
+ const stored=JSON.parse(f.rows['會員資料'][1][6]);assert.equal(stored.length,3);
+ for(let i=0;i<3;i++){
+  assert.equal(stored[i].birthDate,payload.students[i].birthDate);
+  assert.equal(stored[i].injuryHistory,payload.students[i].injuryHistory);
+  assert.equal(stored[i].learningGoals,payload.students[i].learningGoals);
+  assert.deepEqual(stored[i].lessonStyle,payload.students[i].lessonStyle);
+ }
+ assert.equal(stored[0].phone,'0912345678');assert.equal(stored[0].emergencyPhone,'0223456789');assert.equal(stored[1].phone,'');
+ assert.equal(f.rows['會員資料'][1][3],'0912345678');assert.equal(f.rows['會員資料'][1][7],'');
+ const read=f.run({action:'checkUser'});assert.equal(read.user.registrationProfileVersion,2);
+ for(const response of [result,read,f.run({action:'getCoachData'}),f.run({action:'getStudentStats'})])for(const key of ['birthDate','injuryHistory','emergencyPhone','learningGoals','lessonStyle'])assert(!JSON.stringify(response).includes('"'+key+'"'),key+' leaked');
+ assert.equal(f.run({action:'bookClass',slotId:'slot',accountBooking:true}).status,'success');
+ assert.equal(f.rows['預約名單'].length,4);assert.equal(f.rows['可用時段'][1][6],2);
+});
+test('new registration rejects incomplete/invalid fields atomically',()=>{
+ const cases=[
+  p=>p.students[0].name='John',p=>p.students[0].nickname=' ',
+  p=>p.students[0].birthDate='2023-02-29',p=>p.students[0].birthDate='2024-04-31',p=>p.students[0].birthDate='9999-01-01',p=>p.students[0].birthDate='1900-01-01',
+  p=>p.students[0].phone='',p=>p.students[0].emergencyPhone='',p=>p.students[0].learningGoals=' ',
+  p=>p.students[1].phone='123',p=>p.students[1].emergencyPhone='123',
+  p=>p.students[0].lessonStyle={theory:40,multiball:40,correction:40},
+  p=>p.students[0].lessonStyle={theory:-1,multiball:51,correction:50},
+  p=>p.students[0].lessonStyle={theory:10.5,multiball:39.5,correction:50},
+  p=>p.students[0].lessonStyle={theory:20,multiball:80},
+  p=>p.students[0].injuryHistory='傷'.repeat(2001),p=>p.students[0].learningGoals={value:'目標'},
+  p=>p.registrationProfileVersion=3
+ ];
+ for(const mutate of cases){const f=fixture(),payload=registrationProfile();mutate(payload);const r=f.run(payload);assert.equal(r.status,'error',JSON.stringify(payload));assert.equal(f.rows['會員資料'].length,1);assert.equal(f.rows['會員資料'][0].length,6);}
+});
+test('optional secondary contacts and optional injury history are accepted; style endpoints are valid',()=>{
+ const f=fixture(),payload=registrationProfile();
+ payload.students[0].injuryHistory='';payload.students[0].lessonStyle={theory:0,multiball:100,correction:0};
+ payload.students[1].phone='0987654321';payload.students[1].emergencyPhone='0912345678';
+ assert.equal(f.run(payload).status,'success');const students=JSON.parse(f.rows['會員資料'][1][6]);
+ assert.equal(students[0].injuryHistory,'');assert.equal(students[1].phone,'0987654321');assert.equal(students[1].emergencyPhone,'0912345678');
+});
+test('new birthday-derived age handles birthdays and accepts real leap days',()=>{
+ const f=fixture(),payload=registrationProfile(1);assert.equal(f.run(payload).status,'success');
+ const today=new Date(Date.now()+8*60*60*1000).toISOString().slice(0,10);
+ const expected=Number(today.slice(0,4))-2000-(today.slice(5)<'02-29'?1:0);
+ assert.equal(f.rows['會員資料'][1][2],expected);
+});
+test('new profile repair preserves legacy identity, membership, timestamps and bookings',()=>{
+ const f=fixture();f.rows['會員資料'].push(['account','舊學生',20,'0912345678','original-date',4,'','A123456789']);
+ f.rows['訓練日誌'].push([0,'account','舊學生','2026-01-01',1,0,0,0,0,0,0,0,0,'原有紀錄']);
+ const payload={...registrationProfile(),action:'completeAccountRegistration',accessToken:'mock'};
+ const result=f.run(payload);assert.equal(result.status,'success',result.message);
+ assert.equal(result.user.students[0].id,'');assert.equal(result.user.level,4);assert.equal(f.rows['會員資料'][1][4],'original-date');assert.equal(f.rows['會員資料'][1][7],'A123456789');
+ assert.equal(f.run({action:'getStudentStats',studentId:''}).totalClasses,1);
+ const again=f.run(payload);assert.equal(again.status,'error');
+});
