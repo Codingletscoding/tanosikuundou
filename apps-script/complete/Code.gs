@@ -45,7 +45,7 @@ function doPost(e) {
     }
     const action = payload.action;
     const writeActions = ["registerUser", "completeAccountRegistration", "bookClass", "coachRegisterMonthly", "coachRegisterSingle", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking", "registerMonthlyLeave", "arrangeMonthlyMakeup", "cancelBooking", "updateSlot", "confirmCashPayment"];
-    if (writeActions.includes(action)) {
+    if (writeActions.includes(action) || ['getSlots', 'getCoachData'].includes(action)) {
       const candidate = LockService.getScriptLock();
       if (!candidate.tryLock(30000)) throw new Error("系統忙碌中，請稍後再試。");
       requestLock = candidate;
@@ -114,6 +114,7 @@ function doPost(e) {
     }
     
     else if (action === "getSlots") {
+      cleanupEmptyCourses_(ss, Date.now());
       const sheet = ss.getSheetByName(SHEET_SLOTS);
       const data = sheet.getDataRange().getValues();
       const slots = [];
@@ -132,6 +133,7 @@ function doPost(e) {
       const coachSingle = action === "coachRegisterSingle";
       const coachRegistration = coachMonthly || coachSingle;
       if (coachRegistration) monthlyVerifyCoach_(payload.accessToken);
+      cleanupEmptyCoursesBeforeBooking_(ss, payload.slotId);
       validateBookingSlot_(ss, payload);
       const sheetBookings = ss.getSheetByName(SHEET_BOOKINGS);
       const sheetSlots = ss.getSheetByName(SHEET_SLOTS);
@@ -206,6 +208,7 @@ function doPost(e) {
     }
     
     else if (action === "getCoachData") {
+      cleanupEmptyCourses_(ss, Date.now());
       const sheetBookings = ss.getSheetByName(SHEET_BOOKINGS);
       const bData = sheetBookings.getDataRange().getValues();
       const bookings = [];
@@ -373,6 +376,133 @@ function doPost(e) {
     return ContentService.createTextOutput(JSON.stringify({status: "error", message: error.message || "操作失敗"})).setMimeType(ContentService.MimeType.JSON);
   } finally {
     if (requestLock) requestLock.releaseLock();
+  }
+}
+
+// ===== 無人預約課程：台灣開課時間前六小時起自動下架 =====
+// 在原本綁定試算表的專案手動執行一次，授權並建立每五分鐘的排程。
+function installEmptyCourseCleanup() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('系統忙碌中，請稍後再試。');
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss || !ss.getSheetByName(SHEET_SLOTS) || !ss.getSheetByName(SHEET_BOOKINGS)) {
+      throw new Error('請在原本綁定課程試算表的 Apps Script 專案執行。');
+    }
+    PropertiesService.getScriptProperties().setProperty('EMPTY_COURSE_SPREADSHEET_ID', ss.getId());
+    var triggers = ScriptApp.getProjectTriggers().filter(function(trigger) {
+      return trigger.getHandlerFunction() === 'cleanupEmptyCourses';
+    });
+    if (!triggers.length) ScriptApp.newTrigger('cleanupEmptyCourses').timeBased().everyMinutes(5).create();
+    // 重複安裝不增加排程，也不影響其他功能的觸發條件。
+    triggers.slice(1).forEach(function(trigger) { ScriptApp.deleteTrigger(trigger); });
+    return { status: 'success', intervalMinutes: 5 };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function cleanupEmptyCourses() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('系統忙碌中，請稍後再試。');
+  try {
+    var id = PropertiesService.getScriptProperties().getProperty('EMPTY_COURSE_SPREADSHEET_ID');
+    if (!id) throw new Error('請先手動執行 installEmptyCourseCleanup 安裝課程清理排程。');
+    var result = cleanupEmptyCourses_(SpreadsheetApp.openById(id), Date.now());
+    if (result.deletedSlotIds.length) console.info('自動刪除無人預約課程：' + JSON.stringify(result.deletedSlotIds));
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function emptyCourseDateKey_(year, month, day) {
+  var date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() + 1 !== Number(month) || date.getUTCDate() !== Number(day)) return null;
+  return String(year) + '-' + ('0' + month).slice(-2) + '-' + ('0' + day).slice(-2);
+}
+
+function emptyCourseDates_(value) {
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    if (!isFinite(value.getTime())) return [];
+    value = Utilities.formatDate(value, 'Asia/Taipei', 'yyyy-MM-dd');
+  }
+  var text = String(value || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(text)) {
+    if (!emptyCourseDateKey_(text.slice(0, 4), text.slice(5, 7), text.slice(8, 10))) return [];
+    var timestamp = new Date(text);
+    if (!isFinite(timestamp.getTime())) return [];
+    text = Utilities.formatDate(timestamp, 'Asia/Taipei', 'yyyy-MM-dd');
+  }
+  var single = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s*[（(][^）)]*[）)])?$/);
+  if (single) {
+    var key = emptyCourseDateKey_(single[1], single[2], single[3]);
+    return key ? [key] : [];
+  }
+  var monthly = text.match(/^(\d{4})年\s*([\d/\s,，]+?)(?:\s*[（(][^）)]*[）)])?$/);
+  if (!monthly) return [];
+  var dates = monthly[2].split(/[,，]/).map(function(part) {
+    var match = part.trim().match(/^(\d{1,2})\/(\d{1,2})$/);
+    return match ? emptyCourseDateKey_(monthly[1], match[1], match[2]) : null;
+  });
+  // 任一日期無法判讀就保留整門課，不猜年份、不略過有誤的堂次。
+  return dates.length && dates.every(Boolean) ? dates : [];
+}
+
+function emptyCourseStart_(row) {
+  var dates = emptyCourseDates_(row[2]);
+  var time = String(row[3] || '').trim().match(/^(\d{1,2}):(\d{2})(?:\s*[-~～–—]\s*(\d{1,2}):(\d{2}))?$/);
+  if (!dates.length || !time || Number(time[1]) > 23 || Number(time[2]) > 59 || (time[3] && (Number(time[3]) > 23 || Number(time[4]) > 59))) return null;
+  var firstDate = dates.sort()[0];
+  var start = new Date(firstDate + 'T' + ('0' + time[1]).slice(-2) + ':' + time[2] + ':00+08:00');
+  return isFinite(start.getTime()) ? start.getTime() : null;
+}
+
+// 呼叫者必須持有與預約共用的 ScriptLock，避免讀到空位後誤刪剛成立的預約。
+function cleanupEmptyCourses_(ss, now) {
+  var slots = ss && ss.getSheetByName(SHEET_SLOTS);
+  var bookings = ss && ss.getSheetByName(SHEET_BOOKINGS);
+  if (!slots || !bookings) throw new Error('找不到可用時段或預約名單工作表，未執行課程清理。');
+  if (!Number.isFinite(now)) throw new Error('無法確認現在時間，未執行課程清理。');
+  var rows = slots.getDataRange().getValues();
+  var reserved = new Set();
+  bookings.getDataRange().getValues().slice(1).forEach(function(row) {
+    // 審核中、成功、已完課、舊版空白與未知狀態皆保留；只有明確取消才不算預約。
+    if (row[1] && row[5] !== '已取消') reserved.add(String(row[1]));
+  });
+  var leaves = ss.getSheetByName('請假補課');
+  if (leaves) leaves.getDataRange().getValues().slice(1).forEach(function(row) {
+    if (row[5]) reserved.add(String(row[5]));
+    if (row[10]) reserved.add(String(row[10]));
+  });
+  var ids = new Map();
+  rows.slice(1).forEach(function(row) {
+    var id = String(row[0] || '');
+    ids.set(id, (ids.get(id) || 0) + 1);
+  });
+  var deleted = [];
+  // 由下往上刪除，保持其餘課程列及所有預約、日誌、請假資料原樣。
+  for (var i = rows.length - 1; i >= 1; i--) {
+    var row = rows[i], id = String(row[0] || '');
+    if (!id || !row[1] || ids.get(id) !== 1 || reserved.has(id)) continue;
+    if (row[5] === '' || row[5] == null || row[6] === '' || row[6] == null) continue;
+    var capacity = Number(row[5]), remaining = Number(row[6]);
+    // 佔用名額或資料異常時保留，即使舊預約列已不在也不誤刪。
+    if (!Number.isInteger(capacity) || capacity < 1 || !Number.isInteger(remaining) || remaining !== capacity) continue;
+    var start = emptyCourseStart_(row);
+    if (start !== null && now >= start - 6 * 60 * 60 * 1000) {
+      slots.deleteRow(i + 1);
+      deleted.push(id);
+    }
+  }
+  if (deleted.length) SpreadsheetApp.flush();
+  return { status: 'success', deletedSlotIds: deleted };
+}
+
+function cleanupEmptyCoursesBeforeBooking_(ss, slotId) {
+  var result = cleanupEmptyCourses_(ss, Date.now());
+  if (result.deletedSlotIds.indexOf(String(slotId)) !== -1) {
+    throw new Error('此課程於開課前 6 小時仍無人預約，已自動刪除，請重新選擇課程。');
   }
 }
 
@@ -616,6 +746,7 @@ function arrangeMonthlyMakeup_(ss, payload) {
   var source = monthlyUniqueRow_(ss.getSheetByName(SHEET_BOOKINGS), 7, String(leave.row[2]), '原月繳訂單');
   if (['預約成功', '成功', '已完成', '已完課'].indexOf(source.row[5] || '預約成功') === -1) throw new Error('原月繳訂單尚未確認，無法安排補課。');
   var slots = ss.getSheetByName(SHEET_SLOTS);
+  cleanupEmptyCoursesBeforeBooking_(ss, payload.slotId);
   var target = monthlyUniqueRow_(slots, 0, payload.slotId, '補課時段');
   if (/^\[(月繳|專屬教練課)/.test(String(target.row[1]))) throw new Error('補課請選擇單堂團課，不能選擇月繳套裝或私人教練時段。');
   var dateMatch = monthlyDate_(target.row[2]).match(/^(\d{4}-\d{2}-\d{2})/);
