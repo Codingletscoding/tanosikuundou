@@ -9,7 +9,7 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-    <script src="./ja.js?v=student-payments-1"></script>
+    <script src="./ja.js?v=coach-student-tabs-1"></script>
     <script src="./i18n.js?v=inline-controls-2"></script>
     <style>
         .language-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -1388,7 +1388,7 @@
             } catch (_) {}
         };
 
-        const StudentDashboard = ({ profile, userRecord, onCompleteRegistration, initialStudentId }) => {
+        const StudentDashboard = ({ profile, userRecord, onCompleteRegistration, initialStudentId, coachView = false }) => {
             const [activeTab, setActiveTab] = useState(() => studentTabFromHash(window.location.hash));
             useEffect(() => {
                 const syncRoute = () => setActiveTab(studentTabFromHash(window.location.hash));
@@ -1413,6 +1413,10 @@
                                 <LanguageSwitch />
                             </div>
                             <h2 className="py-3 text-lg font-bold border-t border-amber-200">{activeTab === 'booking' ? '課程預約' : '我的訓練日誌'}</h2>
+                            {coachView && <nav aria-label="學員畫面切換" className="flex gap-2 border-t border-amber-200 pt-3 pb-4">
+                                <a href={STUDENT_ROUTES.booking} aria-current={activeTab === 'booking' ? 'page' : undefined} className={`flex-1 min-w-0 min-h-[44px] inline-flex items-center justify-center text-center px-3 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'booking' ? 'bg-emerald-700 text-white' : 'bg-white border border-amber-200 text-slate-700 hover:bg-amber-100'}`}>課程預約</a>
+                                <a href={STUDENT_ROUTES.records} aria-current={activeTab === 'records' ? 'page' : undefined} className={`flex-1 min-w-0 min-h-[44px] inline-flex items-center justify-center text-center px-3 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'records' ? 'bg-emerald-700 text-white' : 'bg-white border border-amber-200 text-slate-700 hover:bg-amber-100'}`}>我的訓練日誌</a>
+                            </nav>}
                         </div>
                     </header>
 
@@ -2108,6 +2112,7 @@
                             profile={{ userId: selectedStudent.lineId }}
                             userRecord={selectedStudent.userRecord}
                             initialStudentId={selectedStudent.studentId}
+                            coachView
                         />}
 
                     </div>
