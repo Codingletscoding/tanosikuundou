@@ -163,7 +163,7 @@
             return Number.isFinite(duration) && duration > 0 ? Math.round(duration * 60 / TRAINING_STEP_MINUTES * TRAINING_REPETITIONS_PER_STEP) : 0;
         };
 
-        const LOCATIONS_LIST = ['關聖里活動中心', '中愛羽球館', '永康嘉世','永康騰耀', '華中羽球館', '仁德羽潮', '其他場地(需instagram私訊確認)'];
+        const LOCATIONS_LIST = ['關聖里活動中心', '中愛羽球館', '永康嘉世','永康騰耀', '華中羽球館', '仁德羽潮','南區羽潮', '其他場地(需instagram私訊確認)'];
 
         // ==========================================
         // 🔹 共用功能與 API
@@ -1364,7 +1364,8 @@
                         ['仁德羽潮', '台南市仁德區勝利路380號'],
                         ['華中羽球館', '臺南市仁德區仁德里文善街116號'],
                         ['永康嘉世', '臺南市永康區建國里高速一街二段378巷2號'],
-                        ['永康騰耀', '臺南市永康區大灣路942巷371弄178號之 8']
+                        ['永康騰耀', '臺南市永康區大灣路942巷371弄178號之8'],
+                        ['南區羽潮', '臺南市南區喜東里萬年路658號']
                     ].map(([name, address]) => <div key={name} className="rounded-xl border border-slate-100 bg-slate-50 p-4 min-w-0">
                         <dt className="font-bold text-slate-800 mb-1">{name}</dt>
                         <dd><address className="not-italic text-sm md:text-base text-slate-600 leading-relaxed break-words">{address}</address></dd>
@@ -1701,9 +1702,9 @@
         const CoachSlotsView = ({ onPaymentsChanged = () => {} }) => {
           const [form, setForm] = useState({ 
             mode: 'single', title: '新手團課', location: '關聖里活動中心',
-            date: '', startTime: '19:00', endTime: '21:00', capacity: '6', 
-            prices: { 1: 580, 2: 568, 3: 551, 4: 522, 5: 510 },
-            coachBase1v1: '1000', coachBase1v2: '1500'
+            date: '', startTime: '21:00', endTime: '22:00', capacity: '1', 
+            prices: { 1: 280, 2: 275, 3: 265, 4: 250, 5: 150 },
+            coachBase1v1: '1000', coachBase1v2: '1400'
           });
           const [allowedLocations, setAllowedLocations] = useState([...LOCATIONS_LIST]);
           const [bookings, setBookings] = useState([]);
@@ -1916,6 +1917,7 @@
                                 <select className="w-full border border-gray-300 p-3 rounded-lg bg-white outline-none text-base" value={form.title} onChange={e=>setForm({...form, title: e.target.value})}>
                                     <option value="新手團課">新手團課</option>
                                     <option value="初階團課">初階團課</option>
+                                    <option value="初階團課">初中階團課</option>
                                     <option value="兒童團課">兒童團課</option>
                                 </select>
                             </div>
