@@ -7,9 +7,20 @@
 **啟用步驟（需要更新後端；單純發布網站不會啟用）：**
 
 1. 用原 Apps Script 專案的部署者帳號，將 `complete/Code.gs` 整份取代原程式。
-2. 在 Apps Script 編輯器選擇並執行 **`installEmptyCourseCleanup`** 一次，完成 Google 授權。它會自動儲存綁定試算表 ID 至指令碼屬性 `EMPTY_COURSE_SPREADSHEET_ID`，並建立每 5 分鐘執行 `cleanupEmptyCourses` 的時間觸發條件。安裝本身不刪資料；重複執行不重複建立自己的排程，也不影響其他觸發條件。
-3. 將**原 Web App 部署**更新至新版本，維持原 API 網址。
-4. 在「觸發條件」確認有 `cleanupEmptyCourses`，在「執行項目」確認排程成功。可手動執行 `cleanupEmptyCourses` 立即清理，但不要直接執行名稱尾端帶底線的內部函式。
+2. 開啟「專案設定」，勾選「在編輯器中顯示 appsscript.json 資訊清單檔案」，回到編輯器開啟 `appsscript.json`。將 `oauthScopes` 更新為下面三項（完整範例為 `complete/appsscript.json`）；保留原專案其他設定及額外仍在使用的權限。只更新 `Code.gs` 不會更新此明列的權限清單。
+3. 儲存後，在 Apps Script 編輯器選擇並執行 **`installEmptyCourseCleanup`** 一次，使用原部署者帳號完成新增權限的 Google 授權。它會自動儲存綁定試算表 ID 至指令碼屬性 `EMPTY_COURSE_SPREADSHEET_ID`，並建立每 5 分鐘執行 `cleanupEmptyCourses` 的時間觸發條件。安裝本身不刪資料；重複執行不重複建立自己的排程，也不影響其他觸發條件。
+4. 將**原 Web App 部署**更新至新版本，維持原 API 網址。
+5. 在「觸發條件」確認有 `cleanupEmptyCourses`，在「執行項目」確認排程成功。可手動執行 `cleanupEmptyCourses` 立即清理，但不要直接執行名稱尾端帶底線的內部函式。
+
+```json
+"oauthScopes": [
+  "https://www.googleapis.com/auth/spreadsheets",
+  "https://www.googleapis.com/auth/script.external_request",
+  "https://www.googleapis.com/auth/script.scriptapp"
+]
+```
+
+`script.scriptapp` 允許列出、建立及移除本專案的觸發條件；缺少時，安裝會在 `ScriptApp.getProjectTriggers` 報「指定的權限不足」。`spreadsheets` 供排程使用已儲存的試算表 ID 呼叫 `SpreadsheetApp.openById`，原本的 `spreadsheets.currentonly` 不足以執行此方法。程式仍只開啟安裝時綁定的試算表。`script.external_request` 保留既有 LINE 驗證功能。這些權限需由專案擁有者在 Google 授權畫面核准，網站發布無法代替此步驟。
 
 排程不需要開啟網站；通常在截止後下一輪（約 5 分鐘內）執行，實際時間由 Google 排程服務決定。網站讀取課程及教練資料時也會清理；學生預約、教練單堂／月繳代登記與安排補課均會在寫入前重新檢查，避免舊頁面在截止後建立第一筆預約。清理與預約共用 `ScriptLock`，已有預約不會因同時清理而被誤刪。未安裝定時觸發條件時，僅有網站請求的檢查，無法保證無人使用網站時執行。
 

@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../complete/Code.gs'), 'utf8');
+const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '../complete/appsscript.json'), 'utf8'));
 const cutoff = Date.parse('2026-11-05T13:00:00+08:00');
 const course = (id = 'empty', extra = {}) => Object.assign(
   [id, '團課', '2026-11-05 (週四)', '19:00 - 21:00', '場地', 5, 5, 300, 294, 285, 270, 264], extra
@@ -13,6 +14,11 @@ function fixture(options = {}) {
     '會員資料': [['headers']], '訓練日誌': [['headers']], '請假補課': [['headers']]
   };
   const props = { EMPTY_COURSE_SPREADSHEET_ID: 'sheet-id' }, opened = [];
+  const scopes = options.scopes ?? manifest.oauthScopes;
+  const requireScope = name => {
+    const scope = 'https://www.googleapis.com/auth/' + name;
+    if (!scopes.includes(scope)) throw Error('Missing required permission: ' + scope);
+  };
   const triggers = options.triggers || [];
   const ss = { getId: () => 'sheet-id', getSheetByName: name => rows[name] && ({
     getDataRange: () => ({ getValues: () => rows[name].map(row => row.slice()) }),
@@ -30,17 +36,17 @@ function fixture(options = {}) {
   }
   const context = {
     Date: Clock, console: { info() {} },
-    SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: id => { opened.push(id); return ss; }, flush() {} },
+    SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: id => { requireScope('spreadsheets'); opened.push(id); return ss; }, flush() {} },
     LockService: { getScriptLock: () => ({
       tryLock: () => { locks++; if (options.busy) return false; assert(!locked); locked = true; options.onLock?.(rows); return true; },
       releaseLock: () => { assert(locked); locked = false; releases++; }
     }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: key => props[key], setProperty: (key, value) => { props[key] = value; } }) },
     ScriptApp: {
-      getProjectTriggers: () => triggers.slice(),
-      deleteTrigger: trigger => triggers.splice(triggers.indexOf(trigger), 1),
+      getProjectTriggers: () => { requireScope('script.scriptapp'); return triggers.slice(); },
+      deleteTrigger: trigger => { requireScope('script.scriptapp'); triggers.splice(triggers.indexOf(trigger), 1); },
       newTrigger: handler => ({ timeBased: () => ({ everyMinutes: interval => ({ create: () => {
-        assert.equal(interval, 5); triggers.push({ getHandlerFunction: () => handler });
+        requireScope('script.scriptapp'); assert.equal(interval, 5); triggers.push({ getHandlerFunction: () => handler });
       } }) }) })
     },
     Utilities: { getUuid: () => 'new-booking', formatDate: (date, zone) => {
@@ -190,4 +196,19 @@ test('installer stores the bound spreadsheet and creates one recurring timer; re
   f.context.installEmptyCourseCleanup(); assert.equal(f.triggers.length, 2); assert.ok(f.triggers.includes(other));
   assert.equal(f.rows['可用時段'].length, 2, 'installation itself does not delete data');
   assert.equal(f.state().locked, false);
+});
+test('old explicit scopes reproduce both reported trigger and background spreadsheet permission errors', () => {
+  const oldScopes = ['https://www.googleapis.com/auth/spreadsheets.currentonly', 'https://www.googleapis.com/auth/script.external_request'];
+  const f = fixture({ scopes: oldScopes });
+  assert.throws(() => f.context.installEmptyCourseCleanup(), /script\.scriptapp/);
+  assert.equal(f.triggers.length, 0); assert.equal(f.state().locked, false);
+  assert.throws(() => f.context.cleanupEmptyCourses(), /auth\/spreadsheets$/);
+  assert.equal(f.rows['可用時段'].length, 2); assert.equal(f.state().locked, false);
+});
+test('shipped manifest permits both installation and background cleanup while retaining LINE request access', () => {
+  assert.ok(manifest.oauthScopes.includes('https://www.googleapis.com/auth/script.external_request'));
+  const f = fixture();
+  f.context.installEmptyCourseCleanup();
+  assert.equal(f.triggers.length, 1);
+  assert.deepEqual(Array.from(f.context.cleanupEmptyCourses().deletedSlotIds), ['empty']);
 });
