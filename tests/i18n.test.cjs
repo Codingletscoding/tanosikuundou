@@ -41,3 +41,10 @@ test('student nicknames remain unchanged when Japanese is selected',()=>{
  assert.equal(i.translate('學生 [預約]'),'學生 [預約]');
  assert(i.translate('學生預約 · 課程預約').includes('學生預約'));
 });
+
+test('five-minute training units and approximate counts are translated',()=>{
+ const {i}=setup();
+ assert.equal(i.translate('每格 5 分鐘（約 40 次），每項最多 2 小時'),'5分単位（約40回）、各項目は最大2時間');
+ assert.equal(i.translate('約 40 次'),'約 40 回');
+ assert.equal(i.translate('訓練次數依每 5 分鐘約 40 次估算。'),'練習回数は5分あたり約40回で推定しています。');
+});

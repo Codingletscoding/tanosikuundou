@@ -9,7 +9,7 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-    <script src="./ja.js"></script>
+    <script src="./ja.js?v=training-5min"></script>
     <script src="./i18n.js?v=inline-controls-2"></script>
     <style>
         .language-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -151,6 +151,18 @@
             { key: 'combo', label: '組合訓練' }
         ];
 
+        const TRAINING_STEP_MINUTES = 5;
+        const TRAINING_REPETITIONS_PER_STEP = 40;
+        const normalizeTrainingMinutes = value => {
+            const minutes = Number(value);
+            if (!Number.isFinite(minutes)) return 0;
+            return Math.min(120, Math.max(0, Math.round(minutes / TRAINING_STEP_MINUTES) * TRAINING_STEP_MINUTES));
+        };
+        const estimateTrainingRepetitions = hours => {
+            const duration = Number(hours);
+            return Number.isFinite(duration) && duration > 0 ? Math.round(duration * 60 / TRAINING_STEP_MINUTES * TRAINING_REPETITIONS_PER_STEP) : 0;
+        };
+
         const LOCATIONS_LIST = ['關聖里活動中心', '中愛羽球館', '永康嘉世','永康騰耀', '華中羽球館', '仁德羽潮', '其他場地(需instagram私訊確認)'];
 
         // ==========================================
@@ -278,6 +290,7 @@
                         </div>
                     </div>
                     <span className="text-xs mt-2 font-bold text-slate-600 text-center leading-tight">{label}</span>
+                    <span className="text-xs mt-1 text-emerald-700 text-center tabular-nums">{`約 ${estimateTrainingRepetitions(value)} 次`}</span>
                 </div>
             );
         };
@@ -351,7 +364,7 @@
             });
 
             const handleStatChange = (key, val) => {
-                const minutes = Math.min(120, Math.max(0, Math.round((Number(val) || 0) / 10) * 10));
+                const minutes = normalizeTrainingMinutes(val);
                 setStats(prev => ({ ...prev, [key]: minutes }));
             };
 
@@ -391,7 +404,7 @@
                             <div className="mb-5">
                                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-4 border-b pb-3 gap-2">
                                     <label className="block text-sm md:text-base font-bold text-slate-700">訓練時數</label>
-                                    <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded w-fit font-bold">每格 10 分鐘，每項最多 2 小時</span>
+                                    <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded w-fit font-bold">每格 5 分鐘（約 40 次），每項最多 2 小時</span>
                                 </div>
                                 <div className="grid grid-cols-1 min-[360px]:grid-cols-2 md:grid-cols-3 gap-3 md:gap-x-6 md:gap-y-5">
                                     {SKILL_KEYS.map(skill => (
@@ -400,7 +413,8 @@
                                                 <span>{skill.label}</span>
                                                 <span className={stats[skill.key] > 0 ? "text-emerald-600 font-extrabold" : "text-slate-400"}>{stats[skill.key]} 分鐘</span>
                                             </div>
-                                            <input type="range" aria-label={`${skill.label}訓練分鐘`} aria-valuetext={`${stats[skill.key]} 分鐘`} min="0" max="120" step="10" value={stats[skill.key]} onChange={e => handleStatChange(skill.key, e.target.value)} className="w-full accent-emerald-500" />
+                                            <input type="range" aria-label={`${skill.label}訓練分鐘`} aria-valuetext={`${stats[skill.key]} 分鐘，約 ${estimateTrainingRepetitions(stats[skill.key] / 60)} 次`} min="0" max="120" step={TRAINING_STEP_MINUTES} value={stats[skill.key]} onChange={e => handleStatChange(skill.key, e.target.value)} className="w-full accent-emerald-500" />
+                                            <p className="text-xs text-emerald-700 mt-2 tabular-nums">{`約 ${estimateTrainingRepetitions(stats[skill.key] / 60)} 次`}</p>
                                         </div>
                                     ))}
                                 </div>
@@ -452,6 +466,7 @@
                                             <h3 className="font-bold text-slate-800 mb-4 ml-1 flex items-center text-base md:text-lg">
                                                 <span className="w-1.5 h-5 bg-emerald-500 rounded mr-2"></span>能力時數雷達
                                             </h3>
+                                            <p className="text-xs text-slate-500 mb-3">訓練次數依每 5 分鐘約 40 次估算。</p>
                                             <div data-layout="skill-radar" className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                                 {SKILL_KEYS.map(skill => (
                                                     <CircleProgress key={skill.key} label={skill.label} value={data.stats ? data.stats[skill.key] : 0} />
@@ -1242,6 +1257,7 @@
                             <h3 className="font-bold text-slate-800 mb-4 ml-1 flex items-center text-base md:text-lg">
                                 <span className="w-1.5 h-5 bg-emerald-500 rounded mr-2"></span>能力時數雷達
                             </h3>
+                            <p className="text-xs text-slate-500 mb-3">訓練次數依每 5 分鐘約 40 次估算。</p>
                             <div data-layout="skill-radar" className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                 {SKILL_KEYS.map(skill => (
                                     <CircleProgress key={skill.key} label={skill.label} value={data.stats ? data.stats[skill.key] : 0} />
