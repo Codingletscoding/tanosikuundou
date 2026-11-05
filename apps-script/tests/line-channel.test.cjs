@@ -33,3 +33,20 @@ test('account repair uses the same trusted channel while retaining account owner
  assert.throws(()=>fixture().context.verifyAccountOwner_('mock-token','student'),/只能補登自己/);
  assert.throws(()=>fixture({client:'attacker-channel'}).context.verifyAccountOwner_('mock-token','coach'),/驗證失敗/);
 });
+
+test('the production channel matches the LIFF SDK channel extraction rule',()=>{
+ const frontend=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
+ const liffId=frontend.match(/const LIFF_ID = '([^']+)'/)[1];
+ const channel=original.match(/const DEFAULT_LINE_LOGIN_CHANNEL_ID = '([^']+)'/)[1];
+ assert.equal(channel,liffId.match(/([^-]+)-[^-]+/)[1]);assert.equal(channel,'2012115245');
+});
+test('the previous wrong script property is corrected only to the trusted site channel',()=>{
+ const f=fixture({property:'2012115242',fallback:'2012115245',client:'2012115245'});
+ assert.doesNotThrow(()=>f.context.monthlyVerifyCoach_('mock-token'));
+ assert.throws(()=>fixture({property:'2012115242',fallback:'2012115245',client:'2012115242'}).context.monthlyVerifyCoach_('mock-token'),/頻道不符/);
+});
+test('channel mismatch reports public numeric IDs without reflecting arbitrary text',()=>{
+ const f=fixture({property:'9999999999',client:'2012115245'});assert.throws(()=>f.context.monthlyVerifyCoach_('mock-token'),error=>/LINE：2012115245/.test(error.message)&&/後端：9999999999/.test(error.message));
+ const unsafe=fixture({property:'secret-in-configuration',client:'secret-in-response'});
+ assert.throws(()=>unsafe.context.monthlyVerifyCoach_('mock-token'),error=>!error.message.includes('secret-in-')&&!error.message.includes('mock-token'));
+});

@@ -1,7 +1,7 @@
 /**
  * 樂動羽球 Apps Script 單檔完整版本（含多人帳號、請假補課、教練管理）
  * 整份取代原有 Code.gs；移除舊 BookingDeletion.gs、MonthlyLeave.gs、CoachManagement.gs，避免重複。
- * LINE Login Channel ID 預設 2012115242；如有 LINE_LOGIN_CHANNEL_ID 指令碼屬性，優先使用該設定。
+ * LIFF 登入 Channel ID 為 2012115245；相容處理先前錯填的 2012115242，其他明確的指令碼屬性仍優先。
  * 儲存並更新原有 Web App 部署為新版本，維持原 API 網址。
  */
 
@@ -12,16 +12,26 @@ const SHEET_LOGS = "訓練日誌";
 
 const ADMIN_LINE_IDS = ["U3a76953e63578ec8607297044ac54e5a"]; 
 
-// Server-owned LINE Login Channel ID. A configured script property takes precedence.
-const DEFAULT_LINE_LOGIN_CHANNEL_ID = '2012115242';
+// Server-owned channel for this LIFF app; configured overrides exclude the known wrong legacy value.
+const DEFAULT_LINE_LOGIN_CHANNEL_ID = '2012115245';
 
 function lineLoginChannelId_() {
   const configured = String(PropertiesService.getScriptProperties().getProperty('LINE_LOGIN_CHANNEL_ID') || '').trim();
-  const channelId = configured || DEFAULT_LINE_LOGIN_CHANNEL_ID;
+  // Correct the previous wrong channel for this site's fixed LIFF app; never trust a caller-provided ID.
+  const channelId = (!configured || configured === '2012115242') ? DEFAULT_LINE_LOGIN_CHANNEL_ID : configured;
   if (!channelId) throw new Error('尚未設定 LINE_LOGIN_CHANNEL_ID。請在 Apps Script 專案設定的指令碼屬性填入 LINE Login Channel ID。');
   return channelId;
 }
 
+function assertLineLoginToken_(token, channelId) {
+  if (!token || String(token.client_id) !== String(channelId)) {
+    // Channel IDs are public. Only echo digits, never tokens or arbitrary response/configuration text.
+    const actual = token && /^\d+$/.test(String(token.client_id)) ? String(token.client_id) : '無法辨識';
+    const expected = /^\d+$/.test(String(channelId)) ? String(channelId) : '無法辨識';
+    throw new Error('LINE 登入驗證失敗：登入頻道不符（LINE：' + actual + '；後端：' + expected + '）。請確認 LINE_LOGIN_CHANNEL_ID，並重新登入。');
+  }
+  if (!(Number(token.expires_in) > 0)) throw new Error('LINE 登入已失效，請重新登入。');
+}
 
 function doPost(e) {
   let requestLock = null;
@@ -377,9 +387,7 @@ function verifyBookingDeletionCoach_(accessToken) {
   var verification = fetchLineForBookingDeletion_('https://api.line.me/oauth2/v2.1/verify?access_token=' + encodeURIComponent(accessToken), { muteHttpExceptions: true });
   if (verification.getResponseCode() !== 200) throw new Error('LINE 登入已失效，請重新登入。');
   var token = JSON.parse(verification.getContentText());
-  if (String(token.client_id) !== String(channelId) || !(Number(token.expires_in) > 0)) {
-    throw new Error('LINE 登入驗證失敗。');
-  }
+  assertLineLoginToken_(token, channelId);
   var response = fetchLineForBookingDeletion_('https://api.line.me/v2/profile', {
     headers: { Authorization: 'Bearer ' + accessToken }, muteHttpExceptions: true
   });
@@ -670,9 +678,7 @@ function monthlyVerifyCoach_(accessToken) {
   var verification = monthlyFetchLine_('https://api.line.me/oauth2/v2.1/verify?access_token=' + encodeURIComponent(accessToken), { muteHttpExceptions: true });
   if (verification.getResponseCode() !== 200) throw new Error('LINE 登入已失效，請重新登入。');
   var token = JSON.parse(verification.getContentText());
-  if (String(token.client_id) !== String(channelId) || !(Number(token.expires_in) > 0)) {
-    throw new Error('LINE 登入驗證失敗。');
-  }
+  assertLineLoginToken_(token, channelId);
   var response = monthlyFetchLine_('https://api.line.me/v2/profile', {
     headers: { Authorization: 'Bearer ' + accessToken }, muteHttpExceptions: true
   });
@@ -807,7 +813,7 @@ function verifyAccountOwner_(accessToken, lineId) {
   const verification = monthlyFetchLine_('https://api.line.me/oauth2/v2.1/verify?access_token=' + encodeURIComponent(accessToken), { muteHttpExceptions: true });
   if (verification.getResponseCode() !== 200) throw new Error('LINE 登入已失效，請重新登入。');
   const token = JSON.parse(verification.getContentText());
-  if (String(token.client_id) !== String(channelId) || !(Number(token.expires_in) > 0)) throw new Error('LINE 登入驗證失敗。');
+  assertLineLoginToken_(token, channelId);
   const response = monthlyFetchLine_('https://api.line.me/v2/profile', { headers: { Authorization: 'Bearer ' + accessToken }, muteHttpExceptions: true });
   if (response.getResponseCode() !== 200 || JSON.parse(response.getContentText()).userId !== lineId) throw new Error('只能補登自己帳號的學生資料。');
 }

@@ -259,3 +259,9 @@ test('legacy profiles retain known fields without inventing new registration inf
  const admin=vm.runInContext('ADMIN_LINE_IDS[0]',f.context);f.context.UrlFetchApp.fetch=url=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify(url.includes('/verify?')?{client_id:'channel',expires_in:3600}:{userId:admin})});
  const result=f.run({action:'getStudentProfile',studentId:'',accessToken:'mock'});assert.equal(result.status,'success');assert.equal(result.profile.name,'舊學員');assert.equal(result.profile.age,25);assert.equal(result.profile.phone,'0912345678');assert.equal(result.profile.birthDate,'');assert.equal(result.profile.lessonStyle,null);assert.equal(result.profile.injuryHistory,'');
 });
+
+test('monthly enrollment works with the previous wrong channel property and the current LIFF token',()=>{
+ const f=monthlyCoachWithoutChannelProperty();
+ f.context.PropertiesService.getScriptProperties=()=>({getProperty:()=> '2012115242'});
+ const result=f.enroll();assert.equal(result.status,'success',result.message);assert.equal(result.registeredCount,2);assert.equal(f.rows['預約名單'].length,3);assert.equal(f.rows['可用時段'][1][6],3);
+});
