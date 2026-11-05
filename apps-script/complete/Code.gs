@@ -9,6 +9,8 @@ const SHEET_USERS = "會員資料";
 const SHEET_SLOTS = "可用時段";
 const SHEET_BOOKINGS = "預約名單";
 const SHEET_LOGS = "訓練日誌";
+const SHEET_TEACHING_COACHES = '授課教練';
+const SLOT_TEACHING_COACH_HEADER = '授課教練編號';
 
 const ADMIN_LINE_IDS = ["U3a76953e63578ec8607297044ac54e5a"]; 
 
@@ -44,7 +46,7 @@ function doPost(e) {
       throw new Error("請求格式不正確。");
     }
     const action = payload.action;
-    const writeActions = ["registerUser", "completeAccountRegistration", "bookClass", "coachRegisterMonthly", "coachRegisterSingle", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking", "registerMonthlyLeave", "arrangeMonthlyMakeup", "cancelBooking", "updateSlot", "confirmCashPayment"];
+    const writeActions = ["registerUser", "completeAccountRegistration", "bookClass", "coachRegisterMonthly", "coachRegisterSingle", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking", "registerMonthlyLeave", "arrangeMonthlyMakeup", "cancelBooking", "updateSlot", "confirmCashPayment", "addTeachingCoach", "updateTeachingCoach"];
     if (writeActions.includes(action) || ['getSlots', 'getCoachData'].includes(action)) {
       const candidate = LockService.getScriptLock();
       if (!candidate.tryLock(30000)) throw new Error("系統忙碌中，請稍後再試。");
@@ -117,15 +119,24 @@ function doPost(e) {
       cleanupEmptyCourses_(ss, Date.now());
       const sheet = ss.getSheetByName(SHEET_SLOTS);
       const data = sheet.getDataRange().getValues();
+      const teachingCoaches = teachingCoaches_(ss);
+      const coachNames = new Map(teachingCoaches.map(coach => [coach.id, coach.name]));
       const slots = [];
       for (let i = 1; i < data.length; i++) {
         slots.push({
           id: data[i][0], title: data[i][1], date: data[i][2], time: data[i][3], location: data[i][4],
           capacity: data[i][5], remaining: data[i][6],
+          teachingCoachId: data[0][12] === SLOT_TEACHING_COACH_HEADER ? String(data[i][12] || '') : '',
+          teachingCoachName: data[0][12] === SLOT_TEACHING_COACH_HEADER ? (coachNames.get(String(data[i][12] || '')) || '') : '',
           prices: { 1: data[i][7], 2: data[i][8], 3: data[i][9], 4: data[i][10], 5: data[i][11] }
         });
       }
-      result = { status: "success", slots: slots, coachAccountPricingVersion: 1, coachSingleRegistrationVersion: 1 };
+      result = { status: "success", slots: slots, coachAccountPricingVersion: 1, coachSingleRegistrationVersion: 1, teachingCoachesVersion: 1, teachingCoaches: teachingCoaches };
+    }
+
+    else if (action === 'addTeachingCoach' || action === 'updateTeachingCoach') {
+      monthlyVerifyCoach_(payload.accessToken);
+      result = saveTeachingCoach_(ss, payload);
     }
     
     else if (action === "bookClass" || action === "coachRegisterMonthly" || action === "coachRegisterSingle") {
@@ -186,11 +197,14 @@ function doPost(e) {
     }
 
     else if (action === "addSlot") {
+      monthlyVerifyCoach_(payload.accessToken);
+      const coach = requireTeachingCoach_(ss, payload.teachingCoachId);
       const sheet = ss.getSheetByName(SHEET_SLOTS);
+      accountReserveColumn_(sheet, 13, SLOT_TEACHING_COACH_HEADER);
       const newId = Utilities.getUuid();
       sheet.appendRow([
         newId, payload.title, payload.date, payload.time, payload.location, payload.capacity, payload.capacity,
-        payload.prices[1], payload.prices[2], payload.prices[3], payload.prices[4], payload.prices[5]
+        payload.prices[1], payload.prices[2], payload.prices[3], payload.prices[4], payload.prices[5], coach.id
       ]);
       result = { status: "success" };
     }
@@ -377,6 +391,63 @@ function doPost(e) {
   } finally {
     if (requestLock) requestLock.releaseLock();
   }
+}
+
+// ===== 授課教練名單：僅管理顯示姓名，不變更 ADMIN_LINE_IDS 登入權限 =====
+function teachingCoachRows_(sheet) {
+  var rows = sheet.getDataRange().getValues();
+  if (!rows.length || rows[0][0] !== '教練編號' || rows[0][1] !== '教練姓名') {
+    throw new Error('授課教練工作表欄位不符，請保留原資料並核對欄位。');
+  }
+  var ids = new Set();
+  rows.slice(1).forEach(function(row) {
+    if (!row[0] && !row[1]) return;
+    if (typeof row[0] !== 'string' || !row[0] || typeof row[1] !== 'string' || !row[1].trim() || ids.has(row[0])) {
+      throw new Error('授課教練資料缺漏或編號重複，請先核對名單。');
+    }
+    ids.add(row[0]);
+  });
+  return rows;
+}
+
+function teachingCoaches_(ss) {
+  var sheet = ss.getSheetByName(SHEET_TEACHING_COACHES);
+  if (!sheet) return [];
+  return teachingCoachRows_(sheet).slice(1).filter(function(row) { return row[0]; }).map(function(row) {
+    return { id: row[0], name: row[1].trim() };
+  });
+}
+
+function requireTeachingCoach_(ss, id) {
+  if (typeof id !== 'string' || !id) throw new Error('請選擇授課教練。');
+  var coach = teachingCoaches_(ss).find(function(item) { return item.id === id; });
+  if (!coach) throw new Error('所選授課教練不存在，請重新讀取教練名單。');
+  return coach;
+}
+
+function saveTeachingCoach_(ss, payload) {
+  if (typeof payload.name !== 'string') throw new Error('請填寫教練姓名。');
+  var name = payload.name.trim();
+  if (!name || name.length > 60 || /^[=+@-]/.test(name) || /[\u0000-\u001f\u007f]/.test(name)) {
+    throw new Error('教練姓名請填寫 1～60 個字，且不可使用公式或控制字元。');
+  }
+  var sheet = ss.getSheetByName(SHEET_TEACHING_COACHES);
+  var rows = sheet ? teachingCoachRows_(sheet) : [['教練編號', '教練姓名']];
+  var editing = payload.action === 'updateTeachingCoach';
+  var index = editing ? rows.findIndex(function(row, i) { return i > 0 && row[0] === payload.teachingCoachId; }) : -1;
+  if (editing && index < 1) throw new Error('找不到要修改的授課教練，請重新讀取名單。');
+  if (rows.some(function(row, i) { return i > 0 && i !== index && String(row[1] || '').trim().toLowerCase() === name.toLowerCase(); })) {
+    throw new Error('已有相同姓名的授課教練，請確認名單。');
+  }
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_TEACHING_COACHES);
+    sheet.appendRow(rows[0]);
+  }
+  var id = editing ? rows[index][0] : Utilities.getUuid();
+  if (editing) sheet.getRange(index + 1, 2).setValue(name);
+  else sheet.appendRow([id, name]);
+  SpreadsheetApp.flush();
+  return { status: 'success', coach: { id: id, name: name } };
 }
 
 // ===== 無人預約課程：台灣開課時間前六小時起自動下架 =====
@@ -867,7 +938,16 @@ function coachManagementAction_(ss, payload) {
   if (payload.action !== 'updateSlot') throw new Error('不支援的管理操作。');
   var sheet = ss.getSheetByName(SHEET_SLOTS);
   var slot = monthlyUniqueRow_(sheet, 0, payload.slotId, '課程');
-  var old = slot.row.slice(1,12);
+  var assignCoach = Object.prototype.hasOwnProperty.call(payload, 'teachingCoachId');
+  var coachId = null;
+  if (assignCoach) {
+    var oldCoachId = sheet.getDataRange().getValues()[0][12] === SLOT_TEACHING_COACH_HEADER ? String(slot.row[12] || '') : '';
+    if (payload.teachingCoachId === '' && !oldCoachId) coachId = ''; // 舊課程可保留未指定。
+    else coachId = requireTeachingCoach_(ss, payload.teachingCoachId).id;
+  }
+  var width = assignCoach ? 12 : 11;
+  var old = slot.row.slice(1, 1 + width);
+  while (old.length < width) old.push('');
   var title = String(payload.title || '').trim(), date = String(payload.date || '').trim(), time = String(payload.time || '').trim(), location = String(payload.location || '').trim();
   if (!title || !date || !time || !location) throw new Error('請完整填寫課程名稱、日期、時間及場地。');
   var times = time.match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
@@ -891,11 +971,14 @@ function coachManagementAction_(ss, payload) {
     if (value === '' || value === null || value === undefined || !isFinite(Number(value)) || Number(value) < 0) throw new Error('各等級收費需為非負數。');
     return Number(value);
   });
+  if (assignCoach) accountReserveColumn_(sheet, 13, SLOT_TEACHING_COACH_HEADER);
+  var updated = [title,date,time,location,capacity,capacity-booked].concat(prices);
+  if (assignCoach) updated.push(coachId);
   try {
-    sheet.getRange(slot.index, 2, 1, 11).setValues([[title,date,time,location,capacity,capacity-booked].concat(prices)]);
+    sheet.getRange(slot.index, 2, 1, width).setValues([updated]);
     SpreadsheetApp.flush();
   } catch(error) {
-    sheet.getRange(slot.index, 2, 1, 11).setValues([old]);
+    sheet.getRange(slot.index, 2, 1, width).setValues([old]);
     throw new Error('修改失敗，請重新讀取確認。');
   }
   return { status: 'success' };

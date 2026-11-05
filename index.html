@@ -1040,6 +1040,7 @@
                                     <p className="text-xs text-green-900 mt-1">每小時教練費，現場現金付款；不含場地費，場地由學員自行預約。</p>
                                     <div className="font-semibold text-gray-800 mt-2 text-sm md:text-base">{slot.date}</div>
                                     <div className="text-sm text-gray-500 mt-1">{slot.time} • {slotDisplayLocation}</div>
+                                    <p className="text-sm text-gray-600 mt-1 break-words">授課教練：{slot.teachingCoachName || '未指定'}</p>
                                     
                                     {studentCount === 2 && !supportsSharedCoach && <p className="mt-3 text-sm text-amber-800">雙人帳號的專屬教練課預約尚未啟用，請聯絡教練。</p>}
                                     {!isFull && (
@@ -1089,6 +1090,7 @@
                                   <div className={`font-bold text-lg md:text-xl leading-tight ${isFull ? 'text-gray-500' : 'text-blue-700'}`}>{slot.title}</div>
                                   <div className="font-semibold text-gray-800 mt-2 text-sm md:text-base">{slot.date}</div>
                                   <div className="text-sm text-gray-500 mt-1">{slot.time} • {safeLocation}</div>
+                                  <p className="text-sm text-gray-600 mt-1 break-words">授課教練：{slot.teachingCoachName || '未指定'}</p>
                                 </div>
                                 <button onClick={() => handleBookClick(slot)} disabled={status==='booking' || isFull} className={`font-bold py-2.5 px-6 rounded-lg shadow-sm text-sm md:text-base active:scale-95 transition-transform whitespace-nowrap ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>{isFull ? '已額滿' : '預約'}</button>
                               </div>
@@ -1433,8 +1435,57 @@
         // 🔹 教練端主頁面與子視圖
         // ==========================================
 
-        const EditSlotModal = ({ slot, onClose, onSuccess }) => {
-            const [form, setForm] = useState({ title: slot.title, date: slot.date, time: slot.time, location: slot.location || '', capacity: slot.capacity, prices: { ...slot.prices } });
+        const TeachingCoachSelect = ({ coaches, value, onChange, disabled = false, allowUnassigned = false, label = '授課教練' }) => (
+            <label className="block text-sm font-bold text-gray-700">{label}
+                <select aria-label={label} required={!allowUnassigned} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} className="block w-full min-w-0 border border-gray-300 rounded-lg p-3 mt-1.5 bg-white font-normal text-base disabled:bg-gray-100">
+                    <option value="" disabled={!allowUnassigned}>{allowUnassigned ? '未指定（舊課程）' : '請選擇授課教練'}</option>
+                    {value && !coaches.some(coach => coach.id === value) && <option value={value} disabled>原教練資料待核對，請重新選擇</option>}
+                    {coaches.map(coach => <option key={coach.id} value={coach.id}>{coach.name}</option>)}
+                </select>
+            </label>
+        );
+
+        const TeachingCoachesManager = ({ coaches, enabled, onSuccess }) => {
+            const [editingId, setEditingId] = useState('');
+            const [name, setName] = useState('');
+            const [busy, setBusy] = useState(false);
+            const [error, setError] = useState('');
+            const [message, setMessage] = useState('');
+            const busyRef = React.useRef(false);
+            const save = async event => {
+                event.preventDefault();
+                if (!enabled || busyRef.current || !name.trim()) return;
+                busyRef.current = true; setBusy(true); setError(''); setMessage('');
+                let saved = false;
+                try {
+                    const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                    if (!accessToken) throw new Error('請重新登入 LINE。');
+                    const result = await fetchAPI({ action: editingId ? 'updateTeachingCoach' : 'addTeachingCoach', teachingCoachId: editingId, name: name.trim(), accessToken });
+                    if (!result || result.status !== 'success' || !result.coach?.id) throw new Error(result?.message || '儲存教練資料失敗，請稍後再試。');
+                    saved = true;
+                    await onSuccess();
+                    setName(''); setEditingId(''); setMessage('授課教練資料已儲存。');
+                } catch (err) { setError(saved ? '教練資料已儲存，但重新讀取失敗，請重新整理後確認。' : err.message); }
+                finally { busyRef.current = false; setBusy(false); }
+            };
+            return <section aria-labelledby="teaching-coaches-title" className="bg-white rounded-2xl shadow-sm border p-4 md:p-6 min-w-0">
+                <h2 id="teaching-coaches-title" className="font-bold text-lg text-slate-800">授課教練管理</h2>
+                <p className="text-sm text-slate-500 mt-2">新增教練姓名供排課選擇，不會新增後台登入權限。修改姓名會同步顯示於相關課程。</p>
+                {!enabled && <p role="status" className="text-sm text-amber-900 mt-3">授課教練功能尚未啟用，請聯絡管理員更新系統。</p>}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-4 min-w-0">
+                    <form aria-label="授課教練資料" onSubmit={save} className="min-w-0 space-y-3">
+                        <label className="block text-sm font-bold">教練姓名<input aria-label="教練姓名" required maxLength={60} disabled={busy || !enabled} value={name} onChange={event => setName(event.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /></label>
+                        <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy || !enabled || !name.trim()} className="bg-slate-800 text-white rounded-lg px-4 py-3 font-bold disabled:opacity-50">{busy ? '儲存中...' : editingId ? '儲存教練姓名' : '新增教練'}</button>{editingId && <button type="button" disabled={busy} onClick={() => { setEditingId(''); setName(''); setError(''); setMessage(''); }} className="border rounded-lg px-4 py-3">取消編輯</button>}</div>
+                        {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+                        {message && <p role="status" className="text-sm text-emerald-700">{message}</p>}
+                    </form>
+                    <div className="min-w-0">{!coaches.length ? <p className="text-sm text-slate-500">尚無授課教練，請先新增。</p> : <ul aria-label="授課教練名單" className="space-y-2 max-h-64 overflow-y-auto">{coaches.map(coach => <li key={coach.id} className="flex items-center justify-between gap-3 border rounded-lg p-3 min-w-0"><span className="text-sm break-all">{coach.name}</span><button type="button" aria-label={`編輯教練：${coach.name}`} disabled={busy || !enabled} onClick={() => { setEditingId(coach.id); setName(coach.name); setError(''); setMessage(''); }} className="shrink-0 text-sm text-blue-700 border rounded-lg px-3 py-2">編輯</button></li>)}</ul>}</div>
+                </div>
+            </section>;
+        };
+
+        const EditSlotModal = ({ slot, onClose, onSuccess, teachingCoaches = [], supportsTeachingCoaches = false }) => {
+            const [form, setForm] = useState({ title: slot.title, date: slot.date, time: slot.time, location: slot.location || '', capacity: slot.capacity, prices: { ...slot.prices }, teachingCoachId: slot.teachingCoachId || '' });
             const [busy, setBusy] = useState(false);
             const busyRef = React.useRef(false);
             const [error, setError] = useState('');
@@ -1446,7 +1497,8 @@
                 try {
                     const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
                     if (!accessToken) throw new Error('請重新登入 LINE。');
-                    const result = await fetchAPI({ action: 'updateSlot', slotId: slot.id, ...form, accessToken });
+                    const { teachingCoachId, ...fields } = form;
+                    const result = await fetchAPI({ action: 'updateSlot', slotId: slot.id, ...fields, ...(supportsTeachingCoaches ? { teachingCoachId } : {}), accessToken });
                     if (!result || result.status !== 'success') throw new Error((result && result.message) || '請先更新 Apps Script 部署，支援課程修改。');
                     saved = true; await onSuccess(); onClose();
                 } catch (err) { setError(saved ? '已儲存，但重新讀取失敗，請關閉後重新整理確認。' : err.message); }
@@ -1458,6 +1510,7 @@
                     <p className="text-sm text-gray-600 mb-4">已預約 {Number(slot.capacity) - Number(slot.remaining)} 人。修改收費不會更動既有訂單金額；修改日期與時間會影響既有學生，請另行通知。月繳日期及私人課程名稱請保留原格式。</p>
                     {error && <p role="alert" className="bg-red-50 text-red-800 p-3 rounded-lg mb-3">{error}</p>}
                     <form onSubmit={save} className="space-y-4">
+                        {supportsTeachingCoaches && <TeachingCoachSelect coaches={teachingCoaches} value={form.teachingCoachId} onChange={teachingCoachId => setForm(prev => ({ ...prev, teachingCoachId }))} disabled={busy} allowUnassigned={!slot.teachingCoachId} label="編輯課程授課教練" />}
                         {[['title','課程名稱'],['date','上課日期'],['time','上課時間'],['location','場地']].map(([key,label]) => <label key={key} className="block text-sm font-bold">{label}<input aria-label={label} required disabled={busy} value={form[key]} onChange={e => setForm(prev => ({...prev,[key]:e.target.value}))} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>)}
                         <label className="block text-sm font-bold">總名額<input aria-label="總名額" type="number" required min={Math.max(1, Number(slot.capacity)-Number(slot.remaining))} step="1" disabled={busy} value={form.capacity} onChange={e => setForm(prev=>({...prev,capacity:e.target.value}))} className="block w-full border rounded-lg p-3 mt-1" /></label>
                         <fieldset className="grid grid-cols-1 sm:grid-cols-2 gap-3"><legend className="font-bold mb-2">各等級收費</legend>{[1,2,3,4,5].map(level=><label key={level} className="block text-sm">{LEVEL_NAMES[level]}<input aria-label={`${LEVEL_NAMES[level]}收費`} type="number" min="0" step="any" required disabled={busy} value={form.prices[level] ?? ''} onChange={e=>setForm(prev=>({...prev,prices:{...prev.prices,[level]:e.target.value}}))} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>)}</fieldset>
@@ -1583,7 +1636,7 @@
             const days = Array.from({ length: new Date(Date.UTC(year, month, 0)).getUTCDate() }, (_, index) => {
                 const date = coachCalendarDateKey(year, month, index + 1);
                 const courses = (byDate.get(date) || []).sort((a, b) => coachCourseStartMinutes(a) - coachCourseStartMinutes(b) || String(a.slot.title).localeCompare(String(b.slot.title)));
-                return { date, day: index + 1, courses, reservedCount: courses.filter(course => course.reserved).length };
+                return { date, day: index + 1, courses, reservedCount: courses.filter(course => course.reserved).length, teachingCoachNames: [...new Set(courses.map(course => course.slot.teachingCoachName).filter(Boolean))] };
             });
             return { leading, days, unparsed };
         };
@@ -1619,6 +1672,7 @@
                                 <span className="text-sm text-slate-800">{day.day}</span>
                                 {day.courses.length > 0 && <span className="text-[9px] sm:text-[10px] text-sky-700 whitespace-nowrap">開 {day.courses.length}</span>}
                                 {day.reservedCount > 0 && <span className="text-[9px] sm:text-[10px] text-amber-800 whitespace-nowrap">預約 {day.reservedCount}</span>}
+                                {day.teachingCoachNames.length > 0 && <span title={day.teachingCoachNames.join('、')} className="block w-full truncate text-[9px] sm:text-[10px] text-slate-500">{day.teachingCoachNames.join('、')}</span>}
                             </button>)}
                         </div>
                         {data.unparsed > 0 && <p role="status" className="text-xs text-amber-800 mt-3">課程日期待核對：{data.unparsed} 筆。請核對已開課程資料。</p>}
@@ -1629,6 +1683,7 @@
                             {selected.courses.map(({ slot, orders, occupied, reserved }) => <article key={slot.id} className="border rounded-xl p-4 bg-slate-50 min-w-0">
                                 <div className="flex flex-wrap items-start justify-between gap-2"><h4 className="font-bold text-sm text-slate-800 break-words">{/^\[專屬教練課\]/.test(slot.title) ? '教練開放時段' : slot.title}</h4><span className={`text-xs rounded px-2 py-1 ${reserved ? 'bg-amber-100 text-amber-900' : 'bg-sky-100 text-sky-800'}`}>{reserved ? '已有預約' : '已開課程'}</span></div>
                                 <p className="text-sm text-slate-600 mt-2">{slot.time} · {String(slot.location || '').startsWith('coach_loc:') ? '學員自選場地' : slot.location}</p>
+                                <p className="text-sm text-slate-700 mt-2 break-words">授課教練：{slot.teachingCoachName || '未指定'}</p>
                                 <p className="text-xs text-slate-500 mt-2">已佔名額 {occupied} · 剩餘名額 {slot.remaining}</p>
                                 {orders.length > 0 && <details className="text-sm mt-3"><summary className="cursor-pointer font-bold text-slate-700">預約名單（{orders.length} 人）</summary><ul className="space-y-2 mt-2">{orders.map((booking, index) => <li key={`${booking.bookingId || 'legacy'}-${index}`} className="flex flex-wrap justify-between gap-2 border-t pt-2"><span>{booking.name}</span><span className="text-xs text-slate-500">{booking.status}</span></li>)}</ul></details>}
                                 <button type="button" onClick={() => onEdit(slot)} className="text-sm text-blue-700 font-bold mt-3 px-3 py-2 bg-white border border-blue-100 rounded-lg">編輯課程</button>
@@ -1701,7 +1756,7 @@
 
         const CoachSlotsView = ({ onPaymentsChanged = () => {} }) => {
           const [form, setForm] = useState({ 
-            mode: 'single', title: '新手團課', location: '關聖里活動中心',
+            mode: 'single', title: '新手團課', location: '關聖里活動中心', teachingCoachId: '',
             date: '', startTime: '21:00', endTime: '22:00', capacity: '1', 
             prices: { 1: 280, 2: 275, 3: 265, 4: 250, 5: 150 },
             coachBase1v1: '1000', coachBase1v2: '1400'
@@ -1711,6 +1766,9 @@
           const [members, setMembers] = useState([]);
           const [slots, setSlots] = useState([]);
           const [supportsSingleRegistration, setSupportsSingleRegistration] = useState(false);
+          const [teachingCoaches, setTeachingCoaches] = useState([]);
+          const [supportsTeachingCoaches, setSupportsTeachingCoaches] = useState(false);
+          const [dataError, setDataError] = useState('');
           const [loading, setLoading] = useState(false);
           const [logModalTarget, setLogModalTarget] = useState(null); 
           const [showMonthlyLeave, setShowMonthlyLeave] = useState(false);
@@ -1733,15 +1791,19 @@
 
           const fetchData = () => {
             return Promise.all([fetchAPI({ action: 'getCoachData' }), fetchAPI({ action: 'getSlots' })]).then(([bRes, sRes]) => {
+                if (bRes.status !== 'success' || sRes.status !== 'success') throw new Error(bRes.message || sRes.message || '讀取排課資料失敗，請稍後再試。');
+                setDataError('');
+                setTeachingCoaches(sRes.teachingCoaches || []);
+                setSupportsTeachingCoaches(sRes.teachingCoachesVersion === 1);
                 setBookings(bRes.bookings || []);
                 setMembers(bRes.members || []);
                 setSlots((sRes.slots || []).filter(s => s.id && s.title && s.date));
                 setSupportsSingleRegistration(sRes.coachSingleRegistrationVersion === 1);
                 onPaymentsChanged();
-            });
+            }).catch(error => { setDataError(error.message); throw error; });
           };
 
-          useEffect(() => { fetchData(); }, []);
+          useEffect(() => { fetchData().catch(() => {}); }, []);
 
           const toggleLocation = (loc) => {
               setAllowedLocations(prev => prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc]);
@@ -1750,6 +1812,9 @@
           const handleAddSlot = async (e) => {
             e.preventDefault();
             if (addingSlotsRef.current) return;
+            if (!supportsTeachingCoaches || !teachingCoaches.some(coach => coach.id === form.teachingCoachId)) { alert('請先新增並選擇授課教練。'); return; }
+            const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+            if (!accessToken) { alert('請重新登入 LINE。'); return; }
             let times = [`${form.startTime} - ${form.endTime}`];
             let finalTitle = form.title, finalCapacity = form.capacity, finalLocation = form.location;
             try {
@@ -1757,7 +1822,7 @@
                 else if (form.mode === 'coach') {
                     if (!allowedLocations.length) throw new Error('請至少選擇一個允許學生預約的場地！');
                     times = splitCoachHours(form.startTime, form.endTime);
-                    if (slots.some(slot => /^\[專屬教練課\]/.test(slot.title) && doesSlotMatchDate(slot, form.date) && times.includes(slot.time))) throw new Error('此日期已有相同的教練時段，請先核對已開課程，避免重複上架。');
+                    if (slots.some(slot => /^\[專屬教練課\]/.test(slot.title) && doesSlotMatchDate(slot, form.date) && times.includes(slot.time) && slot.teachingCoachId === form.teachingCoachId)) throw new Error('此日期已有相同的教練時段，請先核對已開課程，避免重複上架。');
                     finalTitle = `[專屬教練課] 1v1:${form.coachBase1v1}|1v2:${form.coachBase1v2}`;
                     finalCapacity = 1;
                     finalLocation = `coach_loc:${allowedLocations.join(',')}`;
@@ -1768,7 +1833,7 @@
             const finalDate = form.mode === 'monthly' ? `${form.date.slice(0, 4)}年 ${monthlyInfo.text}` : `${form.date} (${getDayOfWeek(form.date)})`;
             try {
                 for (const time of times) {
-                    const result = await fetchAPI({ action: 'addSlot', ...form, capacity: finalCapacity, location: finalLocation, title: finalTitle, date: finalDate, time });
+                    const result = await fetchAPI({ action: 'addSlot', ...form, capacity: finalCapacity, location: finalLocation, title: finalTitle, date: finalDate, time, accessToken });
                     if (!result || result.status !== 'success') throw new Error((result && result.message) || '後端未確認成功，請先核對課程清單。');
                     created.push(time);
                 }
@@ -1808,7 +1873,7 @@
             if (!confirm(`確定要刪除這堂課嗎？\n\n${title} (${dateStr})\n\n⚠️ 此操作無法復原。`)) return;
             setLoading(true);
             await fetchAPI({ action: 'deleteSlot', slotId: slotId });
-            fetchData(); setLoading(false);
+            fetchData().catch(() => {}); setLoading(false);
           };
 
           const [deletingBookingId, setDeletingBookingId] = useState(null);
@@ -1876,13 +1941,15 @@
             if (!confirm(cash ? '確認此教練時段預約？學員將於現場付現，本次核准不代表已收款。' : "確認已收到款項並核准此預約？\n核准後可為該學員填寫訓練日誌結課。")) return;
             setLoading(true);
             await fetchAPI({ action: 'approveBooking', bookingId });
-            fetchData();
+            fetchData().catch(() => {});
             setLoading(false);
           };
 
           return (
             <div className="space-y-6 md:space-y-8">
+              {dataError && <div role="alert" className="bg-red-50 text-red-800 rounded-xl p-4"><p>{dataError}</p><button type="button" onClick={() => fetchData().catch(() => {})} className="border rounded-lg px-3 py-2 mt-2">重新讀取課程</button></div>}
               <CoachCourseCalendar slots={slots} bookings={bookings} onEdit={setEditingSlot} />
+              <TeachingCoachesManager coaches={teachingCoaches} enabled={supportsTeachingCoaches} onSuccess={fetchData} />
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 <CoachGroupRegistration kind="single" members={members} slots={slots} onSuccess={fetchData} enabled={supportsSingleRegistration} />
                 <CoachGroupRegistration kind="monthly" members={members} slots={slots} onSuccess={fetchData} />
@@ -1895,6 +1962,8 @@
                 <div className="coach-editor bg-white p-5 md:p-8 rounded-2xl shadow-sm border min-w-0 col-span-1 h-fit">
                   <h2 className="font-bold text-lg md:text-xl mb-5 border-b pb-3">新增課程 / 開放時段</h2>
                   <form onSubmit={handleAddSlot} className="space-y-4">
+                    <TeachingCoachSelect coaches={teachingCoaches} value={form.teachingCoachId} onChange={teachingCoachId => setForm(prev => ({ ...prev, teachingCoachId }))} disabled={loading || !supportsTeachingCoaches} />
+                    {!supportsTeachingCoaches ? <p className="text-sm text-amber-900">授課教練功能尚未啟用，請聯絡管理員更新系統。</p> : !teachingCoaches.length && <p className="text-sm text-slate-500">請先在授課教練管理新增教練。</p>}
                     <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
                         <label className="block text-sm mb-3 font-bold text-emerald-800">上架類型</label>
                         <div className="flex flex-col gap-2">
@@ -1990,7 +2059,7 @@
                         <p className="font-bold">每小時自動分割，獨立預約</p>
                         {coachHoursError ? <p role="alert" className="text-red-700 mt-2">{coachHoursError}</p> : <><p className="mt-2">將建立 {coachHours.length} 個時段，每段 1 小時、各 1 個名額。以上價格為每小時教練費，不含場地費，學員須自行預約場地。</p><ul className="mt-2 space-y-1">{coachHours.map(time => <li key={time}>{time}</li>)}</ul></>}
                     </div>}
-                    <button type="submit" disabled={loading || (form.mode === 'coach' && !!coachHoursError)} className="w-full bg-slate-800 text-white p-4 rounded-lg font-bold text-lg mt-6 active:scale-[0.98] transition">上架時段</button>
+                    <button type="submit" disabled={loading || !supportsTeachingCoaches || !teachingCoaches.some(coach => coach.id === form.teachingCoachId) || (form.mode === 'coach' && !!coachHoursError)} className="w-full bg-slate-800 text-white p-4 rounded-lg font-bold text-lg mt-6 active:scale-[0.98] transition">上架時段</button>
                   </form>
                 </div>
 
@@ -2012,7 +2081,7 @@
                                 const displayLoc = safeLocation.startsWith('coach_loc:') ? '學員自選場地' : safeLocation;
                                 return (
                                   <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
-                                    <td data-label="課程名稱" className="p-3 md:p-4"><span className="font-bold text-gray-800">{isCoach ? '教練開放時段' : s.title}</span></td>
+                                    <td data-label="課程名稱" className="p-3 md:p-4"><span className="font-bold text-gray-800">{isCoach ? '教練開放時段' : s.title}</span><span className="block text-xs text-slate-500 mt-1 whitespace-normal break-words">授課教練：{s.teachingCoachName || '未指定'}</span></td>
                                     <td data-label="日期/時間" className="p-3 md:p-4 text-gray-500">{s.date} <br/><span className="text-xs md:text-sm">{s.time} • {displayLoc}</span></td>
                                     <td data-label="進度" className="p-3 md:p-4 text-center"><span className={`px-3 py-1 rounded-full font-bold text-xs md:text-sm ${isFull ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700'}`}>{booked}/{s.capacity}</span></td>
                                     <td data-label="操作" className="p-3 md:p-4 text-center"><div className="flex flex-wrap justify-center gap-2"><button onClick={() => setEditingSlot(s)} className="bg-blue-50 text-blue-700 font-bold px-4 py-2 rounded-lg">編輯</button><button onClick={() => handleDeleteSlot(s.id, s.title, s.date)} className="text-red-600 hover:text-red-800 font-bold text-sm bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg active:scale-95 transition">刪除</button></div></td>
@@ -2088,10 +2157,10 @@
                     </div>
                 </div>
               </div>
-              {editingSlot && <EditSlotModal slot={editingSlot} onClose={() => setEditingSlot(null)} onSuccess={fetchData} />}
+              {editingSlot && <EditSlotModal slot={editingSlot} teachingCoaches={teachingCoaches} supportsTeachingCoaches={supportsTeachingCoaches} onClose={() => setEditingSlot(null)} onSuccess={fetchData} />}
               {showMonthlyLeave && <MonthlyLeaveModal bookings={bookings} slots={slots} onClose={() => setShowMonthlyLeave(false)} onSuccess={fetchData} />}
               {/* 共用寫日誌彈窗 (傳入 targetData={lineId, name, bookingId}) */}
-              {logModalTarget && <LogFormModal targetData={logModalTarget} onClose={() => setLogModalTarget(null)} onSuccess={fetchData} />}
+              {logModalTarget && <LogFormModal targetData={logModalTarget} onClose={() => setLogModalTarget(null)} onSuccess={() => fetchData().catch(() => {})} />}
             </div>
           );
         };

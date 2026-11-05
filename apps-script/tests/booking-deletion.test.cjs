@@ -20,7 +20,7 @@ function setup(options = {}) {
   const context = {
     Utilities: { getUuid: () => 'new-booking' },
     SHEET_BOOKINGS: '預約名單', SHEET_SLOTS: '可用時段', ADMIN_LINE_IDS: ['coach'],
-    SpreadsheetApp: { flush() {}, getActiveSpreadsheet: () => ({ getSheetByName: name => name === '預約名單' ? bookings : options.missingSlot ? { getDataRange: () => ({ getValues: () => [['headers']] }) } : slots }) },
+    SpreadsheetApp: { flush() {}, getActiveSpreadsheet: () => ({ getSheetByName: name => name === '預約名單' ? bookings : name === '可用時段' ? (options.missingSlot ? { getDataRange: () => ({ getValues: () => [['headers']] }) } : slots) : null }) },
     LockService: { getScriptLock: () => ({ tryLock: () => { locked = !options.busy; return locked; }, releaseLock: () => { locked = false; } }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => options.noChannel ? null : 'channel' }) },
     UrlFetchApp: { fetch: url => {

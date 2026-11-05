@@ -24,3 +24,9 @@ test('calendar weekdays, leap years and class ordering are correct',()=>{
 test('unreadable dates are flagged without guessing a year or silently moving invalid dates',()=>{
  const data=month([slot({date:'11/4, 11/11'}),slot({id:'bad',date:'2026-02-30'})],[],'2026-11');assert.equal(data.unparsed,2);assert.equal(data.days.some(d=>d.courses.length),false);assert.throws(()=>month([],[],'2026-13'),/有效月份/);
 });
+test('calendar carries each assigned coach and lists distinct names for each day',()=>{
+ const result=month([slot({teachingCoachId:'a',teachingCoachName:'王教練'}),slot({id:'two',teachingCoachId:'b',teachingCoachName:'佐藤'}),slot({id:'three',teachingCoachId:'a',teachingCoachName:'王教練'})],[],'2026-11');
+ const day=result.days[3];assert.deepEqual(Array.from(day.teachingCoachNames),['王教練','佐藤']);
+ assert.equal(day.courses[1].slot.teachingCoachId,'b');assert.equal(day.courses[1].slot.teachingCoachName,'佐藤');
+ const legacy=month([slot()],[],'2026-11');assert.deepEqual(Array.from(legacy.days[3].teachingCoachNames),[]);
+});

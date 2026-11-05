@@ -41,6 +41,12 @@ test('student nicknames remain unchanged when Japanese is selected',()=>{
  assert.equal(i.translate('學生 [預約]'),'學生 [預約]');
  assert(i.translate('學生預約 · 課程預約').includes('學生預約'));
 });
+test('teaching coach labels translate while names containing existing dictionary words remain unchanged',()=>{
+ const {i}=setup();i.remember({teachingCoaches:[{id:'a',name:'學生預約教練'}]});
+ assert.equal(i.translate('授課教練管理'),'担当コーチ管理');
+ assert.equal(i.translate('授課教練：學生預約教練'),'担当コーチ：學生預約教練');
+ assert.equal(i.translate('請選擇授課教練'),'担当コーチを選択してください');
+});
 
 test('five-minute training units and approximate counts are translated',()=>{
  const {i}=setup();
