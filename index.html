@@ -961,7 +961,7 @@
 
           return (
             <div>
-            <p className="booking-notice m-4 p-3 rounded-lg bg-emerald-50 text-emerald-900">此帳號共 {studentCount} 位學生。團課預約佔用 {studentCount} 個名額，費用依人數加總；專屬教練課限同帳號 1～2 人，共用一個名額，按所選方案原價收費。</p>
+            {studentCount > 1 && <p className="booking-notice m-4 p-3 rounded-lg bg-emerald-50 text-emerald-900">此帳號共 {studentCount} 位學生。團課預約佔用 {studentCount} 個名額，費用依人數加總；專屬教練課限同帳號 1～2 人，共用一個名額，按所選方案原價收費。</p>}
             <div className="booking-layout flex flex-col md:flex-row gap-0 md:gap-8 p-0 md:p-8 pb-10 relative">
               <div className="booking-calendar bg-white px-2 md:px-6 py-4 md:py-6 shadow-sm border-b md:border md:rounded-2xl w-full md:w-1/3 md:sticky md:top-6 h-fit">
                 <div className="flex justify-between items-center mb-4 px-4">
