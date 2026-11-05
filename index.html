@@ -977,21 +977,26 @@
                       if (!day) return <div key={i} className="h-10"></div>;
                       const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
                       
-                      const hasAvailableGroupClass = slots.some(s => doesSlotMatchDate(s, dateStr) && Number(s.remaining) >= studentCount && !s.title.startsWith('[專屬教練課]'));
-                      const hasAvailableCoachSlot = slots.some(s => doesSlotMatchDate(s, dateStr) && studentCount <= 2 && Number(s.remaining) >= 1 && s.title.startsWith('[專屬教練課]'));
+                      const availableSlots = slots.filter(slot => doesSlotMatchDate(slot, dateStr) && (slot.title.startsWith('[專屬教練課]') ? studentCount <= 2 && Number(slot.remaining) >= 1 : Number(slot.remaining) >= studentCount));
+                      const hasAvailableGroupClass = availableSlots.some(slot => !slot.title.startsWith('[專屬教練課]'));
+                      const hasAvailableCoachSlot = availableSlots.some(slot => slot.title.startsWith('[專屬教練課]'));
+                      const teachingCoachNames = [...new Set(availableSlots.map(slot => slot.teachingCoachName || '未指定'))];
                       
-                      if (!hasAvailableGroupClass && !hasAvailableCoachSlot) return <div key={i} className="h-14" aria-hidden="true" />;
+                      if (!hasAvailableGroupClass && !hasAvailableCoachSlot) return <div key={i} className="min-h-[76px]" aria-hidden="true" />;
                       const isSelected = dateStr === selectedDate;
                       const isToday = dateStr === formatDate(new Date());
 
                       return (
-                        <button type="button" key={i} aria-label={`${dateStr} 可預約`} aria-pressed={isSelected} onClick={() => setSelectedDate(dateStr)} className="h-14 flex flex-col items-center justify-start cursor-pointer relative active:scale-90 transition-transform">
+                        <button type="button" key={i} aria-label={`${dateStr} 可預約`} aria-describedby={`student-calendar-coaches-${dateStr}`} aria-pressed={isSelected} onClick={() => setSelectedDate(dateStr)} className="min-h-[76px] min-w-0 pb-1 flex flex-col items-center justify-start cursor-pointer relative active:scale-90 transition-transform">
                           <span className={`w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full text-sm md:text-base transition-colors ${isSelected ? 'bg-emerald-600 text-white font-bold shadow-md' : isToday ? 'bg-emerald-100 text-emerald-800 font-bold' : 'text-gray-700 hover:bg-gray-100'}`}>
                             {day}
                           </span>
                           <span className="flex gap-1 mt-1 justify-center w-full">
                               {hasAvailableGroupClass && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>}
                               {hasAvailableCoachSlot && <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>}
+                          </span>
+                          <span id={`student-calendar-coaches-${dateStr}`} className="mt-1 w-full min-w-0 space-y-0.5 text-[9px] md:text-[10px] leading-tight text-gray-500">
+                            {teachingCoachNames.map(name => <span key={name} title={name} className="block truncate px-0.5">{name}</span>)}
                           </span>
                         </button>
                       )
