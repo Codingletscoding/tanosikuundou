@@ -1,7 +1,7 @@
 /**
  * 樂動羽球 Apps Script 單檔完整版本（含多人帳號、請假補課、教練管理）
  * 整份取代原有 Code.gs；移除舊 BookingDeletion.gs、MonthlyLeave.gs、CoachManagement.gs，避免重複。
- * 設定指令碼屬性 LINE_LOGIN_CHANNEL_ID = LIFF 所屬 LINE Login channel 的 Channel ID。
+ * LINE Login Channel ID 預設 2012115242；如有 LINE_LOGIN_CHANNEL_ID 指令碼屬性，優先使用該設定。
  * 儲存並更新原有 Web App 部署為新版本，維持原 API 網址。
  */
 
@@ -11,6 +11,17 @@ const SHEET_BOOKINGS = "預約名單";
 const SHEET_LOGS = "訓練日誌";
 
 const ADMIN_LINE_IDS = ["U3a76953e63578ec8607297044ac54e5a"]; 
+
+// Server-owned LINE Login Channel ID. A configured script property takes precedence.
+const DEFAULT_LINE_LOGIN_CHANNEL_ID = '2012115242';
+
+function lineLoginChannelId_() {
+  const configured = String(PropertiesService.getScriptProperties().getProperty('LINE_LOGIN_CHANNEL_ID') || '').trim();
+  const channelId = configured || DEFAULT_LINE_LOGIN_CHANNEL_ID;
+  if (!channelId) throw new Error('尚未設定 LINE_LOGIN_CHANNEL_ID。請在 Apps Script 專案設定的指令碼屬性填入 LINE Login Channel ID。');
+  return channelId;
+}
+
 
 function doPost(e) {
   let requestLock = null;
@@ -356,8 +367,7 @@ function fetchLineForBookingDeletion_(url, options) {
 }
 
 function verifyBookingDeletionCoach_(accessToken) {
-  var channelId = PropertiesService.getScriptProperties().getProperty('LINE_LOGIN_CHANNEL_ID');
-  if (!channelId) throw new Error('尚未設定 LINE_LOGIN_CHANNEL_ID。');
+  var channelId = lineLoginChannelId_();
   if (typeof accessToken !== 'string' || !accessToken) throw new Error('請重新登入 LINE 後再操作。');
   var verification = fetchLineForBookingDeletion_('https://api.line.me/oauth2/v2.1/verify?access_token=' + encodeURIComponent(accessToken), { muteHttpExceptions: true });
   if (verification.getResponseCode() !== 200) throw new Error('LINE 登入已失效，請重新登入。');
@@ -650,8 +660,7 @@ function monthlyFetchLine_(url, options) {
 }
 
 function monthlyVerifyCoach_(accessToken) {
-  var channelId = PropertiesService.getScriptProperties().getProperty('LINE_LOGIN_CHANNEL_ID');
-  if (!channelId) throw new Error('尚未設定 LINE_LOGIN_CHANNEL_ID。');
+  var channelId = lineLoginChannelId_();
   if (typeof accessToken !== 'string' || !accessToken) throw new Error('請重新登入 LINE 後再操作。');
   var verification = monthlyFetchLine_('https://api.line.me/oauth2/v2.1/verify?access_token=' + encodeURIComponent(accessToken), { muteHttpExceptions: true });
   if (verification.getResponseCode() !== 200) throw new Error('LINE 登入已失效，請重新登入。');
@@ -766,8 +775,8 @@ function accountUser_(row) {
   return { name: row[1], age: row[2], phone: row[3], level: row[5] || 1, students: publicStudents, studentCount: students.length, registrationComplete: !!row[6], registrationProfileVersion };
 }
 function verifyAccountOwner_(accessToken, lineId) {
-  const channelId = PropertiesService.getScriptProperties().getProperty('LINE_LOGIN_CHANNEL_ID');
-  if (!channelId || !accessToken) throw new Error('請確認 LINE 登入設定並重新登入後補登資料。');
+  const channelId = lineLoginChannelId_();
+  if (!accessToken) throw new Error('請確認 LINE 登入設定並重新登入後補登資料。');
   const verification = monthlyFetchLine_('https://api.line.me/oauth2/v2.1/verify?access_token=' + encodeURIComponent(accessToken), { muteHttpExceptions: true });
   if (verification.getResponseCode() !== 200) throw new Error('LINE 登入已失效，請重新登入。');
   const token = JSON.parse(verification.getContentText());

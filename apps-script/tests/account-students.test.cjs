@@ -206,3 +206,23 @@ test('new profile repair preserves legacy identity, membership, timestamps and b
  assert.equal(f.run({action:'getStudentStats',studentId:''}).totalClasses,1);
  const again=f.run(payload);assert.equal(again.status,'error');
 });
+
+function monthlyCoachWithoutChannelProperty(options={}) {
+ const f=monthlyCoach();
+ f.context.PropertiesService.getScriptProperties=()=>({getProperty:()=>null});
+ const configured=vm.runInContext('DEFAULT_LINE_LOGIN_CHANNEL_ID',f.context);
+ const admin=vm.runInContext('ADMIN_LINE_IDS[0]',f.context);
+ f.context.UrlFetchApp.fetch=url=>({getResponseCode:()=>options.expired?401:200,getContentText:()=>JSON.stringify(url.includes('/verify?')?{client_id:options.clientId||configured,expires_in:3600}:{userId:options.notCoach?'student':admin})});
+ return f;
+}
+test('coach monthly registration succeeds with confirmed server channel when script property is missing',()=>{
+ const f=monthlyCoachWithoutChannelProperty();const result=f.enroll();
+ assert.equal(result.status,'success',result.message);assert.equal(result.registeredCount,2);assert.equal(result.totalPrice,1960);
+ assert.equal(f.rows['預約名單'].length,3);assert.equal(f.rows['可用時段'][1][6],3);
+});
+test('missing channel property never accepts a different channel, expired token or noncoach',()=>{
+ for(const options of [{clientId:'attacker-channel'},{expired:true},{notCoach:true}]){
+  const f=monthlyCoachWithoutChannelProperty(options);const result=f.enroll({channelId:'attacker-channel',isAdmin:true});
+  assert.equal(result.status,'error');assert.equal(f.rows['預約名單'].length,1);assert.equal(f.rows['可用時段'][1][6],5);
+ }
+});

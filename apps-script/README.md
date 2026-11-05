@@ -1,3 +1,17 @@
+# 代登記月繳團課：LINE Channel 設定修正
+
+完整 `complete/Code.gs` 已設定經確認的 LINE Login Channel ID `2012115242`。前端 LIFF ID `2012115245-A7HBSYsv` 維持不變。Channel ID 是公開設定，不是 Channel secret。
+
+- 優先使用原 Apps Script 的 `LINE_LOGIN_CHANNEL_ID` 指令碼屬性（會去除前後空白）；沒有設定或空白時，使用後端固定的 `2012115242`。
+- 如果原專案已有此指令碼屬性，請確認它也是 `2012115242`；既有設定會優先於程式中的預設值。
+- 代登記、請假補課、教練訂單管理、刪除預約及舊帳號補登共用相同的頻道設定。仍然驗證 LINE 權杖、有效期限、登入頻道及教練身分；不採信瀏覽器傳來的 Channel ID，也不會自動接受權杖宣告的任何頻道。
+
+**修復目前線上專案，最快的方法：**在原 Apps Script 專案選「專案設定 → 指令碼屬性」，新增或修正 `LINE_LOGIN_CHANNEL_ID` 為 `2012115242` 並儲存。單純更新指令碼屬性即可讓既有程式讀到新設定，不必更換網站或 Web App 網址。
+
+**採用程式中的固定設定：**將本次完整 `complete/Code.gs` 貼入原 Apps Script 專案，再以「部署 → 管理部署 → 編輯 → 新版本」更新原 Web App。只發布 GitHub 網站無法更新 Apps Script 後端。
+
+本機驗證：`node apps-script/tests/line-channel.test.cjs`、`node apps-script/tests/account-students.test.cjs`。LINE 的實際連線仍須在原 Apps Script 專案確認；如出現「LINE 登入驗證失敗」，請確認所填的是該登入權杖所屬 **LINE Login** Channel ID，並重新登入，不能改成略過頻道檢查。
+
 # 新版註冊資料（出生年月日與上課風格）
 
 新版前端須搭配本次 `complete/Code.gs`，先更新原有 Apps Script Web App 的新版本，再發布網站前端。GitHub 推送不會更新 Apps Script。前端會檢查 `registrationProfileVersion: 2`；舊後端不會收到新版註冊寫入，避免新增欄位被靜默丟棄。請先在測試試算表與測試 LINE 帳號完成驗證。
