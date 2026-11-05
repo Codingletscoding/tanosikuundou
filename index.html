@@ -9,7 +9,7 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-    <script src="./ja.js?v=training-5min"></script>
+    <script src="./ja.js?v=student-profiles-1"></script>
     <script src="./i18n.js?v=inline-controls-2"></script>
     <style>
         .language-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -437,14 +437,74 @@
             )
         };
 
+        const StudentRegistrationDetails = ({ profile }) => {
+            const birthday = profile.birthDate || (profile.age != null && profile.age !== '' ? `${profile.age} 歲（舊資料未記錄生日）` : '');
+            const fields = [
+                ['姓名', profile.name], ['暱稱', profile.nickname], ['出生年月日', birthday],
+                ['手機號碼', profile.phone], ['緊急連絡人電話', profile.emergencyPhone],
+                ['傷病史', profile.injuryHistory, true], ['學習目標', profile.learningGoals, true]
+            ];
+            return (
+                <div className="space-y-5">
+                    <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                        {fields.map(([label, value, wide]) => <div key={label} className={`min-w-0 ${wide ? 'sm:col-span-2' : ''}`}>
+                            <dt className="text-xs font-bold text-slate-500 mb-1">{label}</dt>
+                            <dd className="text-sm text-slate-800 whitespace-pre-wrap break-words">{value || '未填寫'}</dd>
+                        </div>)}
+                    </dl>
+                    <div>
+                        <h4 className="text-xs font-bold text-slate-500 mb-2">偏好上課風格</h4>
+                        {profile.lessonStyle ? <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            {LESSON_STYLE_OPTIONS.map(([key, label]) => <div key={key} className="bg-slate-50 border rounded-lg p-3 min-w-0">
+                                <dt className="text-xs text-slate-600 leading-relaxed">{label}</dt>
+                                <dd className="text-lg font-bold text-emerald-800 mt-2 tabular-nums">{profile.lessonStyle[key]}%</dd>
+                            </div>)}
+                        </dl> : <p className="text-sm text-slate-600">未填寫</p>}
+                    </div>
+                    {!profile.isRepresentative && <div className="border-t pt-4">
+                        <h4 className="text-xs font-bold text-slate-500 mb-1">帳號代表聯絡方式</h4>
+                        <p className="text-sm text-slate-800 break-words">{profile.representativeName || '未填寫'} · {profile.representativePhone || '未填寫'}</p>
+                    </div>}
+                </div>
+            );
+        };
+
         const StudentDetailsModal = ({ student, onClose }) => {
             const [data, setData] = useState(null);
-            
+            const [statsError, setStatsError] = useState('');
+            const [profile, setProfile] = useState(null);
+            const [profileError, setProfileError] = useState('');
+            const [profileLoading, setProfileLoading] = useState(true);
+            const [refresh, setRefresh] = useState(0);
+
             useEffect(() => {
-                if(student && student.lineId) {
-                    fetchAPI({ action: 'getStudentStats', lineId: student.lineId, studentId: student.studentId }).then(res => setData(res));
+                let active = true;
+                setData(null); setStatsError(''); setProfile(null); setProfileError(''); setProfileLoading(true);
+                if (!student || !student.lineId) {
+                    setStatsError('找不到學員帳號。'); setProfileError('找不到學員帳號。'); setProfileLoading(false);
+                    return () => { active = false; };
                 }
-            }, [student]);
+                fetchAPI({ action: 'getStudentStats', lineId: student.lineId, studentId: student.studentId || '' }).then(result => {
+                    if (!result || result.status !== 'success') throw new Error(result?.message || '無法讀取訓練紀錄，請稍後再試。');
+                    if (active) setData(result);
+                }).catch(error => { if (active) setStatsError(error.message); });
+                const loadProfile = async () => {
+                    try {
+                        const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                        if (!accessToken) throw new Error('請重新登入 LINE 後檢視學員基本資料。');
+                        const result = await fetchAPI({ action: 'getStudentProfile', lineId: student.lineId, studentId: student.studentId || '', accessToken });
+                        if (!result || result.status !== 'success') {
+                            const message = String(result?.message || '無法讀取學員基本資料，請稍後再試。');
+                            throw new Error(message.startsWith('不支援的操作') ? '尚未啟用基本資料檢視，請聯絡管理員更新系統。' : message);
+                        }
+                        if (!result.profile || result.profile.lineId !== student.lineId || result.profile.studentId !== (student.studentId || '')) throw new Error('基本資料回應不完整，請稍後再試。');
+                        if (active) setProfile(result.profile);
+                    } catch (error) { if (active) setProfileError(error.message); }
+                    finally { if (active) setProfileLoading(false); }
+                };
+                loadProfile();
+                return () => { active = false; };
+            }, [student, refresh]);
 
             return (
                 <div className="fixed inset-0 bg-slate-900 bg-opacity-60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -457,8 +517,15 @@
                         </div>
                         
                         <div className="p-4 md:p-6 overflow-y-auto bg-gray-50 flex-1 min-w-0">
+                            <section aria-labelledby="student-registration-title" className="bg-white rounded-2xl shadow-sm border p-5 md:p-6 mb-6">
+                                <div className="flex flex-wrap items-center gap-3 mb-4">
+                                    <h3 id="student-registration-title" className="font-bold text-base md:text-lg text-slate-800">註冊基本資料</h3>
+                                    {profile?.isRepresentative && <span className="bg-amber-100 text-amber-900 text-xs px-2 py-1 rounded">帳號代表</span>}
+                                </div>
+                                {profileLoading ? <p role="status" className="text-sm text-slate-500">讀取基本資料中...</p> : profileError ? <div role="alert" className="text-sm text-red-700"><p>{profileError}</p><button type="button" onClick={() => setRefresh(value => value + 1)} className="mt-3 border border-red-200 rounded-lg px-3 py-2">重新讀取基本資料</button></div> : profile && <StudentRegistrationDetails profile={profile} />}
+                            </section>
                             {!data ? (
-                                <div className="text-center py-20 text-gray-500 font-bold animate-pulse">讀取學員資料中...</div>
+                                statsError ? <div role="alert" className="text-sm text-red-700"><p>{statsError}</p><button type="button" onClick={() => setRefresh(value => value + 1)} className="mt-3 border rounded-lg px-3 py-2">重新讀取訓練紀錄</button></div> : <div className="text-center py-20 text-gray-500 font-bold animate-pulse">讀取學員資料中...</div>
                             ) : (
                                 <div className="space-y-6">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

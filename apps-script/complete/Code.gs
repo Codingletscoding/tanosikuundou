@@ -72,6 +72,11 @@ function doPost(e) {
       result = { status: "success", isRegistered: isRegistered, user: userData, isAdmin: isAdmin, accountRegistrationVersion: 1, registrationProfileVersion: 2 };
     } 
     
+    else if (action === "getStudentProfile") {
+      monthlyVerifyCoach_(payload.accessToken);
+      result = { status: 'success', profile: coachStudentProfile_(ss, payload) };
+    }
+
     else if (action === "registerUser" || action === "completeAccountRegistration") {
       const sheet = ss.getSheetByName(SHEET_USERS);
       const students = validateAccountStudents_(payload);
@@ -761,6 +766,28 @@ function rejectCancelledBookingWrite_(ss, payload) {
     if (payload.action === 'updatePayment' && (['現場現金', '現金已收'].indexOf(booking.row[6]) !== -1 || ['現場現金', '現金已收'].indexOf(payload.paymentCode) !== -1)) throw new Error('現金付款須由教練確認收款，不適用匯款後五碼修改。');
     if (booking.row[5] === '已取消') throw new Error('已取消訂單不可核准、更新付款或結課。');
   }
+}
+
+// Sensitive registration fields are available only through the authenticated coach action.
+function coachStudentProfile_(ss, payload) {
+  if (typeof payload.lineId !== 'string' || !payload.lineId.trim() || typeof payload.studentId !== 'string') throw new Error('請選擇要檢視的學員。');
+  const sheet = ss.getSheetByName(SHEET_USERS);
+  const accounts = sheet ? sheet.getDataRange().getValues().slice(1).filter(row => row[0] === payload.lineId) : [];
+  if (accounts.length !== 1) throw new Error('找不到唯一的學員帳號資料。');
+  const row = accounts[0], students = accountStudents_(row);
+  const matches = students.filter(student => student.id === payload.studentId);
+  if (matches.length !== 1) throw new Error('找不到此帳號的指定學員。');
+  const student = matches[0], isRepresentative = students[0] === student;
+  const style = student.lessonStyle, keys = ['theory', 'multiball', 'correction'];
+  const validStyle = style && keys.every(key => Number.isInteger(style[key]) && style[key] >= 0 && style[key] <= 100) && keys.reduce((sum, key) => sum + style[key], 0) === 100;
+  return {
+    lineId: payload.lineId, studentId: student.id, name: student.name || '', nickname: student.nickname || '',
+    birthDate: student.birthDate || '', age: student.age == null ? null : student.age,
+    phone: student.phone || (isRepresentative ? row[3] || '' : ''),
+    emergencyPhone: student.emergencyPhone || '', injuryHistory: student.injuryHistory || '', learningGoals: student.learningGoals || '',
+    lessonStyle: validStyle ? { theory: style.theory, multiball: style.multiball, correction: style.correction } : null,
+    isRepresentative, representativeName: row[1] || '', representativePhone: row[3] || ''
+  };
 }
 
 function publicAccountStudents_(students) {

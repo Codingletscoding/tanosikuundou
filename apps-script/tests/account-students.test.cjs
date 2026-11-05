@@ -226,3 +226,36 @@ test('missing channel property never accepts a different channel, expired token 
   assert.equal(result.status,'error');assert.equal(f.rows['預約名單'].length,1);assert.equal(f.rows['可用時段'][1][6],5);
  }
 });
+
+function coachProfileFixture(count=2) {
+ const f=fixture();const registration=f.run(registrationProfile(count));assert.equal(registration.status,'success');
+ const students=registration.user.students,admin=vm.runInContext('ADMIN_LINE_IDS[0]',f.context);
+ f.context.UrlFetchApp.fetch=url=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify(url.includes('/verify?')?{client_id:'channel',expires_in:3600}:{userId:admin})});
+ const read=(extra={})=>f.run({action:'getStudentProfile',studentId:students[0].id,accessToken:'mock',...extra});
+ return {...f,students,read};
+}
+test('authenticated coach can read all registration fields for exactly the selected student',()=>{
+ const f=coachProfileFixture(),rowsBefore=JSON.stringify(f.rows),result=f.read();assert.equal(result.status,'success',result.message);
+ assert.equal(result.profile.name,'王小明');assert.equal(result.profile.birthDate,'2000-02-29');assert.equal(result.profile.phone,'0912345678');assert.equal(result.profile.emergencyPhone,'0223456789');assert.equal(result.profile.injuryHistory,'右膝舊傷');assert.equal(result.profile.learningGoals,'學習正確發力，避免受傷');assert.deepEqual(result.profile.lessonStyle,{theory:20,multiball:50,correction:30});assert.equal(result.profile.isRepresentative,true);
+ assert.equal(JSON.stringify(f.rows),rowsBefore);assert.equal(result.profile.idNumber,undefined);
+ const second=f.read({studentId:f.students[1].id});assert.equal(second.status,'success');assert.equal(second.profile.name,'陳小美');assert.equal(second.profile.birthDate,'2015-12-31');assert.equal(second.profile.phone,'');assert.equal(second.profile.emergencyPhone,'');assert.equal(second.profile.isRepresentative,false);assert.equal(second.profile.representativePhone,'0912345678');
+});
+test('private student profiles reject missing tokens, students, expired sessions and other channels',()=>{
+ for(const mode of ['missing','student','expired','wrong-channel']){
+  const f=coachProfileFixture();
+  if(mode==='student')f.context.UrlFetchApp.fetch=url=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify(url.includes('/verify?')?{client_id:'channel',expires_in:3600}:{userId:'account'})});
+  if(mode==='expired')f.context.UrlFetchApp.fetch=()=>({getResponseCode:()=>401,getContentText:()=> '{}'});
+  if(mode==='wrong-channel')f.context.UrlFetchApp.fetch=()=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify({client_id:'other',expires_in:3600})});
+  const result=f.read({accessToken:mode==='missing'?'':'mock',isAdmin:true,coachId:'spoofed'});assert.equal(result.status,'error');assert.equal(result.profile,undefined);assert(!JSON.stringify(result).includes('右膝舊傷'));
+ }
+});
+test('profile lookup rejects wrong accounts, missing selectors, foreign IDs and duplicate accounts',()=>{
+ const f=coachProfileFixture();
+ for(const extra of [{lineId:'other'},{studentId:'foreign'},{studentId:undefined},{lineId:undefined}]){const r=f.read(extra);assert.equal(r.status,'error');assert.equal(r.profile,undefined);}
+ f.rows['會員資料'].push(f.rows['會員資料'][1].slice());assert.equal(f.read().status,'error');
+});
+test('legacy profiles retain known fields without inventing new registration information',()=>{
+ const f=fixture();f.rows['會員資料'].push(['account','舊學員',25,'0912345678',0,1]);
+ const admin=vm.runInContext('ADMIN_LINE_IDS[0]',f.context);f.context.UrlFetchApp.fetch=url=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify(url.includes('/verify?')?{client_id:'channel',expires_in:3600}:{userId:admin})});
+ const result=f.run({action:'getStudentProfile',studentId:'',accessToken:'mock'});assert.equal(result.status,'success');assert.equal(result.profile.name,'舊學員');assert.equal(result.profile.age,25);assert.equal(result.profile.phone,'0912345678');assert.equal(result.profile.birthDate,'');assert.equal(result.profile.lessonStyle,null);assert.equal(result.profile.injuryHistory,'');
+});
