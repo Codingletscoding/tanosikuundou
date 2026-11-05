@@ -9,7 +9,7 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-    <script src="./ja.js?v=coach-student-tabs-1"></script>
+    <script src="./ja.js?v=coach-course-calendar-1"></script>
     <script src="./i18n.js?v=inline-controls-2"></script>
     <style>
         .language-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -1539,7 +1539,109 @@
             </section>;
         };
 
-        const CoachMonthlyRegistration = ({ members, slots, onSuccess }) => {
+        const coachCalendarDateKey = (year, month, day) => {
+            const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+            if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() + 1 !== Number(month) || date.getUTCDate() !== Number(day)) return null;
+            return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        };
+        const coachSlotDates = slot => {
+            const raw = slot?.date instanceof Date ? slot.date.toISOString() : String(slot?.date || '').trim();
+            const text = formatTrainingDate(raw);
+            const single = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s|$)/);
+            if (single) return [coachCalendarDateKey(single[1], single[2], single[3])].filter(Boolean);
+            const year = raw.match(/^(\d{4})年/);
+            if (!year) return [];
+            return [...new Set([...raw.matchAll(/(\d{1,2})\/(\d{1,2})/g)].map(match => coachCalendarDateKey(year[1], match[1], match[2])).filter(Boolean))];
+        };
+        const coachCourseStartMinutes = course => {
+            const match = String(course.slot.time || '').match(/^(\d{1,2}):(\d{2})/);
+            return match ? Number(match[1]) * 60 + Number(match[2]) : Infinity;
+        };
+        const coachCalendarMonthData = (slots, bookings, monthKey) => {
+            if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey)) throw new Error('請選擇有效月份。');
+            const [year, month] = monthKey.split('-').map(Number), byDate = new Map(), bySlot = new Map();
+            let unparsed = 0;
+            bookings.forEach(booking => {
+                if (!booking.slotId || booking.status === '已取消') return;
+                const key = String(booking.slotId);
+                if (!bySlot.has(key)) bySlot.set(key, []);
+                bySlot.get(key).push(booking);
+            });
+            slots.forEach(slot => {
+                const dates = coachSlotDates(slot);
+                if (!slot.id || !dates.length) { unparsed++; return; }
+                const orders = bySlot.get(String(slot.id)) || [];
+                const capacity = Number(slot.capacity), remaining = Number(slot.remaining);
+                const occupied = Number.isFinite(capacity) && Number.isFinite(remaining) ? Math.max(0, capacity - remaining) : 0;
+                dates.filter(date => date.startsWith(monthKey + '-')).forEach(date => {
+                    if (!byDate.has(date)) byDate.set(date, []);
+                    byDate.get(date).push({ slot, orders, occupied, reserved: orders.length > 0 || occupied > 0 });
+                });
+            });
+            const leading = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+            const days = Array.from({ length: new Date(Date.UTC(year, month, 0)).getUTCDate() }, (_, index) => {
+                const date = coachCalendarDateKey(year, month, index + 1);
+                const courses = (byDate.get(date) || []).sort((a, b) => coachCourseStartMinutes(a) - coachCourseStartMinutes(b) || String(a.slot.title).localeCompare(String(b.slot.title)));
+                return { date, day: index + 1, courses, reservedCount: courses.filter(course => course.reserved).length };
+            });
+            return { leading, days, unparsed };
+        };
+
+        const CoachCourseCalendar = ({ slots, bookings, onEdit }) => {
+            const today = registrationToday();
+            const [month, setMonth] = useState(today.slice(0, 7));
+            const [selectedDate, setSelectedDate] = useState(today);
+            const data = React.useMemo(() => coachCalendarMonthData(slots, bookings, month), [slots, bookings, month]);
+            const selected = data.days.find(day => day.date === selectedDate);
+            const moveMonth = direction => {
+                const [year, number] = month.split('-').map(Number);
+                const date = new Date(Date.UTC(year, number - 1 + direction, 1));
+                const next = date.toISOString().slice(0, 7);
+                setMonth(next); setSelectedDate(next + '-01');
+            };
+            return <section aria-label="課程行事曆" className="bg-white rounded-2xl shadow-sm border p-4 md:p-6 min-w-0">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <h2 className="text-lg font-bold text-slate-800">課程行事曆</h2>
+                    <div className="flex flex-wrap gap-3 text-xs"><span className="text-sky-700">已開課程</span><span className="text-amber-800">已有預約（含審核中）</span></div>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 min-w-0">
+                    <div className="min-w-0">
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                            <button type="button" aria-label="上一個月" onClick={() => moveMonth(-1)} className="border rounded-lg px-3 py-2 text-slate-600">‹</button>
+                            <span className="font-bold text-slate-800">{month}</span>
+                            <div className="flex gap-2"><button type="button" onClick={() => { setMonth(today.slice(0, 7)); setSelectedDate(today); }} className="text-sm border rounded-lg px-3 py-2">今天</button><button type="button" aria-label="下一個月" onClick={() => moveMonth(1)} className="border rounded-lg px-3 py-2 text-slate-600">›</button></div>
+                        </div>
+                        <div className="grid grid-cols-7 text-center text-xs font-bold text-slate-500 mb-2">{['週日','週一','週二','週三','週四','週五','週六'].map(day => <span key={day}>{day}</span>)}</div>
+                        <div role="group" aria-label="教練課程月份" className="grid grid-cols-7 gap-1">
+                            {Array.from({ length: data.leading }, (_, index) => <div key={`blank-${index}`} />)}
+                            {data.days.map(day => <button key={day.date} type="button" aria-label={`${day.date}：已開課程 ${day.courses.length} 堂，已有預約 ${day.reservedCount} 堂`} aria-pressed={day.date === selectedDate} onClick={() => setSelectedDate(day.date)} className={`min-w-0 min-h-[76px] rounded-lg px-0.5 py-1 flex flex-col items-center gap-1 border ${day.date === selectedDate ? 'border-emerald-600 bg-emerald-50' : 'border-transparent hover:bg-slate-50'} ${day.date === today ? 'font-bold' : ''}`}>
+                                <span className="text-sm text-slate-800">{day.day}</span>
+                                {day.courses.length > 0 && <span className="text-[9px] sm:text-[10px] text-sky-700 whitespace-nowrap">開 {day.courses.length}</span>}
+                                {day.reservedCount > 0 && <span className="text-[9px] sm:text-[10px] text-amber-800 whitespace-nowrap">預約 {day.reservedCount}</span>}
+                            </button>)}
+                        </div>
+                        {data.unparsed > 0 && <p role="status" className="text-xs text-amber-800 mt-3">課程日期待核對：{data.unparsed} 筆。請核對已開課程資料。</p>}
+                    </div>
+                    <div aria-label="當日課程與預約" className="min-w-0">
+                        <h3 className="font-bold text-slate-800 mb-3">{selectedDate} · 當日課程</h3>
+                        {!selected?.courses.length ? <p className="text-sm text-slate-500 border border-dashed rounded-xl p-5">本日無排定課程</p> : <div className="space-y-3 max-h-[560px] overflow-y-auto pr-1">
+                            {selected.courses.map(({ slot, orders, occupied, reserved }) => <article key={slot.id} className="border rounded-xl p-4 bg-slate-50 min-w-0">
+                                <div className="flex flex-wrap items-start justify-between gap-2"><h4 className="font-bold text-sm text-slate-800 break-words">{/^\[專屬教練課\]/.test(slot.title) ? '教練開放時段' : slot.title}</h4><span className={`text-xs rounded px-2 py-1 ${reserved ? 'bg-amber-100 text-amber-900' : 'bg-sky-100 text-sky-800'}`}>{reserved ? '已有預約' : '已開課程'}</span></div>
+                                <p className="text-sm text-slate-600 mt-2">{slot.time} · {String(slot.location || '').startsWith('coach_loc:') ? '學員自選場地' : slot.location}</p>
+                                <p className="text-xs text-slate-500 mt-2">已佔名額 {occupied} · 剩餘名額 {slot.remaining}</p>
+                                {orders.length > 0 && <details className="text-sm mt-3"><summary className="cursor-pointer font-bold text-slate-700">預約名單（{orders.length} 人）</summary><ul className="space-y-2 mt-2">{orders.map((booking, index) => <li key={`${booking.bookingId || 'legacy'}-${index}`} className="flex flex-wrap justify-between gap-2 border-t pt-2"><span>{booking.name}</span><span className="text-xs text-slate-500">{booking.status}</span></li>)}</ul></details>}
+                                <button type="button" onClick={() => onEdit(slot)} className="text-sm text-blue-700 font-bold mt-3 px-3 py-2 bg-white border border-blue-100 rounded-lg">編輯課程</button>
+                            </article>)}
+                        </div>}
+                    </div>
+                </div>
+            </section>;
+        };
+
+        const CoachGroupRegistration = ({ members, slots, onSuccess, kind = 'monthly', enabled = true }) => {
+            const isMonthly = kind === 'monthly';
+            const title = isMonthly ? '代登記月繳團課' : '代登記單堂團課';
+            const courseLabel = isMonthly ? '月繳課程' : '單堂課程';
             const accounts = React.useMemo(() => {
                 const grouped = new Map();
                 members.forEach(member => {
@@ -1558,20 +1660,20 @@
             const busyRef = React.useRef(false);
             const account = accounts.find(account => account.lineId === lineId);
             const selected = (account?.students || []).filter(student => studentIds.includes(student.studentId || ''));
-            const monthlySlots = slots.filter(slot => slot.title.startsWith('[月繳'));
-            const slot = monthlySlots.find(slot => slot.id === slotId);
+            const courseSlots = slots.filter(slot => isMonthly ? /^\[月繳/.test(slot.title.trim()) : !/^\[(月繳|專屬教練課)/.test(slot.title.trim()));
+            const slot = courseSlots.find(slot => slot.id === slotId);
             const price = slot ? Number(slot.prices[selected[0]?.level || 1]) : NaN;
             const validPrice = slot && slot.prices[selected[0]?.level || 1] !== '' && slot.prices[selected[0]?.level || 1] != null && Number.isFinite(price) && price >= 0;
-            const ready = selected.length > 0 && slot && Number(slot.remaining) >= selected.length && validPrice;
+            const ready = enabled && selected.length > 0 && slot && Number(slot.remaining) >= selected.length && validPrice;
             const submit = async event => {
                 event.preventDefault();
                 if (busyRef.current || !ready) return;
-                if (!confirm(`確認代登記月繳團課？\n${selected.map(student => student.name).join('、')}\n${slot.title} · ${slot.date} ${slot.time}\n共 ${selected.length} 人，合計 NT$ ${price * selected.length}\n登記後為審核中，收款後請再核准預約。`)) return;
+                if (!confirm(`${isMonthly ? '確認代登記月繳團課？' : '確認代登記單堂團課？'}\n${selected.map(student => student.name).join('、')}\n${slot.title} · ${slot.date} ${slot.time}\n共 ${selected.length} 人，合計 NT$ ${price * selected.length}\n登記後為審核中，收款後請再核准預約。`)) return;
                 busyRef.current = true; setBusy(true); setMessage(''); setError('');
                 try {
                     const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
                     if (!accessToken) throw new Error('請重新登入 LINE。');
-                    const result = await fetchAPI({ action: 'coachRegisterMonthly', lineId, studentIds, slotId, accessToken });
+                    const result = await fetchAPI({ action: isMonthly ? 'coachRegisterMonthly' : 'coachRegisterSingle', lineId, studentIds, slotId, accessToken });
                     if (result.status !== 'success') throw new Error(result.message || '登記失敗，請稍後再試。');
                     if (result.registeredCount !== selected.length) throw new Error('登記結果人數不一致，請重新整理預約名單確認。');
                     setMessage(`已登記 ${result.registeredCount} 位學生，合計 NT$ ${result.totalPrice}，狀態為審核中。`);
@@ -1580,14 +1682,15 @@
                 } catch (error) { setError(error.message); }
                 finally { busyRef.current = false; setBusy(false); }
             };
-            return <section aria-labelledby="coach-monthly-registration-title" className="bg-sky-50 border border-sky-200 rounded-2xl p-4 md:p-6">
-                <h2 id="coach-monthly-registration-title" className="font-bold text-lg text-sky-950 mb-2">代登記月繳團課</h2>
+            return <section aria-labelledby={`coach-${kind}-registration-title`} className="bg-sky-50 border border-sky-200 rounded-2xl p-4 md:p-6">
+                <h2 id={`coach-${kind}-registration-title`} className="font-bold text-lg text-sky-950 mb-2">{title}</h2>
                 <p className="text-sm text-sky-900 mb-4">選擇已註冊的學員帳號及參加學生。每人佔一個名額，依會員等級計費；登記後為審核中，確認收款後再核准。</p>
+                {!enabled && <p role="status" className="text-sm text-amber-800 mb-4">單堂代登記尚未啟用，請聯絡管理員更新系統。</p>}
                 <form onSubmit={submit} className="coach-monthly-form space-y-4">
-                    <label className="block font-bold">學員帳號<select aria-label="代登記學員帳號" disabled={busy} required value={lineId} onChange={e => { const next = accounts.find(account => account.lineId === e.target.value); setLineId(e.target.value); setStudentIds((next?.students || []).map(student => student.studentId || '')); setMessage(''); setError(''); }} className="block w-full border p-3 rounded-lg mt-1 bg-white"><option value="">請選擇學員帳號</option>{accounts.map(account => <option key={account.lineId} value={account.lineId}>{account.students.map(student => student.name + (student.nickname ? `（${student.nickname}）` : '')).join('、')}</option>)}</select></label>
+                    <label className="block font-bold">學員帳號<select aria-label={isMonthly ? '代登記學員帳號' : '單堂代登記學員帳號'} disabled={busy} required value={lineId} onChange={e => { const next = accounts.find(account => account.lineId === e.target.value); setLineId(e.target.value); setStudentIds((next?.students || []).map(student => student.studentId || '')); setMessage(''); setError(''); }} className="block w-full border p-3 rounded-lg mt-1 bg-white"><option value="">請選擇學員帳號</option>{accounts.map(account => <option key={account.lineId} value={account.lineId}>{account.students.map(student => student.name + (student.nickname ? `（${student.nickname}）` : '')).join('、')}</option>)}</select></label>
                     {account && <fieldset disabled={busy} className="border rounded-lg p-3 bg-white"><legend className="font-bold">參加學生</legend>{account.students.map((student, index) => <label key={student.studentId || index} className="flex gap-2 items-center p-2"><input type="checkbox" checked={studentIds.includes(student.studentId || '')} onChange={e => setStudentIds(previous => e.target.checked ? [...previous, student.studentId || ''] : previous.filter(id => id !== (student.studentId || '')))} />{student.name}{student.nickname ? `（${student.nickname}）` : ''}</label>)}</fieldset>}
-                    <label className="block font-bold">月繳課程<select aria-label="代登記月繳課程" disabled={busy} required value={slotId} onChange={e => { setSlotId(e.target.value); setMessage(''); setError(''); }} className="block w-full border p-3 rounded-lg mt-1 bg-white"><option value="">請選擇月繳課程</option>{monthlySlots.map(slot => <option key={slot.id} value={slot.id} disabled={Number(slot.remaining) < Math.max(1, selected.length)}>{slot.title} · {slot.date} {slot.time} · {slot.location}（剩 {slot.remaining} 名）</option>)}</select></label>
-                    {monthlySlots.length === 0 && <p className="text-sm">目前沒有月繳課程，請先新增課程。</p>}
+                    <label className="block font-bold">{courseLabel}<select aria-label={isMonthly ? '代登記月繳課程' : '代登記單堂課程'} disabled={busy} required value={slotId} onChange={e => { setSlotId(e.target.value); setMessage(''); setError(''); }} className="block w-full border p-3 rounded-lg mt-1 bg-white"><option value="">{isMonthly ? '請選擇月繳課程' : '請選擇單堂課程'}</option>{courseSlots.map(slot => <option key={slot.id} value={slot.id} disabled={Number(slot.remaining) < Math.max(1, selected.length)}>{slot.title} · {slot.date} {slot.time} · {slot.location}（剩 {slot.remaining} 名）</option>)}</select></label>
+                    {courseSlots.length === 0 && <p className="text-sm">{isMonthly ? '目前沒有月繳課程，請先新增課程。' : '目前沒有單堂團課，請先新增課程。'}</p>}
                     <p className="font-bold">登記 {selected.length} 人{validPrice ? ` · 每人 NT$ ${price} · 合計 NT$ ${price * selected.length}` : ''}</p>
                     {message && <p role="status" className="text-emerald-800">{message}</p>}{error && <p role="alert" className="text-red-700">{error}</p>}
                     <button type="submit" disabled={busy || !ready} className="bg-sky-700 text-white rounded-lg px-4 py-3 font-bold disabled:opacity-50">{busy ? '登記中...' : '確認代登記'}</button>
@@ -1606,6 +1709,7 @@
           const [bookings, setBookings] = useState([]);
           const [members, setMembers] = useState([]);
           const [slots, setSlots] = useState([]);
+          const [supportsSingleRegistration, setSupportsSingleRegistration] = useState(false);
           const [loading, setLoading] = useState(false);
           const [logModalTarget, setLogModalTarget] = useState(null); 
           const [showMonthlyLeave, setShowMonthlyLeave] = useState(false);
@@ -1631,6 +1735,7 @@
                 setBookings(bRes.bookings || []);
                 setMembers(bRes.members || []);
                 setSlots((sRes.slots || []).filter(s => s.id && s.title && s.date));
+                setSupportsSingleRegistration(sRes.coachSingleRegistrationVersion === 1);
                 onPaymentsChanged();
             });
           };
@@ -1776,7 +1881,11 @@
 
           return (
             <div className="space-y-6 md:space-y-8">
-              <CoachMonthlyRegistration members={members} slots={slots} onSuccess={fetchData} />
+              <CoachCourseCalendar slots={slots} bookings={bookings} onEdit={setEditingSlot} />
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <CoachGroupRegistration kind="single" members={members} slots={slots} onSuccess={fetchData} enabled={supportsSingleRegistration} />
+                <CoachGroupRegistration kind="monthly" members={members} slots={slots} onSuccess={fetchData} />
+              </div>
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
                 <div><h2 className="font-bold text-amber-950">月繳請假與補課</h2><p className="text-sm text-amber-900">提前至少 14 天登記請假，再安排其他補課日期。</p></div>
                 <button onClick={() => setShowMonthlyLeave(true)} className="bg-amber-600 text-white px-4 py-3 rounded-lg font-bold">請假登記／安排補課</button>
@@ -2135,7 +2244,7 @@
                         </div>
                     </header>
                     <div className="flex-1 min-w-0 p-3 md:p-8">
-                        <CoachRevenue revision={`${activeTab}-${paymentRevision}`} />
+                        {activeTab === 'members' && <CoachRevenue revision={`${activeTab}-${paymentRevision}`} />}
                         {activeTab === 'slots' ? <CoachSlotsView onPaymentsChanged={paymentsChanged} /> : <CoachMembersView onOpenStudent={openStudent} />}
                     </div>
                 </div>

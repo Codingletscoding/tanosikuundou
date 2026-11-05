@@ -44,7 +44,7 @@ function doPost(e) {
       throw new Error("請求格式不正確。");
     }
     const action = payload.action;
-    const writeActions = ["registerUser", "completeAccountRegistration", "bookClass", "coachRegisterMonthly", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking", "registerMonthlyLeave", "arrangeMonthlyMakeup", "cancelBooking", "updateSlot", "confirmCashPayment"];
+    const writeActions = ["registerUser", "completeAccountRegistration", "bookClass", "coachRegisterMonthly", "coachRegisterSingle", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking", "registerMonthlyLeave", "arrangeMonthlyMakeup", "cancelBooking", "updateSlot", "confirmCashPayment"];
     if (writeActions.includes(action)) {
       const candidate = LockService.getScriptLock();
       if (!candidate.tryLock(30000)) throw new Error("系統忙碌中，請稍後再試。");
@@ -124,31 +124,35 @@ function doPost(e) {
           prices: { 1: data[i][7], 2: data[i][8], 3: data[i][9], 4: data[i][10], 5: data[i][11] }
         });
       }
-      result = { status: "success", slots: slots, coachAccountPricingVersion: 1 };
+      result = { status: "success", slots: slots, coachAccountPricingVersion: 1, coachSingleRegistrationVersion: 1 };
     }
     
-    else if (action === "bookClass" || action === "coachRegisterMonthly") {
+    else if (action === "bookClass" || action === "coachRegisterMonthly" || action === "coachRegisterSingle") {
       const coachMonthly = action === "coachRegisterMonthly";
-      if (coachMonthly) monthlyVerifyCoach_(payload.accessToken);
+      const coachSingle = action === "coachRegisterSingle";
+      const coachRegistration = coachMonthly || coachSingle;
+      if (coachRegistration) monthlyVerifyCoach_(payload.accessToken);
       validateBookingSlot_(ss, payload);
       const sheetBookings = ss.getSheetByName(SHEET_BOOKINGS);
       const sheetSlots = ss.getSheetByName(SHEET_SLOTS);
       const userSheet = ss.getSheetByName(SHEET_USERS);
       const account = userSheet && userSheet.getDataRange().getValues().slice(1).find(row => row[0] === payload.lineId);
-      if (!account && (payload.accountBooking || coachMonthly)) throw new Error('找不到帳號學生資料，請重新登入。');
+      if (!account && (payload.accountBooking || coachRegistration)) throw new Error('找不到帳號學生資料，請重新登入。');
       let students = account ? accountStudents_(account) : [{ id: '', name: payload.name }];
       const bookedSlot = monthlyUniqueRow_(sheetSlots, 0, payload.slotId, '課程');
-      if (coachMonthly) {
-        if (!/^\[月繳/.test(String(bookedSlot.row[1]))) throw new Error('教練代登記僅限月繳團課。');
+      if (coachRegistration) {
+        const title = String(bookedSlot.row[1]).trim();
+        if (coachMonthly && !/^\[月繳/.test(title)) throw new Error('教練代登記僅限月繳團課。');
+        if (coachSingle && /^\[(月繳|專屬教練課)/.test(title)) throw new Error('單堂代登記僅限單堂團課。');
         if (!Array.isArray(payload.studentIds) || !payload.studentIds.length || new Set(payload.studentIds).size !== payload.studentIds.length || payload.studentIds.some(id => !students.some(student => student.id === id))) throw new Error('請選擇此帳號內有效且不重複的學生。');
         students = students.filter(student => payload.studentIds.includes(student.id));
         const rows = sheetBookings.getDataRange().getValues();
-        if (rows.slice(1).some(row => row[1] === payload.slotId && row[2] === payload.lineId && row[5] !== '已取消' && students.some(student => studentMatches_(row[9], row[3], student)))) throw new Error('所選學生已登記此月繳團課，請勿重複登記。');
+        if (rows.slice(1).some(row => row[1] === payload.slotId && row[2] === payload.lineId && row[5] !== '已取消' && students.some(student => studentMatches_(row[9], row[3], student)))) throw new Error(coachMonthly ? '所選學生已登記此月繳團課，請勿重複登記。' : '所選學生已登記此單堂團課，請勿重複登記。');
       }
       const isCoach = /^\[專屬教練課\]/.test(String(bookedSlot.row[1]));
       if (isCoach && students.length > 2) throw new Error('專屬教練課限同帳號 1～2 位學生預約。');
       const seats = isCoach ? 1 : students.length;
-      if (Number(bookedSlot.row[6]) < seats) throw new Error('剩餘名額不足以預約此帳號的全部學生。');
+      if (Number(bookedSlot.row[6]) < seats) throw new Error(coachRegistration ? '剩餘名額不足以登記所選學員。' : '剩餘名額不足以預約此帳號的全部學生。');
       let price = Number(payload.paidPrice);
       if (account) {
         const level = Math.min(5, Math.max(1, Number(account[5]) || 1));
@@ -176,7 +180,7 @@ function doPost(e) {
         sheetSlots.getRange(bookedSlot.index, 7).setValue(bookedSlot.row[6]);
         throw new Error('預約未完成，請重新讀取後再試。');
       }
-      result = coachMonthly ? { status: 'success', registeredCount: students.length, totalPrice: price * students.length } : { status: 'success' };
+      result = coachRegistration ? { status: 'success', registeredCount: students.length, totalPrice: price * students.length } : { status: 'success' };
     }
 
     else if (action === "addSlot") {

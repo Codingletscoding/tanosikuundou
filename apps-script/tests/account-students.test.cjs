@@ -265,3 +265,34 @@ test('monthly enrollment works with the previous wrong channel property and the 
  f.context.PropertiesService.getScriptProperties=()=>({getProperty:()=> '2012115242'});
  const result=f.enroll();assert.equal(result.status,'success',result.message);assert.equal(result.registeredCount,2);assert.equal(f.rows['預約名單'].length,3);assert.equal(f.rows['可用時段'][1][6],3);
 });
+
+function singleCoach(options={}) {
+ const f=monthlyCoach(options);f.rows['可用時段'][1][1]='單堂團課';f.rows['可用時段'][1][8]=294;
+ const enrollSingle=(extra={})=>f.enroll({action:'coachRegisterSingle',...extra});return {...f,enrollSingle};
+}
+test('coach single registration uses stored membership prices and selected students under the shared lock',()=>{
+ const f=singleCoach();assert.equal(f.run({action:'getSlots'}).coachSingleRegistrationVersion,1);
+ const result=f.enrollSingle({paidPrice:1,level:1,status:'預約成功',paymentCode:'現金已收'});assert.equal(result.status,'success',result.message);assert.equal(result.registeredCount,2);assert.equal(result.totalPrice,588);
+ const orders=f.rows['預約名單'].slice(1);assert.deepEqual(orders.map(row=>row[9]),[f.students[0].id,f.students[2].id]);assert(orders.every(row=>row[4]===294&&row[5]==='審核中'&&row[6]===''));assert.equal(f.rows['可用時段'][1][6],3);
+});
+test('single registration rejects missing coach authentication and ordinary students without writes',()=>{
+ for(const mode of ['missing','student','expired','channel']){
+  const f=singleCoach();if(mode==='student')f.context.UrlFetchApp.fetch=url=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify(url.includes('/verify?')?{client_id:'channel',expires_in:3600}:{userId:'account'})});
+  if(mode==='expired')f.context.UrlFetchApp.fetch=()=>({getResponseCode:()=>401,getContentText:()=> '{}'});
+  if(mode==='channel')f.context.UrlFetchApp.fetch=()=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify({client_id:'other',expires_in:3600})});
+  assert.equal(f.enrollSingle({accessToken:mode==='missing'?'':'mock',isAdmin:true}).status,'error');assert.equal(f.rows['預約名單'].length,1);assert.equal(f.rows['可用時段'][1][6],5);
+ }
+});
+test('single registration rejects monthly packages and private coaching, including padded titles',()=>{
+ for(const title of ['[月繳4堂] 團課','[專屬教練課] 1v1:1000|1v2:1500','  [月繳4堂] 團課',' [專屬教練課] 1v1:1000|1v2:1500']){
+  const f=singleCoach();f.rows['可用時段'][1][1]=title;assert.equal(f.enrollSingle().status,'error');assert.equal(f.rows['預約名單'].length,1);assert.equal(f.rows['可用時段'][1][6],5);
+ }
+});
+test('single registration rejects invalid students and repeat enrollment but allows an unbooked sibling',()=>{
+ const f=singleCoach();for(const studentIds of [[],['foreign'],[f.students[0].id,f.students[0].id]])assert.equal(f.enrollSingle({studentIds}).status,'error');
+ assert.equal(f.enrollSingle().status,'success');assert.equal(f.enrollSingle().status,'error');assert.equal(f.rows['可用時段'][1][6],3);
+ assert.equal(f.enrollSingle({studentIds:[f.students[1].id]}).status,'success');assert.equal(f.rows['預約名單'].length,4);assert.equal(f.rows['可用時段'][1][6],2);
+});
+test('single registration leaves seats and bookings unchanged on shortage or partial write failure',()=>{
+ for(const options of [{remaining:1},{failAppend:2}]){const f=singleCoach(options);assert.equal(f.enrollSingle().status,'error');assert.equal(f.rows['預約名單'].length,1);assert.equal(f.rows['可用時段'][1][6],options.remaining??5);}
+});
