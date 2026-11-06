@@ -14,6 +14,13 @@ test('invalid amounts do not silently become valid payments',()=>{const result=s
 test('legacy approved statuses and decimal money use cent arithmetic',()=>{const result=sum([order({paidPrice:0.1,status:'成功'}),order({bookingId:'two',paidPrice:0.2,status:'已完成'})],'2026-10');assert.equal(result.monthlyTotal,0.3);});
 
 test('cash reservations count only after coach confirms receipt',()=>{const pending=sum([order({paymentCode:'現場現金'})],'2026-10');assert.equal(pending.monthlyTotal,0);assert.equal(pending.studentTotals.size,0);const paid=sum([order({paymentCode:'現金已收'})],'2026-10');assert.equal(paid.monthlyTotal,300);});
+test('historical backfills require explicit paid status and use the original booking month for the selected student',()=>{
+ const roster=[{lineId:'family',studentId:'a'},{lineId:'family',studentId:'b'}];
+ const historical=extra=>order({bookingId:'hist',lineId:'family',studentId:'b',isHistorical:true,status:'已完課',paidPrice:350.5,paymentStatus:'paid',timestamp:'2026-09-30',...extra});
+ const rows=[historical(),historical({bookingId:'unpaid',paymentStatus:'unpaid'}),historical({bookingId:'unknown',paymentStatus:undefined}),historical({bookingId:'cancelled',status:'已取消'}),order({bookingId:'normal',lineId:'family',studentId:'a',paidPrice:100})];
+ const october=sum(rows,'2026-10',roster);assert.equal(october.studentTotals.get(key('family','a')),100);assert.equal(october.studentTotals.get(key('family','b')),350.5);assert.equal(october.monthlyTotal,100);
+ assert.equal(sum(rows,'2026-09',roster).monthlyTotal,350.5);
+});
 
 test('two students in one account have independent lifetime totals even with identical names',()=>{
  const roster=[{lineId:'family',studentId:'a',name:'同名'},{lineId:'family',studentId:'b',name:'同名'}];

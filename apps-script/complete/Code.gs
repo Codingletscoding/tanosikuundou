@@ -11,6 +11,8 @@ const SHEET_BOOKINGS = "預約名單";
 const SHEET_LOGS = "訓練日誌";
 const SHEET_TEACHING_COACHES = '授課教練';
 const SLOT_TEACHING_COACH_HEADER = '授課教練編號';
+const SHEET_HISTORICAL_BOOKINGS = '歷史預約紀錄';
+const HISTORICAL_BOOKING_HEADERS = ['紀錄編號', '補登時間', 'LINE_ID', '學生編號', '學生姓名', '課程名稱', '上課日期', '開始時間', '結束時間', '上課地點', '授課教練姓名', '課程金額', '付款狀態', '原預約日期', '課程狀態', '送出識別碼'];
 
 const ADMIN_LINE_IDS = ["U3a76953e63578ec8607297044ac54e5a"]; 
 
@@ -47,7 +49,7 @@ function doPost(e) {
     }
     const action = payload.action;
     const writeActions = ["registerUser", "completeAccountRegistration", "bookClass", "coachRegisterMonthly", "coachRegisterSingle", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking", "registerMonthlyLeave", "arrangeMonthlyMakeup", "cancelBooking", "updateSlot", "confirmCashPayment", "addTeachingCoach", "updateTeachingCoach"];
-    if (writeActions.includes(action) || ['getSlots', 'getCoachData'].includes(action)) {
+    if (writeActions.includes(action) || ['coachAddHistoricalBooking', 'getSlots', 'getCoachData'].includes(action)) {
       const candidate = LockService.getScriptLock();
       if (!candidate.tryLock(30000)) throw new Error("系統忙碌中，請稍後再試。");
       requestLock = candidate;
@@ -87,6 +89,13 @@ function doPost(e) {
     else if (action === "getStudentProfile") {
       monthlyVerifyCoach_(payload.accessToken);
       result = { status: 'success', profile: coachStudentProfile_(ss, payload) };
+    }
+
+    else if (action === 'getHistoricalBookingOptions' || action === 'coachAddHistoricalBooking') {
+      monthlyVerifyCoach_(payload.accessToken);
+      result = action === 'getHistoricalBookingOptions'
+        ? { status: 'success', historicalBookingVersion: 1, teachingCoaches: teachingCoaches_(ss) }
+        : addHistoricalBooking_(ss, payload);
     }
 
     else if (action === "registerUser" || action === "completeAccountRegistration") {
@@ -256,7 +265,7 @@ function doPost(e) {
           totalClasses: lData.slice(1).filter(row => row[1] === lId && studentMatches_(row[14], row[2], student)).length
         }));
       }
-      result = { status: "success", bookings: bookings, members: members };
+      result = { status: "success", bookings: bookings, members: members, historicalBookingVersion: 1, historicalBookings: historicalBookings_(ss) };
     }
 
     else if (["getMonthlyLeaves", "registerMonthlyLeave", "arrangeMonthlyMakeup"].includes(action)) {
@@ -340,17 +349,15 @@ function doPost(e) {
       const sheetBookings = ss.getSheetByName(SHEET_BOOKINGS);
       const bData = sheetBookings.getDataRange().getValues();
       let myBookings = [];
+      let bookingHistory = [];
 
       for (let i = 1; i < bData.length; i++) {
         if (bData[i][2] === payload.lineId && (!selectedStudent || studentMatches_(bData[i][9], bData[i][3], selectedStudent))) {
           let status = bData[i][5] || "預約成功"; 
           if(status === "成功" || status === "已完成") status = "預約成功"; 
           
-          // 若已完課，則不顯示在學員的「追蹤中」名單，製造消失結單的效果
-          if (status === "已完課") continue;
-
           const sInfo = slotMap[bData[i][1]] || { title: "未知或已下架課程", date: "", time: "" };
-          myBookings.push({
+          const item = {
             bookingId: bData[i][7] || "",
             slotId: bData[i][1],
             slotTitle: sInfo.title,
@@ -359,7 +366,10 @@ function doPost(e) {
             paidPrice: bData[i][4],
             status: status,
             paymentCode: bData[i][6] || ""
-          });
+          };
+          bookingHistory.push(item);
+          // 追蹤中預約單維持原行為；完整歷史另外保留已完課訂單。
+          if (status !== '已完課') myBookings.push(item);
         }
       }
 
@@ -380,7 +390,10 @@ function doPost(e) {
         }
       }
       
-      result = { status: "success", students: publicAccountStudents_(students), studentId: selectedStudent ? selectedStudent.id : "", totalClasses: totalClasses, stats: stats, logs: logs.reverse(), bookings: myBookings.reverse(), monthlyLeaves: ss.getSheetByName('請假補課') ? monthlyLeaveRows_(ss.getSheetByName('請假補課')).filter(function(row) { return row.lineId === payload.lineId && (!selectedStudent || studentMatches_(row.studentId, row.name, selectedStudent)); }) : [] };
+      bookingHistory = bookingHistory.reverse().concat(historicalBookings_(ss).filter(function(row) {
+        return row.lineId === payload.lineId && selectedStudent && row.studentId === selectedStudent.id;
+      }).reverse());
+      result = { status: "success", students: publicAccountStudents_(students), studentId: selectedStudent ? selectedStudent.id : "", totalClasses: totalClasses, stats: stats, logs: logs.reverse(), bookings: myBookings.reverse(), bookingHistory: bookingHistory, monthlyLeaves: ss.getSheetByName('請假補課') ? monthlyLeaveRows_(ss.getSheetByName('請假補課')).filter(function(row) { return row.lineId === payload.lineId && (!selectedStudent || studentMatches_(row.studentId, row.name, selectedStudent)); }) : [] };
     }
 
     if (!result.status) throw new Error("不支援的操作：" + String(action || "未提供"));
@@ -391,6 +404,85 @@ function doPost(e) {
   } finally {
     if (requestLock) requestLock.releaseLock();
   }
+}
+
+// ===== 教練補登歷史預約：獨立紀錄，不建立可預約時段、不改名額或訓練日誌 =====
+function historicalBookingRows_(sheet) {
+  var rows = sheet.getDataRange().getValues();
+  if (!rows.length || HISTORICAL_BOOKING_HEADERS.some(function(title, i) { return rows[0][i] !== title; })) {
+    throw new Error('歷史預約紀錄工作表欄位不符，請保留原資料並核對欄位。');
+  }
+  return rows;
+}
+
+function historicalBookings_(ss) {
+  var sheet = ss.getSheetByName(SHEET_HISTORICAL_BOOKINGS);
+  if (!sheet) return [];
+  return historicalBookingRows_(sheet).slice(1).filter(function(row) { return row[0]; }).map(function(row) {
+    return { bookingId: String(row[0]), recordedAt: row[1], lineId: String(row[2]), studentId: String(row[3] || ''), name: row[4],
+      slotTitle: row[5], slotDate: monthlyDate_(row[6]), slotTime: row[7] + ' - ' + row[8], location: row[9], teachingCoachName: row[10],
+      paidPrice: row[11], paymentStatus: row[12], timestamp: monthlyDate_(row[13]), status: row[14], isHistorical: true };
+  });
+}
+
+function addHistoricalBooking_(ss, payload) {
+  if (typeof payload.lineId !== 'string' || typeof payload.studentId !== 'string') throw new Error('請指定要補登的學員。');
+  var users = ss.getSheetByName(SHEET_USERS);
+  if (!users) throw new Error('找不到學員資料工作表。');
+  var accounts = users.getDataRange().getValues().slice(1).filter(function(row) { return row[0] === payload.lineId; });
+  if (accounts.length !== 1) throw new Error('找不到唯一的學員帳號。');
+  var students = accountStudents_(accounts[0]).filter(function(item) { return item.id === payload.studentId; });
+  if (students.length !== 1) throw new Error('找不到唯一的指定學員，請核對帳號及學員編號。');
+  var student = students[0];
+  var text = function(value, label, max, required) {
+    if (typeof value !== 'string') throw new Error('請填寫' + label + '。');
+    var result = value.trim();
+    if ((required && !result) || result.length > max || /^[=+@-]/.test(result) || /[\u0000-\u001f\u007f]/.test(result)) throw new Error(label + '格式不正確。');
+    return result;
+  };
+  var title = text(payload.title, '課程名稱', 100, true), location = text(payload.location, '上課地點', 120, true);
+  var coachName = text(payload.teachingCoachName || '', '授課教練', 60, false);
+  var date = String(payload.date || ''), bookingDate = String(payload.bookingDate || date);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number(date.slice(0, 4)) < 1900 || !/^\d{4}-\d{2}-\d{2}$/.test(bookingDate) || Number(bookingDate.slice(0, 4)) < 1900) throw new Error('請填寫完整且有效的歷史日期。');
+  var start = monthlyStart_(date, payload.startTime), end = monthlyStart_(date, payload.endTime);
+  monthlyStart_(bookingDate, '00:00');
+  if (!/^\d{2}:\d{2}$/.test(String(payload.startTime)) || !/^\d{2}:\d{2}$/.test(String(payload.endTime)) || end.getTime() <= start.getTime()) throw new Error('結束時間必須晚於開始時間。');
+  if (end.getTime() > Date.now() || bookingDate > date) throw new Error('只能補登已結束的課程，原預約日期不可晚於上課日期。');
+  var amount = String(payload.amount == null ? '' : payload.amount);
+  if (!/^\d+(?:\.\d{1,2})?$/.test(amount) || !Number.isFinite(Number(amount)) || Number(amount) > 10000000) throw new Error('課程金額需為非負數，最多小數點後兩位。');
+  if (['paid', 'unpaid'].indexOf(payload.paymentStatus) < 0) throw new Error('請選擇已收款或尚未收款。');
+  if (['預約成功', '已完課', '已取消'].indexOf(payload.status) < 0) throw new Error('請選擇有效的歷史課程狀態。');
+  if (typeof payload.requestId !== 'string' || !/^[A-Za-z0-9_-]{16,100}$/.test(payload.requestId)) throw new Error('補登識別碼無效，請重新開啟補登視窗。');
+  var sheet = ss.getSheetByName(SHEET_HISTORICAL_BOOKINGS);
+  var rows = sheet ? historicalBookingRows_(sheet) : [HISTORICAL_BOOKING_HEADERS];
+  var values = [payload.lineId, student.id, student.name, title, date, payload.startTime, payload.endTime, location, coachName, Number(amount), payload.paymentStatus, bookingDate, payload.status, payload.requestId];
+  var repeated = rows.slice(1).find(function(row) { return row[15] === payload.requestId; });
+  if (repeated) {
+    var previous = repeated.slice(2, 16);
+    previous[4] = monthlyDate_(previous[4]); previous[11] = monthlyDate_(previous[11]);
+    if (JSON.stringify(previous) !== JSON.stringify(values)) throw new Error('此補登識別碼已用於其他資料，請重新開啟視窗。');
+    return { status: 'success', bookingId: repeated[0], created: false };
+  }
+  var duplicate = rows.slice(1).some(function(row) {
+    return row[2] === payload.lineId && String(row[3] || '') === student.id && row[5] === title && monthlyDate_(row[6]) === date && row[7] === payload.startTime && row[8] === payload.endTime && row[14] !== '已取消';
+  });
+  var slots = ss.getSheetByName(SHEET_SLOTS);
+  var matchingSlotIds = new Set((slots ? slots.getDataRange().getValues().slice(1) : []).filter(function(row) {
+    return String(row[1]).trim() === title && emptyCourseDates_(row[2]).indexOf(date) >= 0 && String(row[3]).replace(/\s/g, '') === payload.startTime + '-' + payload.endTime;
+  }).map(function(row) { return String(row[0]); }));
+  var bookings = ss.getSheetByName(SHEET_BOOKINGS);
+  if (bookings && bookings.getDataRange().getValues().slice(1).some(function(row) {
+    return row[2] === payload.lineId && matchingSlotIds.has(String(row[1])) && row[5] !== '已取消' && studentMatches_(row[9], row[3], student);
+  })) duplicate = true;
+  if (duplicate) throw new Error('此學員已有相同日期、時間與課程的預約紀錄，請勿重複補登。');
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_HISTORICAL_BOOKINGS);
+    sheet.appendRow(HISTORICAL_BOOKING_HEADERS);
+  }
+  var id = Utilities.getUuid();
+  sheet.appendRow([id, new Date()].concat(values));
+  SpreadsheetApp.flush();
+  return { status: 'success', bookingId: id, created: true };
 }
 
 // ===== 授課教練名單：僅管理顯示姓名，不變更 ADMIN_LINE_IDS 登入權限 =====

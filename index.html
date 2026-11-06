@@ -469,6 +469,102 @@
             );
         };
 
+        const BookingHistoryList = ({ bookings = [] }) => (
+            <div className="space-y-3 max-h-96 overflow-y-auto pr-1 min-w-0">
+                {!bookings.length ? <p className="text-center text-gray-400 text-sm py-6">無預約紀錄</p> : bookings.map((booking, index) => <article key={`${booking.isHistorical ? 'history' : 'booking'}-${booking.bookingId || index}`} className="border rounded-xl p-4 bg-white min-w-0">
+                    <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-bold text-slate-800 break-words">{booking.slotTitle || '未知課程'}</h4><span className="text-xs bg-slate-100 text-slate-700 rounded px-2 py-1">{booking.status || '未知狀態'}</span></div>
+                    <p className="text-sm text-slate-600 mt-2">{formatTrainingDate(booking.slotDate || '')} {booking.slotTime || ''}</p>
+                    {booking.location && <p className="text-sm text-slate-600 mt-1 break-words">{booking.location}</p>}
+                    {booking.teachingCoachName && <p className="text-sm text-slate-600 mt-1 break-words">授課教練：{booking.teachingCoachName}</p>}
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm mt-2"><span className="font-bold text-emerald-700">{booking.paidPrice !== '' && booking.paidPrice != null && Number.isFinite(Number(booking.paidPrice)) ? formatMoney(Number(booking.paidPrice)) : '未填寫'}</span><span className="text-slate-600">{booking.isHistorical ? (booking.paymentStatus === 'paid' ? '已收款' : '尚未收款') : (booking.paymentCode || '-')}</span></div>
+                    {booking.isHistorical && <p className="text-xs text-amber-800 mt-2">手動補登 · 原預約日期：{formatTrainingDate(booking.timestamp)}</p>}
+                </article>)}
+            </div>
+        );
+
+        const HistoricalBookingModal = ({ student, onClose, onSuccess }) => {
+            const initialForm = { title: '', date: '', startTime: '19:00', endTime: '20:00', location: '', teachingCoachName: '', amount: '', paymentStatus: 'unpaid', bookingDate: '', status: '已完課' };
+            const [form, setForm] = useState(initialForm);
+            const [coaches, setCoaches] = useState([]);
+            const [history, setHistory] = useState([]);
+            const [ready, setReady] = useState(false);
+            const [loading, setLoading] = useState(true);
+            const [busy, setBusy] = useState(false);
+            const [error, setError] = useState('');
+            const [message, setMessage] = useState('');
+            const [refresh, setRefresh] = useState(0);
+            const busyRef = React.useRef(false);
+            const requestRef = React.useRef(null);
+            const readHistory = async () => {
+                const result = await fetchAPI({ action: 'getStudentStats', lineId: student.lineId, studentId: student.studentId || '' });
+                if (result.status !== 'success' || !Array.isArray(result.bookingHistory)) throw new Error(result.message || '無法讀取歷史預約紀錄，請稍後再試。');
+                return result.bookingHistory;
+            };
+            useEffect(() => {
+                let active = true;
+                setReady(false); setLoading(true); setError('');
+                const load = async () => {
+                    try {
+                        const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                        if (!accessToken) throw new Error('請重新登入 LINE。');
+                        const result = await fetchAPI({ action: 'getHistoricalBookingOptions', accessToken });
+                        if (result.status !== 'success' || result.historicalBookingVersion !== 1) throw new Error('歷史預約補登尚未啟用，請聯絡管理員更新系統。');
+                        const records = await readHistory();
+                        if (active) { setCoaches(result.teachingCoaches || []); setHistory(records); setReady(true); }
+                    } catch (err) { if (active) setError(err.message); }
+                    finally { if (active) setLoading(false); }
+                };
+                load();
+                return () => { active = false; };
+            }, [student, refresh]);
+            const update = (key, value) => { requestRef.current = null; setMessage(''); setForm(prev => ({ ...prev, [key]: value })); };
+            const save = async event => {
+                event.preventDefault();
+                if (!ready || busyRef.current) return;
+                busyRef.current = true; setBusy(true); setError(''); setMessage('');
+                let saved = false;
+                try {
+                    const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                    if (!accessToken) throw new Error('請重新登入 LINE。');
+                    if (!requestRef.current) requestRef.current = window.crypto?.randomUUID ? window.crypto.randomUUID() : 'history-' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+                    const result = await fetchAPI({ action: 'coachAddHistoricalBooking', lineId: student.lineId, studentId: student.studentId || '', ...form, requestId: requestRef.current, accessToken });
+                    if (result.status !== 'success' || !result.bookingId) throw new Error(result.message || '歷史預約補登失敗，請稍後再試。');
+                    saved = true;
+                    setHistory(await readHistory());
+                    await onSuccess();
+                    requestRef.current = null; setForm(initialForm); setMessage('歷史預約已新增，付款統計已更新。');
+                } catch (err) { setError(saved ? '歷史預約已儲存，但重新讀取失敗。請先重新整理確認，勿重複補登。' : err.message); }
+                finally { busyRef.current = false; setBusy(false); }
+            };
+            return <div className="fixed inset-0 z-50 bg-slate-900 bg-opacity-60 p-3 md:p-5 flex items-center justify-center">
+                <div role="dialog" aria-modal="true" aria-labelledby="historical-booking-title" className="bg-gray-50 rounded-2xl shadow-xl w-full max-w-4xl max-h-[90dvh] overflow-y-auto min-w-0">
+                    <div className="sticky top-0 z-10 bg-slate-800 text-white p-4 flex flex-wrap items-center justify-between gap-3"><h2 id="historical-booking-title" className="font-bold">補登歷史預約：{student.name}</h2><button type="button" disabled={busy} onClick={onClose} className="border border-slate-500 rounded-lg px-3 py-2">關閉</button></div>
+                    <div className="p-4 md:p-6 space-y-5">
+                        <p className="text-sm text-slate-600 leading-relaxed">僅補登此學員已結束的課程，不佔用目前名額。已收款且未取消的紀錄會計入累積付款，月份依原預約日期統計；不會自動產生日誌或增加訓練時數，完成堂數仍依訓練日誌計算。</p>
+                        {loading && <p role="status" className="text-sm text-slate-500">讀取歷史預約中...</p>}
+                        {error && <div role="alert" className="text-sm text-red-700 bg-red-50 rounded-lg p-3"><p>{error}</p>{!ready && !loading && <button type="button" onClick={() => setRefresh(n => n + 1)} className="border rounded-lg px-3 py-2 mt-2">重新讀取歷史預約</button>}</div>}
+                        {message && <p role="status" className="text-sm text-emerald-800 bg-emerald-50 rounded-lg p-3">{message}</p>}
+                        <form onSubmit={save} aria-label="歷史預約資料" className="bg-white border rounded-xl p-4 space-y-4">
+                            <fieldset disabled={!ready || busy} className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
+                                <label className="block text-sm font-bold">歷史課程名稱<input aria-label="歷史課程名稱" required maxLength={100} value={form.title} onChange={e => update('title', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /></label>
+                                <label className="block text-sm font-bold">歷史上課日期<input aria-label="歷史上課日期" type="date" required min="1900-01-01" max={registrationToday()} value={form.date} onChange={e => update('date', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /></label>
+                                <label className="block text-sm font-bold">歷史開始時間<input aria-label="歷史開始時間" type="time" required value={form.startTime} onChange={e => update('startTime', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /></label>
+                                <label className="block text-sm font-bold">歷史結束時間<input aria-label="歷史結束時間" type="time" required value={form.endTime} onChange={e => update('endTime', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /></label>
+                                <label className="block text-sm font-bold">歷史上課地點<input aria-label="歷史上課地點" required maxLength={120} value={form.location} onChange={e => update('location', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /></label>
+                                <label className="block text-sm font-bold">歷史授課教練（選填）<input aria-label="歷史授課教練（選填）" list="historical-coach-names" maxLength={60} value={form.teachingCoachName} onChange={e => update('teachingCoachName', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /><datalist id="historical-coach-names">{coaches.map(coach => <option key={coach.id} value={coach.name} />)}</datalist></label>
+                                <label className="block text-sm font-bold">歷史課程金額<input aria-label="歷史課程金額" type="number" min="0" max="10000000" step="0.01" required value={form.amount} onChange={e => update('amount', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /></label>
+                                <label className="block text-sm font-bold">歷史付款狀態<select aria-label="歷史付款狀態" value={form.paymentStatus} onChange={e => update('paymentStatus', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 bg-white font-normal"><option value="unpaid">尚未收款</option><option value="paid">已收款</option></select></label>
+                                <label className="block text-sm font-bold">歷史課程狀態<select aria-label="歷史課程狀態" value={form.status} onChange={e => update('status', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 bg-white font-normal">{['已完課', '預約成功', '已取消'].map(status => <option key={status} value={status}>{status}</option>)}</select></label>
+                                <label className="block text-sm font-bold">原預約日期（選填）<input aria-label="原預約日期（選填）" type="date" min="1900-01-01" max={form.date || registrationToday()} value={form.bookingDate} onChange={e => update('bookingDate', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /><span className="block font-normal text-xs text-slate-500 mt-1">未填寫時，依上課日期記錄原預約日期。</span></label>
+                            </fieldset>
+                            <button type="submit" disabled={!ready || busy} className="bg-emerald-700 text-white font-bold rounded-lg px-5 py-3 disabled:opacity-50">{busy ? '儲存中...' : '新增歷史預約'}</button>
+                        </form>
+                        <section aria-label="此學員的歷史預約"><h3 className="font-bold text-slate-800 mb-3">歷史預約紀錄</h3><BookingHistoryList bookings={history} /></section>
+                    </div>
+                </div>
+            </div>;
+        };
+
         const StudentDetailsModal = ({ student, onClose }) => {
             const [data, setData] = useState(null);
             const [statsError, setStatsError] = useState('');
@@ -562,34 +658,7 @@
                                         <h3 className="font-bold text-slate-800 mb-4 ml-1 flex items-center text-base md:text-lg">
                                             <span className="w-1.5 h-5 bg-amber-500 rounded mr-2"></span>歷史預約紀錄
                                         </h3>
-                                        <div className="mobile-list-wrap overflow-x-auto max-h-[300px] overflow-y-auto">
-                                            <table className="mobile-card-table w-full min-w-max text-left text-sm md:text-base whitespace-nowrap">
-                                                <thead className="sticky top-0 bg-white shadow-sm z-10">
-                                                    <tr className="text-gray-600 border-b border-gray-200">
-                                                        <th className="p-3">課程名稱</th>
-                                                        <th className="p-3">狀態</th>
-                                                        <th className="p-3">後五碼</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {!data.bookings || data.bookings.length === 0 ? (
-                                                        <tr><td colSpan="3" className="text-center text-gray-400 text-sm py-6">無預約紀錄</td></tr>
-                                                    ) : (
-                                                        data.bookings.map((b, i) => (
-                                                            <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
-                                                                <td data-label="課程名稱" className="p-3 font-bold text-gray-800">{b.slotTitle || '未知課程'} <span className="text-xs text-gray-500 font-normal block">{b.slotDate || ''}</span></td>
-                                                                <td data-label="狀態" className="p-3">
-                                                                    <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${b.status === '已完課' || b.status === '預約成功' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-600'}`}>
-                                                                        {b.status || '未知狀態'}
-                                                                    </span>
-                                                                </td>
-                                                                <td data-label="後五碼" className="p-3 font-mono text-gray-500">{b.paymentCode || '-'}</td>
-                                                            </tr>
-                                                        ))
-                                                    )}
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                        <BookingHistoryList bookings={data.bookingHistory || data.bookings || []} />
                                     </div>
                                 </div>
                             )}
@@ -1608,7 +1677,7 @@
             let monthlyCents = 0, invalidAmounts = 0, missingDates = 0, duplicateOrders = 0, unmatchedStudents = 0;
             const seen = new Set();
             for (const booking of bookings) {
-                if (!['預約成功', '已完課', '成功', '已完成'].includes(booking.status) || booking.paymentCode === '現場現金') continue;
+                if (!['預約成功', '已完課', '成功', '已完成'].includes(booking.status) || booking.paymentCode === '現場現金' || (booking.isHistorical && booking.paymentStatus !== 'paid')) continue;
                 if (booking.bookingId && seen.has(booking.bookingId)) { duplicateOrders++; continue; }
                 if (booking.bookingId) seen.add(booking.bookingId);
                 const amount = Number(booking.paidPrice);
@@ -1645,14 +1714,14 @@
                 setLoading(true); setError('');
                 fetchAPI({ action: 'getCoachData' }).then(result => {
                     if (!result || !Array.isArray(result.bookings) || result.status === 'error') throw new Error((result && result.message) || '無法讀取收入資料');
-                    if (active) setData(calculateCoachPayments(result.bookings, month, result.members));
+                    if (active) setData(calculateCoachPayments([...(result.bookings || []), ...(result.historicalBookings || [])], month, result.members));
                 }).catch(err => { if (active) { setData(null); setError(err.message); } }).finally(() => { if (active) setLoading(false); });
                 return () => { active = false; };
             }, [revision, refresh, month]);
             return <section aria-label="本月收入統計" className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 md:p-6 mb-5 min-w-0">
                 <div className="flex flex-wrap justify-between items-center gap-3"><h2 className="font-bold text-emerald-950">{month} 本月收入</h2><button onClick={() => setRefresh(n => n + 1)} disabled={loading} className="border border-emerald-300 rounded-lg px-3 py-2 text-sm text-emerald-900 disabled:opacity-50">重新整理金額</button></div>
                 {loading ? <p role="status" className="mt-3">讀取收入中...</p> : error ? <p role="alert" className="text-red-700 mt-3">{error}</p> : <p className="text-3xl font-extrabold text-emerald-800 mt-3 break-all">{formatMoney(data.monthlyTotal)}</p>}
-                <p className="text-xs md:text-sm text-emerald-950 mt-3">按台北時間的「預約登記月份」統計已核准及已完課訂單，非實際收款日期；審核中、已取消、尚未確認現金收款的訂單不計。補課金額為 0，不重複計費。</p>
+                <p className="text-xs md:text-sm text-emerald-950 mt-3">按台北時間的「預約登記月份」統計已核准及已完課訂單，非實際收款日期；審核中、已取消、尚未確認現金收款的訂單不計。補課金額為 0，不重複計費。歷史補登僅計已收款紀錄，依原預約日期月份統計。</p>
                 <p className="text-xs text-gray-600 mt-1">依目前保留的訂單計算，刪除訂單會影響統計；取消不代表已退款，此處不是完整金流帳本。</p>
                 {data && !loading && (data.invalidAmounts + data.missingDates + data.duplicateOrders + data.unmatchedStudents > 0) && <p role="status" className="text-sm text-amber-900 mt-3">資料待核對：金額異常 {data.invalidAmounts} 筆、缺少有效登記日期 {data.missingDates} 筆、重複訂單編號 {data.duplicateOrders} 筆、無法對應學員 {data.unmatchedStudents} 筆。異常金額不計；日期缺漏不計本月；重複編號只計一次。</p>}
             </section>;
@@ -2230,24 +2299,26 @@
           );
         };
 
-        const CoachMembersView = ({ onOpenStudent }) => {
+        const CoachMembersView = ({ onOpenStudent, onPaymentsChanged = () => {} }) => {
             const [members, setMembers] = useState([]);
             const [paymentTotals, setPaymentTotals] = useState(null);
             const [paymentError, setPaymentError] = useState('');
+            const [historicalStudent, setHistoricalStudent] = useState(null);
             const [viewModal, setViewModal] = useState({ isOpen: false, student: null });
             const [logModalTarget, setLogModalTarget] = useState(null); 
 
             const fetchMembers = () => {
-                fetchAPI({ action: 'getCoachData' }).then(res => {
+                return fetchAPI({ action: 'getCoachData' }).then(res => {
                     setMembers(res.members || []);
                     if (res.status !== 'error' && Array.isArray(res.bookings)) {
-                        const totals = calculateCoachPayments(res.bookings, taipeiMonth(new Date()), res.members || []);
+                        const totals = calculateCoachPayments([...(res.bookings || []), ...(res.historicalBookings || [])], taipeiMonth(new Date()), res.members || []);
                         setPaymentTotals(totals.studentTotals);
                         setPaymentError([
                             totals.invalidAmounts || totals.duplicateOrders ? '付款資料存在異常或缺漏，請參閱收入統計並核對原訂單。' : '',
                             totals.unmatchedStudents ? '部分訂單無法對應個別學員，未列入個人累積金額；請核對原訂單的學員編號。' : ''
                         ].filter(Boolean).join(' '));
                     } else { setPaymentTotals(null); setPaymentError('無法讀取付款資料，累積金額暫不顯示。'); }
+                    return res;
                 });
             };
 
@@ -2282,13 +2353,14 @@
                                             <td data-label="累計完成堂數" className="p-3 md:p-4 text-center font-extrabold text-slate-600 text-xl md:text-2xl">{m.totalClasses || 0}</td>
                                             <td data-label="累積付款金額" className="p-3 md:p-4 font-bold text-emerald-700">{paymentTotals ? (m.lineId ? formatMoney(paymentTotals.get(studentPaymentKey(m.lineId, m.studentId)) || 0) : '缺少帳號 ID') : '暫無資料'}</td>
                                             <td data-label="操作" className="p-3 md:p-4 text-center">
-                                                <div className="flex justify-center gap-2">
+                                                <div className="flex flex-wrap justify-center gap-2">
                                                     <button onClick={() => onOpenStudent(m)} disabled={!m.lineId} className="bg-slate-700 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-2.5 px-4 md:px-5 rounded-lg shadow-sm text-xs md:text-sm active:scale-95 transition">
                                                         開啟學生畫面
                                                     </button>
                                                     <button onClick={()=>setViewModal({isOpen: true, student: m})} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 md:px-5 rounded-lg shadow-sm text-xs md:text-sm active:scale-95 transition">
                                                         檢視資料
                                                     </button>
+                                                    <button onClick={() => setHistoricalStudent(m)} disabled={!m.lineId} className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold py-2.5 px-4 rounded-lg text-xs md:text-sm">補登歷史預約</button>
                                                     <button onClick={()=>setLogModalTarget({ lineId: m.lineId, studentId: m.studentId, name: m.name })} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 md:px-5 rounded-lg shadow-sm text-xs md:text-sm active:scale-95 transition">
                                                         補登日誌
                                                     </button>
@@ -2300,6 +2372,7 @@
                             </tbody>
                         </table>
                     </div>
+                    {historicalStudent && <HistoricalBookingModal student={historicalStudent} onClose={() => setHistoricalStudent(null)} onSuccess={async () => { const result = await fetchMembers(); if (result.status !== 'success') throw new Error('付款統計讀取失敗'); onPaymentsChanged(); }} />}
                     {viewModal.isOpen && <StudentDetailsModal student={viewModal.student} onClose={()=>setViewModal({isOpen: false, student: null})} />}
                     {logModalTarget && <LogFormModal targetData={logModalTarget} onClose={() => setLogModalTarget(null)} onSuccess={fetchMembers} />}
                 </div>
@@ -2381,7 +2454,7 @@
                     </header>
                     <div className="flex-1 min-w-0 p-3 md:p-8">
                         {activeTab === 'members' && <CoachRevenue revision={`${activeTab}-${paymentRevision}`} />}
-                        {activeTab === 'slots' ? <CoachSlotsView onPaymentsChanged={paymentsChanged} /> : <CoachMembersView onOpenStudent={openStudent} />}
+                        {activeTab === 'slots' ? <CoachSlotsView onPaymentsChanged={paymentsChanged} /> : <CoachMembersView onOpenStudent={openStudent} onPaymentsChanged={paymentsChanged} />}
                     </div>
                 </div>
             );

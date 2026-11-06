@@ -47,6 +47,12 @@ test('teaching coach labels translate while names containing existing dictionary
  assert.equal(i.translate('授課教練：學生預約教練'),'担当コーチ：學生預約教練');
  assert.equal(i.translate('請選擇授課教練'),'担当コーチを選択してください');
 });
+test('historical booking fields translate while former teaching coach names remain intact',()=>{
+ const {i}=setup();i.remember({teachingCoachName:'舊教練預約'});
+ assert.equal(i.translate('補登歷史預約'),'過去の予約を追加');
+ assert.equal(i.translate('歷史付款狀態'),'過去の支払状況');
+ assert.equal(i.translate('授課教練：舊教練預約'),'担当コーチ：舊教練預約');
+});
 
 test('five-minute training units and approximate counts are translated',()=>{
  const {i}=setup();
