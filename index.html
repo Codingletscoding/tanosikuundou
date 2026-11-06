@@ -883,6 +883,44 @@
             </section>;
         };
 
+        const BookingBrandIntroduction = () => (
+            <article aria-label="樂動羽球品牌介紹" className="m-4 md:mx-8 mt-5 md:mt-8 p-5 md:p-8 bg-white rounded-2xl border border-amber-100 border-t-4 border-t-amber-500 shadow-sm text-slate-700">
+                <h3 className="text-lg md:text-2xl font-bold leading-relaxed text-slate-900 mb-5">我們相信，運動的價值不只在於技術的提升，更在於過程中的快樂、健康與成長。</h3>
+                <div className="space-y-3 text-sm md:text-base leading-7">
+                    <p>樂動羽球致力於打造一個讓成年人能夠輕鬆接觸、自在學習、持續享受的羽球教學環境。</p>
+                    <p>我們不追求枯燥乏味的苦練，也不以每個人都必須成為競技選手為目標。</p>
+                    <p>我們希望透過科學化的教學方式，讓每位學員理解動作、認識自己的身體，在享受運動樂趣的同時，逐步建立正確的羽球技術。</p>
+                </div>
+                <section aria-labelledby="brand-teaching-features" className="mt-7">
+                    <h4 id="brand-teaching-features" className="text-base md:text-lg font-bold text-slate-900 mb-4">我們的教學特色</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-amber-50 rounded-xl p-4 min-w-0">
+                            <h5 className="font-bold text-amber-900 mb-2">因材施教，而非統一課表</h5>
+                            <p className="text-sm md:text-base leading-7">尊重每位學員的體能、程度與學習速度，依照個人需求調整訓練內容，讓每個人都能找到適合自己的學習方式。</p>
+                        </div>
+                        <div className="bg-amber-50 rounded-xl p-4 min-w-0">
+                            <h5 className="font-bold text-amber-900 mb-2">科學教學，而非盲目苦練</h5>
+                            <p className="text-sm md:text-base leading-7">重視人體動作原理、身體協調與正確發力，透過有目的、有方法的練習提升學習效率，並重視運動安全。</p>
+                        </div>
+                        <div className="bg-amber-50 rounded-xl p-4 min-w-0">
+                            <h5 className="font-bold text-amber-900 mb-2">享受過程，而非只有結果</h5>
+                            <p className="text-sm md:text-base leading-7">我們相信，真正能讓人持續運動的動力，來自快樂與成就感。每一次成功擊球、每一個動作的改善，都是值得享受的進步。</p>
+                        </div>
+                        <div className="bg-amber-50 rounded-xl p-4 min-w-0">
+                            <h5 className="font-bold text-amber-900 mb-2">心懷感恩，珍惜每次相遇</h5>
+                            <p className="text-sm md:text-base leading-7">感謝每一位願意投入時間學習的學員，珍惜彼此的信任與陪伴。讓羽球不只是運動，更成為連結人與人、豐富生活的橋梁。</p>
+                        </div>
+                    </div>
+                </section>
+                <section aria-labelledby="brand-vision" className="mt-7 text-sm md:text-base leading-7">
+                    <h4 id="brand-vision" className="text-base md:text-lg font-bold text-slate-900 mb-3">我們的願景</h4>
+                    <p>讓更多人不受年齡與程度限制，都能透過科學、健康而快樂的羽球學習，培養終身運動的習慣。</p>
+                    <p className="font-bold text-amber-900 mt-4">以快樂為初心，以健康為根本，以科學為方法，以運動為實踐，以感恩為態度。</p>
+                    <p className="text-slate-800 mt-3">樂動羽球，讓每一次揮拍，都成為生活中的美好時刻。</p>
+                </section>
+            </article>
+        );
+
         const StudentBookingView = ({ profile, userRecord, onBooked }) => {
           const [slots, setSlots] = useState([]);
           const [supportsSharedCoach, setSupportsSharedCoach] = useState(false);
@@ -961,6 +999,7 @@
 
           return (
             <div>
+            <BookingBrandIntroduction />
             {studentCount > 1 && <p className="booking-notice m-4 p-3 rounded-lg bg-emerald-50 text-emerald-900">此帳號共 {studentCount} 位學生。團課預約佔用 {studentCount} 個名額，費用依人數加總；專屬教練課限同帳號 1～2 人，共用一個名額，按所選方案原價收費。</p>}
             <div className="booking-layout flex flex-col md:flex-row gap-0 md:gap-8 p-0 md:p-8 pb-10 relative">
               <div className="booking-calendar bg-white px-2 md:px-6 py-4 md:py-6 shadow-sm border-b md:border md:rounded-2xl w-full md:w-1/3 md:sticky md:top-6 h-fit">
