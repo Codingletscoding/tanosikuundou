@@ -134,6 +134,30 @@
     <div id="root"></div>
 
     <script type="text/babel">
+        // 1. 鎖定滑鼠右鍵（防止點擊「檢查」或「檢視網頁原始碼」）
+        document.addEventListener('contextmenu', function (e) {
+            e.preventDefault();
+        });
+        
+        // 2. 鎖定開發者工具常用的鍵盤快捷鍵
+        document.addEventListener('keydown', function (e) {
+            // 鎖定 F12
+            if (e.key === 'F12' || e.keyCode === 123) {
+                e.preventDefault();
+            }
+            // 鎖定 Ctrl+Shift+I (Windows) / Cmd+Option+I (Mac) - 開啟開發人員工具
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'i')) {
+                e.preventDefault();
+            }
+            // 鎖定 Ctrl+Shift+J (Windows) / Cmd+Option+J (Mac) - 開啟主控台
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'J' || e.key === 'j')) {
+                e.preventDefault();
+            }
+            // 鎖定 Ctrl+U (Windows) / Cmd+Option+U (Mac) - 檢視網頁原始碼
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'U' || e.key === 'u')) {
+                e.preventDefault();
+            }
+        });
         const { useState, useEffect } = React;
 
         // ==========================================
