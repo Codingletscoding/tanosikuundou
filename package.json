@@ -1,0 +1,11 @@
+{
+  "name": "rakudou-frontend-tools",
+  "private": true,
+  "scripts": {
+    "encode:frontend": "node tools/encode-frontend.cjs",
+    "check:frontend": "node tools/encode-frontend.cjs --check"
+  },
+  "devDependencies": {
+    "@babel/parser": "7.28.5"
+  }
+}

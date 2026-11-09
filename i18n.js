@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const dictionary = window.BadmintonJapanese || {};
-  const protectedNames = new Set(['關聖里活動中心','永康嘉世','仁德羽潮','南區羽潮','自理場地(需私訊確認)']);
+  const protectedNames = new Set(['\u95dc\u8056\u91cc\u6d3b\u52d5\u4e2d\u5fc3','\u6c38\u5eb7\u5609\u4e16','\u4ec1\u5fb7\u7fbd\u6f6e','\u5357\u5340\u7fbd\u6f6e','\u81ea\u7406\u5834\u5730(\u9700\u79c1\u8a0a\u78ba\u8a8d)']);
   const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const keys = Object.keys(dictionary).filter(key => key.length > 1).sort((a,b) => b.length-a.length);
   const pattern = new RegExp(keys.map(escape).join('|'), 'g');
@@ -69,7 +69,7 @@
         attributeStates.set(element,states);
       }
       document.documentElement.lang = language;
-      document.title = translate('樂動羽球');
+      document.title = translate('\u6a02\u52d5\u7fbd\u7403');
       document.querySelectorAll('[data-language]').forEach(button => button.setAttribute('aria-pressed',String(button.dataset.language === language)));
     } finally {
       if (observer) observer.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['placeholder','title','alt','aria-label','data-label']});
