@@ -128,9 +128,9 @@ function monthlyCoach(options={}) {
  const enroll=(extra={})=>f.run({action:'coachRegisterMonthly',slotId:'slot',studentIds:[students[0].id,students[2].id],accessToken:'mock',...extra});
  return {...f,students,enroll};
 }
-test('authenticated coach enrolls selected students in monthly class using stored prices',()=>{
- const f=monthlyCoach();const result=f.enroll({paidPrice:1,level:1});assert.equal(result.status,'success');assert.equal(result.registeredCount,2);assert.equal(result.totalPrice,1960);
- const orders=f.rows['預約名單'].slice(1);assert.deepEqual(orders.map(row=>row[9]),[f.students[0].id,f.students[2].id]);assert(orders.every(row=>row[4]===980&&row[5]==='審核中'));assert.equal(f.rows['可用時段'][1][6],3);
+test('authenticated coach enrolls selected students in monthly class using uniform prices',()=>{
+ const f=monthlyCoach();const result=f.enroll({paidPrice:1,level:1});assert.equal(result.status,'success');assert.equal(result.registeredCount,2);assert.equal(result.totalPrice,2000);
+ const orders=f.rows['預約名單'].slice(1);assert.deepEqual(orders.map(row=>row[9]),[f.students[0].id,f.students[2].id]);assert(orders.every(row=>row[4]===1000&&row[5]==='審核中'));assert.equal(f.rows['可用時段'][1][6],3);
  assert.equal(f.run({action:'getStudentStats',studentId:f.students[1].id}).bookings.length,0);
 });
 test('ordinary student cannot use coach monthly enrollment',()=>{
@@ -218,7 +218,7 @@ function monthlyCoachWithoutChannelProperty(options={}) {
 }
 test('coach monthly registration succeeds with confirmed server channel when script property is missing',()=>{
  const f=monthlyCoachWithoutChannelProperty();const result=f.enroll();
- assert.equal(result.status,'success',result.message);assert.equal(result.registeredCount,2);assert.equal(result.totalPrice,1960);
+ assert.equal(result.status,'success',result.message);assert.equal(result.registeredCount,2);assert.equal(result.totalPrice,2000);
  assert.equal(f.rows['預約名單'].length,3);assert.equal(f.rows['可用時段'][1][6],3);
 });
 test('missing channel property never accepts a different channel, expired token or noncoach',()=>{

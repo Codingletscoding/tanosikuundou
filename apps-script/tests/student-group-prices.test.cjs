@@ -49,9 +49,9 @@ test('coach single registration quotes and charges only the selected learner', (
   const result = f.run({ action: 'coachRegisterSingle', ...payload, expectedTotalPrice: q.totalPrice, expectedStudentPrices: q.studentPrices }, 'coach');
   assert.equal(result.status, 'success'); assert.equal(f.rows['預約名單'][1][9], 'b'); assert.equal(f.rows['預約名單'][1][4], 270);
 });
-test('monthly packages and private lessons retain their existing prices', () => {
+test('personal single-class rates never override monthly or private lesson plans', () => {
   const f = fixture(); save(f, 'a', 1, 2); save(f, 'b', 3, 4);
-  assert.equal(quote(f, { slotId: 'monthly' }).quote.totalPrice, 1960);
+  assert.equal(quote(f, { slotId: 'monthly' }).quote.totalPrice, 2000);
   assert.equal(quote(f, { slotId: 'private', coachType: '1對2', location: '場地A' }).quote.totalPrice, 1470);
 });
 test('clearing one price restores only that duration; zero is a real free price', () => {

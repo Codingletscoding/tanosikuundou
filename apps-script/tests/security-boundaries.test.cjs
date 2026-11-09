@@ -51,11 +51,11 @@ test('new registrations cannot choose their membership level or administrator ro
  assert.equal(result.status,'success');assert.equal(result.user.level,1);assert.equal(f.run({action:'checkUser'},'fresh').isAdmin,false);
  assert.equal(f.run({action:'getBookingQuote',slotId:'group',paidPrice:1,level:5},'fresh').quote.totalPrice,300);
 });
-test('coach subset quotes and writes use target membership and selected IDs',()=>{
+test('coach subset quotes and writes use uniform monthly fees and selected IDs',()=>{
  const f=fixture();const request={lineId:'account',slotId:'monthly',studentIds:['b'],kind:'monthly'};
  assert.equal(f.run({action:'getBookingQuote',...request}).status,'error');
- const quote=f.run({action:'getBookingQuote',...request},'coach').quote;assert.equal(quote.totalPrice,980);
- const result=f.run({action:'coachRegisterMonthly',...request,expectedTotalPrice:quote.totalPrice},'coach');assert.equal(result.status,'success');assert.equal(f.rows['預約名單'][1][9],'b');assert.equal(f.rows['預約名單'][1][4],980);
+ const quote=f.run({action:'getBookingQuote',...request},'coach').quote;assert.equal(quote.totalPrice,1000);
+ const result=f.run({action:'coachRegisterMonthly',...request,expectedTotalPrice:quote.totalPrice},'coach');assert.equal(result.status,'success');assert.equal(f.rows['預約名單'][1][9],'b');assert.equal(f.rows['預約名單'][1][4],1000);
 });
 test('payment notes require ownership and five digits; only coach can approve or confirm receipt',()=>{
  const f=fixture();f.run({action:'bookClass',slotId:'group'});const id=f.rows['預約名單'][1][7];

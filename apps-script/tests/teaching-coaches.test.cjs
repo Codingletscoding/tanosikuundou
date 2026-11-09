@@ -121,7 +121,7 @@ test('a failed course write restores all original fields including its instructo
 test('single, monthly and independent private hours retain the selected instructor', () => {
   const f=fixture(),coach=f.add('王').coach;
   for(const title of ['單堂團課','[月繳4堂] 團課','[專屬教練課] 1v1:1000|1v2:1500']){
-    assert.equal(f.run(f.slotPayload({title,teachingCoachId:coach.id,...(title.startsWith('[專屬教練課]')?{time:'19:00 - 20:00',capacity:1}:{})})).status,'success');
+    assert.equal(f.run(f.slotPayload({title,teachingCoachId:coach.id,...(title.startsWith('[月繳')?{date:'2026年 12/1, 12/8, 12/15, 12/22'}:{}),...(title.startsWith('[專屬教練課]')?{time:'19:00 - 20:00',capacity:1}:{})})).status,'success');
   }
   assert.ok(f.run({action:'getSlots'}).slots.slice(1).every(slot=>slot.teachingCoachId===coach.id&&slot.teachingCoachName===coach.name));
 });

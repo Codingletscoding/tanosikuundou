@@ -15,6 +15,10 @@ const SHEET_HISTORICAL_BOOKINGS = '歷史預約紀錄';
 const SHEET_STUDENT_GROUP_PRICES = '學員團課價格';
 const STUDENT_GROUP_PRICE_HEADERS = ['LINE_ID', '學生編號', '一小時團課價格', '二小時團課價格', '更新時間', '設定教練'];
 const GROUP_PRICE_DEFAULTS = { hour1: 300, hour2: 550 };
+const MONTHLY_GROUP_TARIFFS = {
+  60: { 4: { regular: 1200, price: 1000 }, 5: { regular: 1500, price: 1250 } },
+  120: { 4: { regular: 2400, price: 2000 }, 5: { regular: 3000, price: 2500 } }
+};
 const HISTORICAL_BOOKING_HEADERS = ['紀錄編號', '補登時間', 'LINE_ID', '學生編號', '學生姓名', '課程名稱', '上課日期', '開始時間', '結束時間', '上課地點', '授課教練姓名', '課程金額', '付款狀態', '原預約日期', '課程狀態', '送出識別碼'];
 
 const ADMIN_LINE_IDS = ["U3a76953e63578ec8607297044ac54e5a"]; 
@@ -184,6 +188,7 @@ function doPost(e) {
           prices: { 1: data[i][7], 2: data[i][8], 3: data[i][9], 4: data[i][10], 5: data[i][11] }
         };
         slot.availableLocations = privateLocations_(data[i]);
+        if (/^\[月繳/.test(String(slot.title).trim())) slot.monthlyTariff = monthlySlotTariff_(data[i]);
         if (account) slot.priceQuote = bookingQuote_(ss, { lineId: payload.lineId, slotId: String(data[i][0]) }, actor, true, data[i], account, groupPriceData);
         if (!actor.isAdmin) {
           delete slot.prices;
@@ -191,7 +196,7 @@ function doPost(e) {
         }
         slots.push(slot);
       }
-      result = { status: "success", slots: slots, studentGroupPricingVersion: 1, coachAccountPricingVersion: 1, coachSingleRegistrationVersion: 1, teachingCoachesVersion: 1, teachingCoaches: teachingCoaches };
+      result = { status: "success", slots: slots, monthlyGroupTariffs: MONTHLY_GROUP_TARIFFS, monthlyUniformPricingVersion: 1, studentGroupPricingVersion: 1, coachAccountPricingVersion: 1, coachSingleRegistrationVersion: 1, teachingCoachesVersion: 1, teachingCoaches: teachingCoaches };
     }
 
     else if (action === 'addTeachingCoach' || action === 'updateTeachingCoach') {
@@ -252,6 +257,7 @@ function doPost(e) {
     else if (action === "addSlot") {
       const coach = requireTeachingCoach_(ss, payload.teachingCoachId);
       const sheet = ss.getSheetByName(SHEET_SLOTS);
+      normalizeMonthlySlotPrices_(payload, true);
       validateNewSlot_(payload);
       accountReserveColumn_(sheet, 13, SLOT_TEACHING_COACH_HEADER);
       const newId = Utilities.getUuid();
@@ -465,9 +471,38 @@ function groupTariff_(mode, startTime, endTime, count) {
     return match && Number(match[1]) < 24 && Number(match[2]) < 60 ? Number(match[1]) * 60 + Number(match[2]) : NaN;
   };
   var duration = minutes(endTime) - minutes(startTime);
-  if ([60, 120].indexOf(duration) < 0 || (mode === 'monthly' && count !== 4) || ['single', 'monthly'].indexOf(mode) < 0) return null;
+  if ([60, 120].indexOf(duration) < 0 || ['single', 'monthly'].indexOf(mode) < 0) return null;
+  if (mode === 'monthly') {
+    var monthly = MONTHLY_GROUP_TARIFFS[duration][count];
+    return monthly ? { duration: duration, count: count, regular: monthly.regular, price: monthly.price } : null;
+  }
   var single = duration === 60 ? GROUP_PRICE_DEFAULTS.hour1 : GROUP_PRICE_DEFAULTS.hour2;
-  return { duration: duration, regular: mode === 'monthly' ? single * 4 : single, price: mode === 'monthly' ? (duration === 60 ? 1000 : 2000) : single };
+  return { duration: duration, regular: single, price: single };
+}
+
+function monthlySlotTariff_(row) {
+  var title = String(row[1] || '').trim();
+  if (!/^\[月繳/.test(title)) return null;
+  var match = title.match(/^\[月繳(\d+)堂\]/);
+  var dates = emptyCourseDates_(row[2]), count = match ? Number(match[1]) : dates.length;
+  if (dates.length > 1 && match && dates.length !== count) throw new Error('月繳堂數與上課日期不符，請聯絡教練確認。');
+  if (dates.length > 1 && new Set(dates).size !== dates.length) throw new Error('月繳上課日期重複，請聯絡教練確認。');
+  var time = String(row[3] || '').match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+  var duration = time ? Number(time[3]) * 60 + Number(time[4]) - Number(time[1]) * 60 - Number(time[2]) : null;
+  var tariff = MONTHLY_GROUP_TARIFFS[duration] && MONTHLY_GROUP_TARIFFS[duration][count];
+  if (tariff) return { count: count, duration: duration, regular: tariff.regular, price: tariff.price, fixed: true };
+  // 未公告的舊方案保留第一級方案價，但不再依會員等級打折。
+  var price = money_(row[7]);
+  return { count: count, regular: price, price: price, fixed: false };
+}
+
+function normalizeMonthlySlotPrices_(payload, creating) {
+  if (!/^\[月繳/.test(String(payload.title || '').trim())) return;
+  var dates = emptyCourseDates_(payload.date);
+  var row = ['', payload.title, payload.date, payload.time, '', '', '', payload.prices && payload.prices[1]];
+  var tariff = monthlySlotTariff_(row);
+  if (creating && tariff.fixed && (dates.length !== tariff.count || new Set(dates).size !== dates.length)) throw new Error('月繳堂數與上課日期不符，請確認完整四堂或五堂日期。');
+  payload.prices = { 1: tariff.price, 2: tariff.price, 3: tariff.price, 4: tariff.price, 5: tariff.price };
 }
 
 function slotGroupTariff_(slot) {
@@ -475,7 +510,7 @@ function slotGroupTariff_(slot) {
   if (!time || /^\[專屬教練課\]/.test(slot.title)) return null;
   var monthly = String(slot.title).match(/^\[月繳(\d+)堂\]/);
   var tariff = groupTariff_(monthly ? 'monthly' : 'single', time[1], time[2], monthly ? Number(monthly[1]) : 4);
-  return tariff && Number(slot.prices[1]) === tariff.price ? tariff : null;
+  return tariff && (monthly || Number(slot.prices[1]) === tariff.price) ? tariff : null;
 }
 
 function money_(value) {
@@ -494,16 +529,16 @@ function pricingPreview_(payload) {
   // 新增表單以完整日期選擇當月星期；堂數由後端重新計算，不採信前端 count。
   var count = 4;
   if (payload.mode === 'monthly') {
-    if (!dates.length) return { tariff: null, prices: {}, coachDefaults: coachDefaults };
+    if (!dates.length) return { tariff: null, prices: {}, coachDefaults: coachDefaults, monthlyUniformPricingVersion: 1 };
     var day = new Date(dates[0] + 'T00:00:00Z'), month = day.getUTCMonth(), weekday = day.getUTCDay();
     count = 0;
     for (var i = 1; i <= 31; i++) { var date = new Date(Date.UTC(day.getUTCFullYear(), month, i)); if (date.getUTCMonth() !== month) break; if (date.getUTCDay() === weekday) count++; }
   }
   var tariff = groupTariff_(payload.mode, payload.startTime, payload.endTime, count);
-  var base = payload.basePrice != null ? money_(payload.basePrice) : tariff ? tariff.price : null;
+  var base = payload.mode === 'monthly' ? (tariff ? tariff.price : null) : payload.basePrice != null ? money_(payload.basePrice) : tariff ? tariff.price : null;
   var prices = {};
-  if (base !== null) [1, 2, 3, 4, 5].forEach(function(level) { prices[level] = level === 1 ? base : Math.round(base * getVIPDiscount_(level)); });
-  return { tariff: tariff, prices: prices, coachDefaults: coachDefaults };
+  if (base !== null) [1, 2, 3, 4, 5].forEach(function(level) { prices[level] = payload.mode === 'monthly' || level === 1 ? base : Math.round(base * getVIPDiscount_(level)); });
+  return { tariff: tariff, prices: prices, coachDefaults: coachDefaults, monthlyUniformPricingVersion: 1 };
 }
 
 function studentGroupPriceKey_(lineId, studentId) { return JSON.stringify([lineId, studentId]); }
@@ -595,7 +630,11 @@ function bookingQuote_(ss, payload, actor, forDisplay, suppliedSlot, suppliedAcc
     var time = String(row[3] || '').match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
     var duration = time ? Number(time[3]) * 60 + Number(time[4]) - Number(time[1]) * 60 - Number(time[2]) : null;
     var personalRate = !/^\[月繳/.test(String(row[1]).trim()) && [60, 120].indexOf(duration) >= 0;
-    if (personalRate) {
+    var monthly = monthlySlotTariff_(row);
+    if (monthly) {
+      regular = monthly.regular;
+      unitPrice = monthly.price;
+    } else if (personalRate) {
       regular = duration === 60 ? GROUP_PRICE_DEFAULTS.hour1 : GROUP_PRICE_DEFAULTS.hour2;
       unitPrice = regular;
     } else {
@@ -1358,6 +1397,7 @@ function coachManagementAction_(ss, payload, actor) {
   var leaveSheet = ss.getSheetByName('請假補課');
   var linked = leaveSheet && leaveSheet.getDataRange().getValues().slice(1).some(function(row) { return String(row[5]) === payload.slotId || String(row[10]) === payload.slotId; });
   if (linked && [title,date,time,location].some(function(value,i) { return value !== (slot.row[i+1] instanceof Date ? slot.row[i+1].toISOString() : String(slot.row[i+1])); })) throw new Error('此課程已有請假補課紀錄，只能修改名額及收費，以保留原排程。');
+  normalizeMonthlySlotPrices_(payload, false);
   var prices = [1,2,3,4,5].map(function(level) {
     var value = payload.prices && payload.prices[level];
     if (value === '' || value === null || value === undefined || !isFinite(Number(value)) || Number(value) < 0) throw new Error('各等級收費需為非負數。');

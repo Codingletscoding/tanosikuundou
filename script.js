@@ -930,6 +930,7 @@
             fetchAPI({ action: 'getSlots', lineId: profile ? profile.userId : '' }).then(res => {
                 if (res.status !== 'success') { alert(res.message || '\u8ab2\u7a0b\u8b80\u53d6\u5931\u6557'); return; }
                 if (res.studentGroupPricingVersion !== 1) { alert('\u500b\u4eba\u5718\u8ab2\u50f9\u683c\u5c1a\u672a\u555f\u7528\uff0c\u8acb\u806f\u7d61\u7ba1\u7406\u54e1\u66f4\u65b0\u5f8c\u7aef\u3002'); return; }
+                if (res.monthlyUniformPricingVersion !== 1) { alert('\u6708\u7e73\u7d71\u4e00\u50f9\u683c\u5c1a\u672a\u555f\u7528\uff0c\u8acb\u5148\u66f4\u65b0\u5f8c\u7aef\u3002'); return; }
                 const validSlots = (res.slots || []).filter(s => s.id && s.title && s.date);
                 setSlots(validSlots);
                 setSupportsSharedCoach(res.coachAccountPricingVersion === 1);
@@ -1517,14 +1518,23 @@
             </section>;
         };
 
-        const EditSlotModal = ({ slot, onClose, onSuccess, teachingCoaches = [], supportsTeachingCoaches = false }) => {
+        const MonthlyTariffSummary = ({ tariffs }) => (
+            <div className="monthly-tariff-summary bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-2 text-sm text-blue-950">
+                <p className="font-bold">&#x6708;&#x7e73;&#x7d71;&#x4e00;&#x6536;&#x8cbb;&#xff0c;&#x4e0d;&#x5206;&#x6703;&#x54e1;&#x7b49;&#x7d1a;</p>
+                {Object.entries(tariffs || {}).flatMap(([duration, plans]) => Object.entries(plans).map(([count, tariff]) => <p key={`${duration}-${count}`}>{duration === '60' ? '\u4e00\u5c0f\u6642' : '\u4e8c\u5c0f\u6642'} {count} &#x5802;&#xff1a;&#x539f;&#x50f9; NT$ {tariff.regular}&#xff0c;&#x512a;&#x60e0;&#x50f9; NT$ {tariff.price}</p>))}
+            </div>
+        );
+
+        const EditSlotModal = ({ slot, onClose, onSuccess, teachingCoaches = [], supportsTeachingCoaches = false, monthlyTariffs = null }) => {
             const [form, setForm] = useState({ title: slot.title, date: slot.date, time: slot.time, location: slot.location || '', capacity: slot.capacity, prices: { ...slot.prices }, teachingCoachId: slot.teachingCoachId || '' });
             const [busy, setBusy] = useState(false);
             const busyRef = React.useRef(false);
             const [error, setError] = useState('');
+            const isMonthly = /^\[\u6708\u7e73/.test(String(slot.title).trim());
             const save = async event => {
                 event.preventDefault();
                 if (busyRef.current) return;
+                if (isMonthly && !monthlyTariffs) { setError('\u6708\u7e73\u7d71\u4e00\u50f9\u683c\u5c1a\u672a\u555f\u7528\uff0c\u8acb\u5148\u66f4\u65b0\u5f8c\u7aef\u3002'); return; }
                 busyRef.current = true; setBusy(true); setError('');
                 let saved = false;
                 try {
@@ -1547,7 +1557,7 @@
                         {[['title','\u8ab2\u7a0b\u540d\u7a31'],['date','\u4e0a\u8ab2\u65e5\u671f'],['time','\u4e0a\u8ab2\u6642\u9593'],['location','\u5834\u5730']].map(([key,label]) => <label key={key} className="block text-sm font-bold">{label}<input aria-label={label} required disabled={busy} value={form[key]} onChange={e => setForm(prev => ({...prev,[key]:e.target.value}))} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>)}
                         <label className="block text-sm font-bold">&#x7e3d;&#x540d;&#x984d;<input aria-label="&#x7e3d;&#x540d;&#x984d;" type="number" required min={Math.max(1, Number(slot.capacity)-Number(slot.remaining))} step="1" disabled={busy} value={form.capacity} onChange={e => setForm(prev=>({...prev,capacity:e.target.value}))} className="block w-full border rounded-lg p-3 mt-1" /></label>
                         <p className="text-sm text-blue-900 bg-blue-50 rounded-lg p-3">&#x55ae;&#x5802;&#x4e00;&#xff0f;&#x4e8c;&#x5c0f;&#x6642;&#x5718;&#x8ab2;&#x4f9d;&#x5b78;&#x54e1;&#x500b;&#x4eba;&#x50f9;&#x683c;&#x6536;&#x8cbb;&#xff1b;&#x8acb;&#x81f3;&#x300c;&#x5b78;&#x54e1;&#x540d;&#x55ae;&#x8207;&#x8cc7;&#x6599; &#x2192; &#x5718;&#x8ab2;&#x50f9;&#x683c;&#x300d;&#x8abf;&#x6574;&#xff0c;&#x672a;&#x8a2d;&#x5b9a;&#x4f7f;&#x7528;&#x539f;&#x50f9;&#x3002;</p>
-                        <fieldset className="grid grid-cols-1 sm:grid-cols-2 gap-3"><legend className="font-bold mb-2">&#x5404;&#x7b49;&#x7d1a;&#x6536;&#x8cbb;</legend>{[1,2,3,4,5].map(level=><label key={level} className="block text-sm">{LEVEL_NAMES[level]}<input aria-label={`${LEVEL_NAMES[level]}\u6536\u8cbb`} type="number" min="0" step="any" required disabled={busy} value={form.prices[level] ?? ''} onChange={e=>setForm(prev=>({...prev,prices:{...prev.prices,[level]:e.target.value}}))} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>)}</fieldset>
+                        {isMonthly ? <><MonthlyTariffSummary tariffs={monthlyTariffs} />{!slot.monthlyTariff?.fixed && <label className="block text-sm font-bold">&#x820a;&#x65b9;&#x6848;&#x7d71;&#x4e00;&#x6536;&#x8cbb;<input aria-label="&#x820a;&#x65b9;&#x6848;&#x7d71;&#x4e00;&#x6536;&#x8cbb;" type="number" min="0" step="0.01" required disabled={busy} value={form.prices[1] ?? ''} onChange={event => setForm(previous => ({ ...previous, prices: { ...previous.prices, 1: event.target.value } }))} className="block w-full border rounded-lg p-3 mt-1" /></label>}</> : (<fieldset className="grid grid-cols-1 sm:grid-cols-2 gap-3"><legend className="font-bold mb-2">&#x5404;&#x7b49;&#x7d1a;&#x6536;&#x8cbb;</legend>{[1,2,3,4,5].map(level=><label key={level} className="block text-sm">{LEVEL_NAMES[level]}<input aria-label={`${LEVEL_NAMES[level]}\u6536\u8cbb`} type="number" min="0" step="any" required disabled={busy} value={form.prices[level] ?? ''} onChange={e=>setForm(prev=>({...prev,prices:{...prev.prices,[level]:e.target.value}}))} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>)}</fieldset>)}
                         <div className="flex gap-3"><button type="button" disabled={busy} onClick={onClose} className="flex-1 min-w-0 border rounded-lg p-3">&#x53d6;&#x6d88;</button><button type="submit" disabled={busy} className="flex-1 min-w-0 bg-blue-700 text-white rounded-lg p-3 font-bold disabled:opacity-50">{busy?'\u5132\u5b58\u4e2d...':'\u5132\u5b58\u4fee\u6539'}</button></div>
                     </form>
                 </div>
@@ -1749,8 +1759,8 @@
             };
             return <section aria-labelledby={`coach-${kind}-registration-title`} className="bg-sky-50 border border-sky-200 rounded-2xl p-4 md:p-6">
                 <h2 id={`coach-${kind}-registration-title`} className="font-bold text-lg text-sky-950 mb-2">{title}</h2>
-                <p className="text-sm text-sky-900 mb-4">{isMonthly ? '\u9078\u64c7\u5df2\u8a3b\u518a\u5b78\u54e1\uff0c\u4f9d\u6708\u7e73\u65b9\u6848\u8a08\u8cbb\uff1b\u767b\u8a18\u5f8c\u70ba\u5be9\u6838\u4e2d\uff0c\u78ba\u8a8d\u6536\u6b3e\u5f8c\u518d\u6838\u51c6\u3002' : '\u9078\u64c7\u5df2\u8a3b\u518a\u5b78\u54e1\uff0c\u4f9d\u5404\u5b78\u54e1\u7684\u500b\u4eba\u5718\u8ab2\u50f9\u683c\u8a08\u8cbb\uff1b\u672a\u8a2d\u5b9a\u4f7f\u7528\u539f\u50f9\u3002\u767b\u8a18\u5f8c\u70ba\u5be9\u6838\u4e2d\uff0c\u78ba\u8a8d\u6536\u6b3e\u5f8c\u518d\u6838\u51c6\u3002'}</p>
-                {!enabled && <p role="status" className="text-sm text-amber-800 mb-4">&#x55ae;&#x5802;&#x4ee3;&#x767b;&#x8a18;&#x5c1a;&#x672a;&#x555f;&#x7528;&#xff0c;&#x8acb;&#x806f;&#x7d61;&#x7ba1;&#x7406;&#x54e1;&#x66f4;&#x65b0;&#x7cfb;&#x7d71;&#x3002;</p>}
+                <p className="text-sm text-sky-900 mb-4">{isMonthly ? '\u9078\u64c7\u5df2\u8a3b\u518a\u5b78\u54e1\uff0c\u4f9d\u6708\u7e73\u65b9\u6848\u7d71\u4e00\u8a08\u8cbb\uff0c\u4e0d\u5206\u6703\u54e1\u7b49\u7d1a\uff1b\u767b\u8a18\u5f8c\u70ba\u5be9\u6838\u4e2d\uff0c\u78ba\u8a8d\u6536\u6b3e\u5f8c\u518d\u6838\u51c6\u3002' : '\u9078\u64c7\u5df2\u8a3b\u518a\u5b78\u54e1\uff0c\u4f9d\u5404\u5b78\u54e1\u7684\u500b\u4eba\u5718\u8ab2\u50f9\u683c\u8a08\u8cbb\uff1b\u672a\u8a2d\u5b9a\u4f7f\u7528\u539f\u50f9\u3002\u767b\u8a18\u5f8c\u70ba\u5be9\u6838\u4e2d\uff0c\u78ba\u8a8d\u6536\u6b3e\u5f8c\u518d\u6838\u51c6\u3002'}</p>
+                {!enabled && <p role="status" className="text-sm text-amber-800 mb-4">{isMonthly ? '\u6708\u7e73\u7d71\u4e00\u50f9\u683c\u5c1a\u672a\u555f\u7528\uff0c\u8acb\u5148\u66f4\u65b0\u5f8c\u7aef\u3002' : '\u55ae\u5802\u4ee3\u767b\u8a18\u5c1a\u672a\u555f\u7528\uff0c\u8acb\u806f\u7d61\u7ba1\u7406\u54e1\u66f4\u65b0\u7cfb\u7d71\u3002'}</p>}
                 <form onSubmit={submit} className="coach-monthly-form space-y-4">
                     <label className="block font-bold">&#x5b78;&#x54e1;&#x5e33;&#x865f;<select aria-label={isMonthly ? '\u4ee3\u767b\u8a18\u5b78\u54e1\u5e33\u865f' : '\u55ae\u5802\u4ee3\u767b\u8a18\u5b78\u54e1\u5e33\u865f'} disabled={busy} required value={lineId} onChange={e => { const next = accounts.find(account => account.lineId === e.target.value); setLineId(e.target.value); setStudentIds((next?.students || []).map(student => student.studentId || '')); setMessage(''); setError(''); }} className="block w-full border p-3 rounded-lg mt-1 bg-white"><option value="">&#x8acb;&#x9078;&#x64c7;&#x5b78;&#x54e1;&#x5e33;&#x865f;</option>{accounts.map(account => <option key={account.lineId} value={account.lineId}>{account.students.map(student => student.name + (student.nickname ? `\uff08${student.nickname}\uff09` : '')).join('\u3001')}</option>)}</select></label>
                     {account && <fieldset disabled={busy} className="border rounded-lg p-3 bg-white"><legend className="font-bold">&#x53c3;&#x52a0;&#x5b78;&#x751f;</legend>{account.students.map((student, index) => <label key={student.studentId || index} className="flex gap-2 items-center p-2"><input type="checkbox" checked={studentIds.includes(student.studentId || '')} onChange={e => setStudentIds(previous => e.target.checked ? [...previous, student.studentId || ''] : previous.filter(id => id !== (student.studentId || '')))} />{student.name}{student.nickname ? `\uff08${student.nickname}\uff09` : ''}</label>)}</fieldset>}
@@ -1776,6 +1786,7 @@
           const [members, setMembers] = useState([]);
           const [slots, setSlots] = useState([]);
           const [supportsSingleRegistration, setSupportsSingleRegistration] = useState(false);
+          const [monthlyTariffs, setMonthlyTariffs] = useState(null);
           const [teachingCoaches, setTeachingCoaches] = useState([]);
           const [supportsTeachingCoaches, setSupportsTeachingCoaches] = useState(false);
           const [dataError, setDataError] = useState('');
@@ -1801,6 +1812,7 @@
             fetchAPI({ action: 'getPricingPreview', mode: form.mode, startTime: form.startTime, endTime: form.endTime, date: form.date }).then(result => {
                 if (request !== pricingRequest.current) return;
                 if (result.status !== 'success') { setDataError(result.message || '\u7121\u6cd5\u8b80\u53d6\u5f8c\u7aef\u50f9\u683c\u5efa\u8b70\uff0c\u8acb\u7a0d\u5f8c\u518d\u8a66\u3002'); return; }
+                if (form.mode === 'monthly' && result.monthlyUniformPricingVersion !== 1) { setTariff(null); setDataError('\u6708\u7e73\u7d71\u4e00\u50f9\u683c\u5c1a\u672a\u555f\u7528\uff0c\u8acb\u5148\u66f4\u65b0\u5f8c\u7aef\u3002'); return; }
                 setTariff(result.tariff);
                 setForm(prev => ({ ...prev, ...(form.mode !== 'coach' ? { prices: Object.fromEntries([1,2,3,4,5].map(level => [level, result.prices[level] ?? ''])) } : {}), coachBase1v1: prev.coachBase1v1 || String(result.coachDefaults.oneToOne), coachBase1v2: prev.coachBase1v2 || String(result.coachDefaults.oneToTwo) }));
             }).finally(() => { if (request === pricingRequest.current) setPricingBusy(false); });
@@ -1817,6 +1829,7 @@
                 setMembers(bRes.members || []);
                 setSlots((sRes.slots || []).filter(s => s.id && s.title && s.date));
                 setSupportsSingleRegistration(sRes.coachSingleRegistrationVersion === 1);
+                setMonthlyTariffs(sRes.monthlyUniformPricingVersion === 1 ? sRes.monthlyGroupTariffs : null);
                 onPaymentsChanged();
             }).catch(error => { setDataError(error.message); throw error; });
           };
@@ -1836,6 +1849,7 @@
             let times = [`${form.startTime} - ${form.endTime}`];
             let finalTitle = form.title, finalCapacity = form.capacity, finalLocation = form.location;
             try {
+                if (form.mode === 'monthly' && (!monthlyTariffs || !tariff)) throw new Error('\u8acb\u5148\u78ba\u8a8d\u6708\u7e73\u7d71\u4e00\u50f9\u683c\u53ca\u4e0a\u8ab2\u65e5\u671f\u3002');
                 if (form.mode === 'monthly') finalTitle = `[\u6708\u7e73${monthlyInfo.count}\u5802] ${form.title}`;
                 else if (form.mode === 'coach') {
                     if (!allowedLocations.length) throw new Error('\u8acb\u81f3\u5c11\u9078\u64c7\u4e00\u500b\u5141\u8a31\u5b78\u751f\u9810\u7d04\u7684\u5834\u5730\uff01');
@@ -1979,7 +1993,7 @@
               <TeachingCoachesManager coaches={teachingCoaches} enabled={supportsTeachingCoaches} onSuccess={fetchData} />
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 <CoachGroupRegistration kind="single" members={members} slots={slots} onSuccess={fetchData} enabled={supportsSingleRegistration} />
-                <CoachGroupRegistration kind="monthly" members={members} slots={slots} onSuccess={fetchData} />
+                <CoachGroupRegistration kind="monthly" members={members} slots={slots} onSuccess={fetchData} enabled={!!monthlyTariffs} />
               </div>
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
                 <div><h2 className="font-bold text-amber-950">&#x6708;&#x7e73;&#x8acb;&#x5047;&#x8207;&#x88dc;&#x8ab2;</h2><p className="text-sm text-amber-900">&#x63d0;&#x524d;&#x81f3;&#x5c11; 14 &#x5929;&#x767b;&#x8a18;&#x8acb;&#x5047;&#xff0c;&#x518d;&#x5b89;&#x6392;&#x5176;&#x4ed6;&#x88dc;&#x8ab2;&#x65e5;&#x671f;&#x3002;</p></div>
@@ -2054,10 +2068,10 @@
                     {form.mode !== 'coach' ? (
                         <div className="space-y-4">
                             <div><label className="block text-sm mb-1.5 text-gray-700 font-bold">&#x7e3d;&#x540d;&#x984d;</label><input type="number" required min="1" className="w-full border border-gray-300 p-3 rounded-lg text-base" value={form.capacity} onChange={e=>setForm({...form, capacity: e.target.value})} /></div>
-                            {form.mode === 'single' && tariff ? <p className="text-sm bg-blue-50 text-blue-900 rounded-lg p-3">&#x55ae;&#x5802;&#x5718;&#x8ab2;&#x539f;&#x50f9; NT$ {tariff.price}&#x3002;&#x5b78;&#x54e1;&#x512a;&#x60e0;&#x50f9;&#x8acb;&#x81f3;&#x300c;&#x5b78;&#x54e1;&#x540d;&#x55ae;&#x8207;&#x8cc7;&#x6599; &#x2192; &#x5718;&#x8ab2;&#x50f9;&#x683c;&#x300d;&#x8a2d;&#x5b9a;&#xff1b;&#x672a;&#x8a2d;&#x5b9a;&#x4f7f;&#x7528;&#x539f;&#x50f9;&#x3002;</p> : (
+                            {form.mode === 'monthly' ? <><MonthlyTariffSummary tariffs={monthlyTariffs} />{tariff ? <p className="text-sm text-emerald-800">&#x672c;&#x65b9;&#x6848;&#x5171; {tariff.count} &#x5802;&#xff0c;&#x539f;&#x50f9; NT$ {tariff.regular}&#xff0c;&#x512a;&#x60e0;&#x50f9; NT$ {tariff.price}&#x3002;</p> : <p className="text-sm text-amber-800">&#x8acb;&#x9078;&#x64c7;&#x4e00;&#xff0f;&#x4e8c;&#x5c0f;&#x6642;&#x53ca;&#x542b;&#x56db;&#xff0f;&#x4e94;&#x5802;&#x7684;&#x6708;&#x7e73;&#x65e5;&#x671f;&#x3002;</p>}</> : form.mode === 'single' && tariff ? <p className="text-sm bg-blue-50 text-blue-900 rounded-lg p-3">&#x55ae;&#x5802;&#x5718;&#x8ab2;&#x539f;&#x50f9; NT$ {tariff.price}&#x3002;&#x5b78;&#x54e1;&#x512a;&#x60e0;&#x50f9;&#x8acb;&#x81f3;&#x300c;&#x5b78;&#x54e1;&#x540d;&#x55ae;&#x8207;&#x8cc7;&#x6599; &#x2192; &#x5718;&#x8ab2;&#x50f9;&#x683c;&#x300d;&#x8a2d;&#x5b9a;&#xff1b;&#x672a;&#x8a2d;&#x5b9a;&#x4f7f;&#x7528;&#x539f;&#x50f9;&#x3002;</p> : (
                             <div className="bg-gray-50 p-4 rounded-xl border space-y-3 mt-4">
                               <h3 className="text-sm font-bold text-gray-700 border-b pb-2">&#x5404;&#x7b49;&#x7d1a;&#x6536;&#x8cbb; (NT$)</h3>
-                              {tariff ? <p className="text-sm text-emerald-800">&#x4e00;&#x822c;&#x6703;&#x54e1;&#xff1a;{form.mode === 'monthly' ? `4 \u5802\u539f\u50f9 NT$${tariff.regular}\uff0c\u512a\u60e0 NT$${tariff.price}` : `\u55ae\u5802 NT$${tariff.price}`}&#x3002;&#x5df2;&#x5e36;&#x5165;&#x50f9;&#x683c;&#xff0c;&#x53ef;&#x624b;&#x52d5;&#x8abf;&#x6574;&#x3002;</p> : <p className="text-sm text-amber-800">&#x516c;&#x544a;&#x50f9;&#x683c;&#x9069;&#x7528; 1&#xff0f;2 &#x5c0f;&#x6642;&#xff0c;&#x4ee5;&#x53ca;&#x6708;&#x7e73; 4 &#x5802;&#x3002;&#x5176;&#x4ed6;&#x6642;&#x9577;&#x6216;&#x5802;&#x6578;&#x8acb;&#x624b;&#x52d5;&#x586b;&#x5beb;&#x50f9;&#x683c;&#xff0c;&#x7cfb;&#x7d71;&#x4e0d;&#x81ea;&#x52d5;&#x5957;&#x7528; 4 &#x5802;&#x512a;&#x60e0;&#x3002;</p>}
+                              <p className="text-sm text-amber-800">&#x5176;&#x4ed6;&#x55ae;&#x5802;&#x6642;&#x9577;&#x8acb;&#x586b;&#x5beb;&#x5404;&#x7b49;&#x7d1a;&#x6536;&#x8cbb;&#x3002;</p>
                               {[1,2,3,4,5].map(lvl => (
                                 <div key={lvl} className="flex items-center text-base md:text-sm">
                                     <span className="w-16 shrink-0 font-bold text-gray-600">{LEVEL_NAMES[lvl]}</span>
@@ -2088,7 +2102,7 @@
                         <p className="font-bold">&#x6bcf;&#x5c0f;&#x6642;&#x81ea;&#x52d5;&#x5206;&#x5272;&#xff0c;&#x7368;&#x7acb;&#x9810;&#x7d04;</p>
                         {coachHoursError ? <p role="alert" className="text-red-700 mt-2">{coachHoursError}</p> : <><p className="mt-2">&#x5c07;&#x5efa;&#x7acb; {coachHours.length} &#x500b;&#x6642;&#x6bb5;&#xff0c;&#x6bcf;&#x6bb5; 1 &#x5c0f;&#x6642;&#x3001;&#x5404; 1 &#x500b;&#x540d;&#x984d;&#x3002;&#x4ee5;&#x4e0a;&#x50f9;&#x683c;&#x70ba;&#x6bcf;&#x5c0f;&#x6642;&#x6559;&#x7df4;&#x8cbb;&#xff0c;&#x4e0d;&#x542b;&#x5834;&#x5730;&#x8cbb;&#xff0c;&#x5b78;&#x54e1;&#x9808;&#x81ea;&#x884c;&#x9810;&#x7d04;&#x5834;&#x5730;&#x3002;</p><ul className="mt-2 space-y-1">{coachHours.map(time => <li key={time}>{time}</li>)}</ul></>}
                     </div>}
-                    <button type="submit" disabled={loading || pricingBusy || !supportsTeachingCoaches || !teachingCoaches.some(coach => coach.id === form.teachingCoachId) || (form.mode === 'coach' && !!coachHoursError)} className="w-full bg-slate-800 text-white p-4 rounded-lg font-bold text-lg mt-6 active:scale-[0.98] transition">&#x4e0a;&#x67b6;&#x6642;&#x6bb5;</button>
+                    <button type="submit" disabled={loading || pricingBusy || (form.mode === 'monthly' && (!monthlyTariffs || !tariff)) || !supportsTeachingCoaches || !teachingCoaches.some(coach => coach.id === form.teachingCoachId) || (form.mode === 'coach' && !!coachHoursError)} className="w-full bg-slate-800 text-white p-4 rounded-lg font-bold text-lg mt-6 active:scale-[0.98] transition">&#x4e0a;&#x67b6;&#x6642;&#x6bb5;</button>
                   </form>
                 </div>
 
@@ -2186,7 +2200,7 @@
                     </div>
                 </div>
               </div>
-              {editingSlot && <EditSlotModal slot={editingSlot} teachingCoaches={teachingCoaches} supportsTeachingCoaches={supportsTeachingCoaches} onClose={() => setEditingSlot(null)} onSuccess={fetchData} />}
+              {editingSlot && <EditSlotModal slot={editingSlot} monthlyTariffs={monthlyTariffs} teachingCoaches={teachingCoaches} supportsTeachingCoaches={supportsTeachingCoaches} onClose={() => setEditingSlot(null)} onSuccess={fetchData} />}
               {showMonthlyLeave && <MonthlyLeaveModal bookings={bookings} slots={slots} onClose={() => setShowMonthlyLeave(false)} onSuccess={fetchData} />}
               {/* \u5171\u7528\u5beb\u65e5\u8a8c\u5f48\u7a97 (\u50b3\u5165 targetData={lineId, name, bookingId}) */}
               {logModalTarget && <LogFormModal targetData={logModalTarget} onClose={() => setLogModalTarget(null)} onSuccess={() => fetchData().catch(() => {})} />}
