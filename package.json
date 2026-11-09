@@ -2,6 +2,7 @@
   "name": "rakudou-frontend-tools",
   "private": true,
   "scripts": {
+    "encode:banner": "node tools/encode-banner.cjs",
     "encode:frontend": "node tools/encode-frontend.cjs",
     "check:frontend": "node tools/encode-frontend.cjs --check"
   },

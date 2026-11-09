@@ -1,0 +1,23 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+
+const root = path.join(__dirname, '..');
+const input = process.argv[2];
+if (!input) throw new Error('Usage: node tools/encode-banner.cjs /path/to/banner.png');
+const original = fs.readFileSync(input);
+if (!original.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error('Input must be a PNG image.');
+let source = fs.readFileSync(path.join(root, 'script.js'), 'utf8');
+const maskMatch = source.match(/const BRAND_BANNER_MASK = (\[[\d, ]+\]);/);
+if (!maskMatch) throw new Error('Cannot find the banner encoding mask.');
+const mask = JSON.parse(maskMatch[1]);
+if (mask.length !== 32 || mask.some(value => !Number.isInteger(value) || value < 0 || value > 255)) throw new Error('Invalid encoding mask.');
+if (!/const BRAND_BANNER_ASSET = '[^']+';/.test(source)) throw new Error('Cannot find the banner asset path.');
+const encoded = Buffer.from(original);
+for (let i = 0; i < encoded.length; i++) encoded[i] ^= mask[i % mask.length];
+const name = 'r-' + crypto.createHash('sha256').update(encoded).digest('hex').slice(0, 20) + '.bin';
+source = source.replace(/const BRAND_BANNER_ASSET = '[^']+';/, "const BRAND_BANNER_ASSET = './assets/" + name + "';");
+fs.mkdirSync(path.join(root, 'assets'), { recursive: true });
+fs.writeFileSync(path.join(root, 'assets', name), encoded);
+fs.writeFileSync(path.join(root, 'script.js'), source);
+console.log('Encoded banner written to assets/' + name + '; frontend reference updated.');

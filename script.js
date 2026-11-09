@@ -571,9 +571,35 @@
             );
         };
 
-        const BrandBanner = () => (
-            <div role="img" aria-label="&#x6a02;&#x52d5;&#x7fbd;&#x7403;&#xff0c;&#x6a02;&#x5728;&#x904b;&#x52d5;&#xff0c;&#x52d5;&#x51fa;&#x5065;&#x5eb7;" className="brand-banner w-full shrink-0" style={{ aspectRatio: '8 / 3', backgroundImage: 'url("./jj.png")', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }} />
-        );
+        const BRAND_BANNER_ASSET = './assets/r-6fac621453c2ef47d6dd.bin';
+        const BRAND_BANNER_MASK = [211, 47, 130, 93, 18, 237, 61, 176, 74, 199, 8, 151, 229, 53, 116, 32, 165, 14, 243, 87, 194, 105, 42, 218, 7, 158, 65, 240, 123, 29, 184, 96];
+        let brandBannerPromise;
+        const loadBrandBanner = () => {
+            if (!brandBannerPromise) {
+                brandBannerPromise = fetch(BRAND_BANNER_ASSET).then(response => {
+                    if (!response.ok) throw new Error('Banner resource unavailable.');
+                    return response.arrayBuffer();
+                }).then(buffer => {
+                    const bytes = new Uint8Array(buffer);
+                    for (let i = 0; i < bytes.length; i++) bytes[i] ^= BRAND_BANNER_MASK[i % BRAND_BANNER_MASK.length];
+                    const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+                    if (!signature.every((value, index) => bytes[index] === value)) throw new Error('Invalid banner resource.');
+                    return URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+                }).catch(error => { brandBannerPromise = null; throw error; });
+            }
+            return brandBannerPromise;
+        };
+        const BrandBanner = () => {
+            const [source, setSource] = useState('');
+            useEffect(() => {
+                let active = true;
+                loadBrandBanner().then(url => { if (active) setSource(url); }).catch(() => {});
+                return () => { active = false; };
+            }, []);
+            return (
+                <div role="img" aria-label="&#x6a02;&#x52d5;&#x7fbd;&#x7403;&#xff0c;&#x6a02;&#x5728;&#x904b;&#x52d5;&#xff0c;&#x52d5;&#x51fa;&#x5065;&#x5eb7;" className="brand-banner w-full shrink-0" style={{ aspectRatio: '8 / 3', backgroundImage: source ? `url("${source}")` : 'none', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }} />
+            );
+        };
 
         const studentNickname = (student, index = 0) => {
             const nickname = typeof student?.nickname === 'string' ? student.nickname.trim() : '';
