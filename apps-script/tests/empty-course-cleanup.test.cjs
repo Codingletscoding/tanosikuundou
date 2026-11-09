@@ -11,7 +11,7 @@ function fixture(options = {}) {
   let now = options.now ?? cutoff, locked = false, locks = 0, releases = 0, deletions = 0;
   const rows = {
     '可用時段': [['headers'], course()], '預約名單': [['headers']],
-    '會員資料': [['headers']], '訓練日誌': [['headers']], '請假補課': [['headers']]
+    '會員資料': [['headers'], ['legacy','學生',20,'0912345678',0,1], ['second','第二位',20,'0912345678',0,1]], '訓練日誌': [['headers']], '請假補課': [['headers']]
   };
   const props = { EMPTY_COURSE_SPREADSHEET_ID: 'sheet-id' }, opened = [];
   const scopes = options.scopes ?? manifest.oauthScopes;
@@ -36,6 +36,7 @@ function fixture(options = {}) {
   }
   const context = {
     Date: Clock, console: { info() {} },
+    UrlFetchApp: { fetch: (url, request) => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify(url.includes('/verify?') ? { client_id:'2012115245', expires_in:3600 } : { userId: request?.headers?.Authorization==='Bearer coach-token' ? 'U3a76953e63578ec8607297044ac54e5a' : request?.headers?.Authorization==='Bearer second-token' ? 'second' : 'legacy' }) }) },
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: id => { requireScope('spreadsheets'); opened.push(id); return ss; }, flush() {} },
     LockService: { getScriptLock: () => ({
       tryLock: () => { locks++; if (options.busy) return false; assert(!locked); locked = true; options.onLock?.(rows); return true; },
@@ -57,7 +58,7 @@ function fixture(options = {}) {
   };
   vm.createContext(context); vm.runInContext(source, context);
   context.monthlyVerifyCoach_ = token => { if (token !== 'coach-token') throw Error('unauthorized'); };
-  const run = payload => JSON.parse(context.doPost({ postData: { contents: JSON.stringify(payload) } }).text);
+  const run = payload => JSON.parse(context.doPost({ postData: { contents: JSON.stringify({accessToken:'student-token',...payload}) } }).text);
   return { rows, props, opened, triggers, context, run, ss,
     setNow: value => { now = value; }, state: () => ({ locked, locks, releases }) };
 }
@@ -128,7 +129,7 @@ test('invalid or ambiguous dates and times never cause deletion', () => {
 });
 test('read APIs clean under the shared lock and omit removed courses', () => {
   for (const action of ['getSlots', 'getCoachData']) {
-    const f = fixture(); const result = f.run({ action });
+    const f = fixture(); const result = f.run({ action, accessToken:'coach-token' });
     assert.equal(result.status, 'success'); assert.equal(f.rows['可用時段'].length, 1);
     if (action === 'getSlots') assert.equal(result.slots.length, 0);
     assert.deepEqual(f.state(), { locked: false, locks: 1, releases: 1 });
@@ -152,7 +153,7 @@ test('classes with existing reservations can still accept an additional student 
   const f = fixture();
   f.rows['預約名單'].push([0, 'empty', 'first', '第一位', 300, '預約成功']);
   f.rows['可用時段'][1][6] = 4;
-  assert.equal(f.run({ action: 'bookClass', slotId: 'empty', lineId: 'second', name: '第二位', paidPrice: 300 }).status, 'success');
+  assert.equal(f.run({ action: 'bookClass', slotId: 'empty', lineId: 'second', accessToken:'second-token', name: '第二位', paidPrice: 300 }).status, 'success');
   assert.equal(f.rows['預約名單'].length, 3); assert.equal(f.rows['可用時段'][1][6], 3);
 });
 test('makeup assignment cannot create the first reservation for an expired empty class', () => {

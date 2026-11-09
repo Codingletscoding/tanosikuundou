@@ -13,6 +13,7 @@ function fixture(options = {}) {
   const sheet=name=>!rows[name]?null:{
     getDataRange:()=>({getValues:()=>rows[name].map(row=>row.slice())}),
     appendRow:row=>{assert(locked);if(name==='歷史預約紀錄'&&rows[name].length&&failAppend){failAppend=false;throw Error('append failed');}rows[name].push(row.slice());},
+    deleteRow:index=>{assert(locked);rows[name].splice(index-1,1);},
     getRange:(r,c)=>({setValue:v=>{assert(locked);rows[name][r-1][c-1]=v;},setValues:values=>{assert(locked);values.forEach((cells,y)=>cells.forEach((v,x)=>rows[name][r+y-1][c+x-1]=v));}})
   };
   const ss={getSheetByName:sheet,insertSheet:name=>{assert(locked);rows[name]=[];return sheet(name);}};
@@ -54,7 +55,7 @@ test('requires a real token and an exact existing account/student pair, includin
 });
 test('does not expose unrelated registration details in historical options or records',()=>{
   const f=fixture();const result=f.run({action:'getHistoricalBookingOptions'});
-  assert.deepEqual(Object.keys(result).sort(),['historicalBookingVersion','status','teachingCoaches']);assert.equal(f.rows['歷史預約紀錄'],undefined);
+  assert.deepEqual(Object.keys(result).sort(),['historicalBookingVersion','securityVersion','status','teachingCoaches']);assert.equal(f.rows['歷史預約紀錄'],undefined);
   f.add();const record=f.run({action:'getStudentStats',lineId:'account',studentId:'b'}).bookingHistory[0];
   for(const key of ['phone','birthDate','injuryHistory','accessToken','requestId'])assert.equal(record[key],undefined);
 });

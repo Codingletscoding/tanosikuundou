@@ -116,7 +116,7 @@ test('linked course schedule cannot change, capacity and prices can',()=>{
 
 test('coach cash booking always starts unpaid even if caller claims received',()=>{
  const f=fixture({targetTitle:'[專屬教練課] 1v1:1000|1v2:1500'});
- assert.equal(f.run({action:'bookClass',slotId:'target',lineId:'student',name:'學生',paidPrice:1000,paymentCode:'現金已收'}).status,'success');
+ assert.equal(f.run({action:'bookClass',slotId:'target',lineId:'student',name:'學生',location:'補課場地',paidPrice:1000,paymentCode:'現金已收'}).status,'success');
  const row=f.rows['預約名單'][2];assert.equal(row[6],'現場現金');assert.equal(row[5],'審核中');
 });
 test('cash collection requires approval and is idempotent; student payment edits cannot change it',()=>{

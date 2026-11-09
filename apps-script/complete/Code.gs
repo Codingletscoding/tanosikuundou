@@ -18,6 +18,38 @@ const ADMIN_LINE_IDS = ["U3a76953e63578ec8607297044ac54e5a"];
 
 // Server-owned channel for this LIFF app; configured overrides exclude the known wrong legacy value.
 const DEFAULT_LINE_LOGIN_CHANNEL_ID = '2012115245';
+const API_SECURITY_VERSION = 2;
+const ADMIN_API_ACTIONS = ['getCoachData', 'getPaymentSummary', 'getPricingPreview', 'getStudentProfile', 'getHistoricalBookingOptions', 'coachAddHistoricalBooking', 'coachRegisterMonthly', 'coachRegisterSingle', 'addSlot', 'deleteSlot', 'approveBooking', 'addLog', 'deleteBooking', 'getMonthlyLeaves', 'registerMonthlyLeave', 'arrangeMonthlyMakeup', 'cancelBooking', 'updateSlot', 'confirmCashPayment', 'addTeachingCoach', 'updateTeachingCoach'];
+const MEMBER_API_ACTIONS = ['checkUser', 'registerUser', 'completeAccountRegistration', 'getSlots', 'getBookingQuote', 'bookClass', 'getStudentStats', 'updatePayment'];
+
+function authenticatedActor_(accessToken) {
+  if (typeof accessToken !== 'string' || !accessToken) throw new Error('請重新登入 LINE。');
+  var verification = monthlyFetchLine_('https://api.line.me/oauth2/v2.1/verify?access_token=' + encodeURIComponent(accessToken), { muteHttpExceptions: true });
+  if (verification.getResponseCode() !== 200) throw new Error('LINE 登入已失效，請重新登入。');
+  var token;
+  try { token = JSON.parse(verification.getContentText()); } catch (error) { throw new Error('無法驗證 LINE 登入，請重新登入。'); }
+  assertLineLoginToken_(token, lineLoginChannelId_());
+  var response = monthlyFetchLine_('https://api.line.me/v2/profile', { headers: { Authorization: 'Bearer ' + accessToken }, muteHttpExceptions: true });
+  if (response.getResponseCode() !== 200) throw new Error('無法驗證 LINE 帳號，請重新登入。');
+  var profile;
+  try { profile = JSON.parse(response.getContentText()); } catch (error) { throw new Error('無法驗證 LINE 帳號，請重新登入。'); }
+  if (!profile || typeof profile.userId !== 'string' || !profile.userId) throw new Error('無法驗證 LINE 帳號，請重新登入。');
+  return { lineId: profile.userId, isAdmin: ADMIN_LINE_IDS.indexOf(profile.userId) !== -1 };
+}
+
+function authorizeRequest_(payload) {
+  var action = payload.action;
+  if (ADMIN_API_ACTIONS.indexOf(action) < 0 && MEMBER_API_ACTIONS.indexOf(action) < 0) throw new Error('不支援的操作：' + String(action || '未提供'));
+  var actor = authenticatedActor_(payload.accessToken);
+  if (ADMIN_API_ACTIONS.indexOf(action) >= 0 && !actor.isAdmin) throw new Error('僅教練可執行此操作。');
+  if (MEMBER_API_ACTIONS.indexOf(action) >= 0 && action !== 'updatePayment') {
+    if (payload.lineId == null || payload.lineId === '') payload.lineId = actor.lineId;
+    if (typeof payload.lineId !== 'string') throw new Error('帳號格式不正確。');
+    var selfOnly = ['registerUser', 'completeAccountRegistration'].indexOf(action) >= 0;
+    if (payload.lineId !== actor.lineId && (selfOnly || !actor.isAdmin)) throw new Error('只能操作自己帳號的資料。');
+  }
+  return actor;
+}
 
 function lineLoginChannelId_() {
   const configured = String(PropertiesService.getScriptProperties().getProperty('LINE_LOGIN_CHANNEL_ID') || '').trim();
@@ -48,24 +80,29 @@ function doPost(e) {
       throw new Error("請求格式不正確。");
     }
     const action = payload.action;
+    // LINE 回傳的身分才是授權依據；不採信 lineId、isAdmin 或任何前端權限旗標。
+    const actor = authorizeRequest_(payload);
     const writeActions = ["registerUser", "completeAccountRegistration", "bookClass", "coachRegisterMonthly", "coachRegisterSingle", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking", "registerMonthlyLeave", "arrangeMonthlyMakeup", "cancelBooking", "updateSlot", "confirmCashPayment", "addTeachingCoach", "updateTeachingCoach"];
     if (writeActions.includes(action) || ['coachAddHistoricalBooking', 'getSlots', 'getCoachData'].includes(action)) {
       const candidate = LockService.getScriptLock();
       if (!candidate.tryLock(30000)) throw new Error("系統忙碌中，請稍後再試。");
       requestLock = candidate;
     }
-    if (action === "deleteBooking") verifyBookingDeletionCoach_(payload.accessToken);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) throw new Error("找不到試算表，請確認此 Apps Script 綁定在原本的試算表。");
+    if (action === 'updatePayment') {
+      const target = monthlyUniqueRow_(ss.getSheetByName(SHEET_BOOKINGS), 7, payload.bookingId, '訂單');
+      if (!actor.isAdmin && target.row[2] !== actor.lineId) throw new Error('只能修改自己帳號的付款資料。');
+    }
     if (payload.bookingId && ['approveBooking', 'updatePayment', 'addLog'].includes(action)) rejectCancelledBookingWrite_(ss, payload);
     let result = {};
 
-    if (action === 'checkUser' && ADMIN_LINE_IDS.includes(payload.lineId)) {
-      return ContentService.createTextOutput(JSON.stringify({ status: 'success', isAdmin: true, isRegistered: false, user: null })).setMimeType(ContentService.MimeType.JSON);
+    if (action === 'checkUser' && actor.isAdmin && payload.lineId === actor.lineId) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'success', isAdmin: true, isRegistered: false, user: null, securityVersion: API_SECURITY_VERSION })).setMimeType(ContentService.MimeType.JSON);
     }
 
     let sheetLogs = ss.getSheetByName(SHEET_LOGS);
-    if (!sheetLogs && (action === "addLog" || action === "getStudentStats" || action === "getCoachData")) {
+    if (!sheetLogs && action === "addLog") {
       sheetLogs = ss.insertSheet(SHEET_LOGS);
       sheetLogs.appendRow(["時間戳記", "LINE_ID", "姓名", "日期", "高遠球", "平抽", "挑球", "切球", "網前小球", "撲球", "殺球", "防守技術", "組合訓練", "日誌內容"]);
     }
@@ -82,17 +119,15 @@ function doPost(e) {
           break;
         }
       }
-      const isAdmin = ADMIN_LINE_IDS.includes(payload.lineId);
+      const isAdmin = actor.isAdmin && payload.lineId === actor.lineId;
       result = { status: "success", isRegistered: isRegistered, user: userData, isAdmin: isAdmin, accountRegistrationVersion: 1, registrationProfileVersion: 2 };
     } 
     
     else if (action === "getStudentProfile") {
-      monthlyVerifyCoach_(payload.accessToken);
       result = { status: 'success', profile: coachStudentProfile_(ss, payload) };
     }
 
     else if (action === 'getHistoricalBookingOptions' || action === 'coachAddHistoricalBooking') {
-      monthlyVerifyCoach_(payload.accessToken);
       result = action === 'getHistoricalBookingOptions'
         ? { status: 'success', historicalBookingVersion: 1, teachingCoaches: teachingCoaches_(ss) }
         : addHistoricalBooking_(ss, payload);
@@ -101,11 +136,11 @@ function doPost(e) {
     else if (action === "registerUser" || action === "completeAccountRegistration") {
       const sheet = ss.getSheetByName(SHEET_USERS);
       const students = validateAccountStudents_(payload);
+      students.forEach(student => safeSheetName_(student.name));
       const rows = sheet.getDataRange().getValues();
       const matches = rows.map((row, i) => i > 0 && row[0] === payload.lineId ? i : -1).filter(i => i > 0);
       let oldRow = null;
       if (action === 'completeAccountRegistration') {
-        verifyAccountOwner_(payload.accessToken, payload.lineId);
         if (matches.length !== 1) throw new Error('找不到唯一的帳號資料，請聯絡教練確認。');
         oldRow = rows[matches[0]];
         if (oldRow[6]) throw new Error('此帳號已完成學生資料登記，請重新登入。');
@@ -130,63 +165,63 @@ function doPost(e) {
       const data = sheet.getDataRange().getValues();
       const teachingCoaches = teachingCoaches_(ss);
       const coachNames = new Map(teachingCoaches.map(coach => [coach.id, coach.name]));
+      const account = accountFor_(ss, payload.lineId);
       const slots = [];
       for (let i = 1; i < data.length; i++) {
-        slots.push({
+        const slot = {
           id: data[i][0], title: data[i][1], date: data[i][2], time: data[i][3], location: data[i][4],
           capacity: data[i][5], remaining: data[i][6],
           teachingCoachId: data[0][12] === SLOT_TEACHING_COACH_HEADER ? String(data[i][12] || '') : '',
           teachingCoachName: data[0][12] === SLOT_TEACHING_COACH_HEADER ? (coachNames.get(String(data[i][12] || '')) || '') : '',
           prices: { 1: data[i][7], 2: data[i][8], 3: data[i][9], 4: data[i][10], 5: data[i][11] }
-        });
+        };
+        slot.availableLocations = privateLocations_(data[i]);
+        if (account) slot.priceQuote = bookingQuote_(ss, { lineId: payload.lineId, slotId: String(data[i][0]) }, actor, true, data[i], account);
+        if (!actor.isAdmin) {
+          delete slot.prices;
+          if (/^\[專屬教練課\]/.test(String(slot.title))) slot.title = '[專屬教練課]';
+        }
+        slots.push(slot);
       }
       result = { status: "success", slots: slots, coachAccountPricingVersion: 1, coachSingleRegistrationVersion: 1, teachingCoachesVersion: 1, teachingCoaches: teachingCoaches };
     }
 
     else if (action === 'addTeachingCoach' || action === 'updateTeachingCoach') {
-      monthlyVerifyCoach_(payload.accessToken);
       result = saveTeachingCoach_(ss, payload);
+    }
+
+    else if (action === 'getBookingQuote') {
+      result = { status: 'success', quote: bookingQuote_(ss, payload, actor, false) };
+    }
+
+    else if (action === 'getPricingPreview') {
+      result = { status: 'success', ...pricingPreview_(payload) };
+    }
+
+    else if (action === 'getPaymentSummary') {
+      result = { status: 'success', paymentSummary: paymentSummary_(ss, payload.month) };
     }
     
     else if (action === "bookClass" || action === "coachRegisterMonthly" || action === "coachRegisterSingle") {
       const coachMonthly = action === "coachRegisterMonthly";
       const coachSingle = action === "coachRegisterSingle";
       const coachRegistration = coachMonthly || coachSingle;
-      if (coachRegistration) monthlyVerifyCoach_(payload.accessToken);
       cleanupEmptyCoursesBeforeBooking_(ss, payload.slotId);
       validateBookingSlot_(ss, payload);
       const sheetBookings = ss.getSheetByName(SHEET_BOOKINGS);
       const sheetSlots = ss.getSheetByName(SHEET_SLOTS);
-      const userSheet = ss.getSheetByName(SHEET_USERS);
-      const account = userSheet && userSheet.getDataRange().getValues().slice(1).find(row => row[0] === payload.lineId);
-      if (!account && (payload.accountBooking || coachRegistration)) throw new Error('找不到帳號學生資料，請重新登入。');
-      let students = account ? accountStudents_(account) : [{ id: '', name: payload.name }];
+      const quote = bookingQuote_(ss, payload, actor, false);
+      const students = quote.students;
       const bookedSlot = monthlyUniqueRow_(sheetSlots, 0, payload.slotId, '課程');
-      if (coachRegistration) {
-        const title = String(bookedSlot.row[1]).trim();
-        if (coachMonthly && !/^\[月繳/.test(title)) throw new Error('教練代登記僅限月繳團課。');
-        if (coachSingle && /^\[(月繳|專屬教練課)/.test(title)) throw new Error('單堂代登記僅限單堂團課。');
-        if (!Array.isArray(payload.studentIds) || !payload.studentIds.length || new Set(payload.studentIds).size !== payload.studentIds.length || payload.studentIds.some(id => !students.some(student => student.id === id))) throw new Error('請選擇此帳號內有效且不重複的學生。');
-        students = students.filter(student => payload.studentIds.includes(student.id));
+      {
         const rows = sheetBookings.getDataRange().getValues();
-        if (rows.slice(1).some(row => row[1] === payload.slotId && row[2] === payload.lineId && row[5] !== '已取消' && students.some(student => studentMatches_(row[9], row[3], student)))) throw new Error(coachMonthly ? '所選學生已登記此月繳團課，請勿重複登記。' : '所選學生已登記此單堂團課，請勿重複登記。');
+        if (rows.slice(1).some(row => row[1] === payload.slotId && row[2] === payload.lineId && row[5] !== '已取消' && students.some(student => studentMatches_(row[9], row[3], student)))) throw new Error(coachMonthly ? '所選學生已登記此月繳團課，請勿重複登記。' : '此學員已預約此課程，請勿重複登記。');
       }
-      const isCoach = /^\[專屬教練課\]/.test(String(bookedSlot.row[1]));
-      if (isCoach && students.length > 2) throw new Error('專屬教練課限同帳號 1～2 位學生預約。');
-      const seats = isCoach ? 1 : students.length;
-      if (Number(bookedSlot.row[6]) < seats) throw new Error(coachRegistration ? '剩餘名額不足以登記所選學員。' : '剩餘名額不足以預約此帳號的全部學生。');
-      let price = Number(payload.paidPrice);
-      if (account) {
-        const level = Math.min(5, Math.max(1, Number(account[5]) || 1));
-        price = Number(bookedSlot.row[6 + level]);
-        if (isCoach) {
-          const tariff = String(bookedSlot.row[1]).match(/1v1:(\d+)\|1v2:(\d+)/);
-          if (!tariff || !['1對1','1對2'].includes(payload.coachType || (account[6] ? '' : '1對1'))) throw new Error('請選擇教練課類型。');
-          price = Math.round(Number(tariff[(payload.coachType || '1對1') === '1對1' ? 1 : 2]) * [1,1,0.98,0.95,0.90,0.88][level]);
-        }
-        if ((!isCoach && (bookedSlot.row[6 + level] === '' || bookedSlot.row[6 + level] == null)) || !Number.isFinite(price) || price < 0) throw new Error('課程價格設定不正確。');
-      }
-      const paymentCode = isCoach ? '現場現金' : (['現場現金', '現金已收'].includes(payload.paymentCode) ? '' : (payload.paymentCode || ''));
+      const isCoach = quote.isCoach, seats = quote.seatsRequired, price = quote.unitPrice;
+      if (payload.expectedTotalPrice != null && (!Number.isFinite(Number(payload.expectedTotalPrice)) || Math.round(Number(payload.expectedTotalPrice) * 100) !== Math.round(quote.totalPrice * 100))) throw new Error('課程價格已有變更，請重新讀取並確認報價。');
+      const suppliedPaymentCode = ['現場現金', '現金已收'].includes(payload.paymentCode) ? '' : (payload.paymentCode || '');
+      if (!isCoach && suppliedPaymentCode !== '' && !/^\d{5}$/.test(String(suppliedPaymentCode))) throw new Error('匯款後五碼必須為五位數字。');
+      const paymentCode = isCoach ? '現場現金' : String(suppliedPaymentCode);
       accountReserveColumn_(sheetBookings, 10, '學生編號');
       if (isCoach) accountReserveColumn_(sheetBookings, 11, '專屬教練課預約組別');
       const groupId = isCoach ? Utilities.getUuid() : '';
@@ -202,18 +237,18 @@ function doPost(e) {
         sheetSlots.getRange(bookedSlot.index, 7).setValue(bookedSlot.row[6]);
         throw new Error('預約未完成，請重新讀取後再試。');
       }
-      result = coachRegistration ? { status: 'success', registeredCount: students.length, totalPrice: price * students.length } : { status: 'success' };
+      result = { status: 'success', registeredCount: students.length, totalPrice: quote.totalPrice };
     }
 
     else if (action === "addSlot") {
-      monthlyVerifyCoach_(payload.accessToken);
       const coach = requireTeachingCoach_(ss, payload.teachingCoachId);
       const sheet = ss.getSheetByName(SHEET_SLOTS);
+      validateNewSlot_(payload);
       accountReserveColumn_(sheet, 13, SLOT_TEACHING_COACH_HEADER);
       const newId = Utilities.getUuid();
       sheet.appendRow([
-        newId, payload.title, payload.date, payload.time, payload.location, payload.capacity, payload.capacity,
-        payload.prices[1], payload.prices[2], payload.prices[3], payload.prices[4], payload.prices[5], coach.id
+        newId, payload.title.trim(), payload.date, payload.time, payload.location.trim(), Number(payload.capacity), Number(payload.capacity),
+        money_(payload.prices[1]), money_(payload.prices[2]), money_(payload.prices[3]), money_(payload.prices[4]), money_(payload.prices[5]), coach.id
       ]);
       result = { status: "success" };
     }
@@ -265,15 +300,17 @@ function doPost(e) {
           totalClasses: lData.slice(1).filter(row => row[1] === lId && studentMatches_(row[14], row[2], student)).length
         }));
       }
-      result = { status: "success", bookings: bookings, members: members, historicalBookingVersion: 1, historicalBookings: historicalBookings_(ss) };
+      const historical = historicalBookings_(ss);
+      const summary = calculateCoachPayments_(bookings.concat(historical), taipeiMonth_(new Date()), members);
+      result = { status: "success", bookings: bookings, members: members, historicalBookingVersion: 1, historicalBookings: historical, paymentSummary: paymentSummaryJSON_(summary) };
     }
 
     else if (["getMonthlyLeaves", "registerMonthlyLeave", "arrangeMonthlyMakeup"].includes(action)) {
-      result = monthlyLeaveAction_(ss, payload);
+      result = monthlyLeaveAction_(ss, payload, actor);
     }
 
     else if (["cancelBooking", "updateSlot", "confirmCashPayment"].includes(action)) {
-      result = coachManagementAction_(ss, payload);
+      result = coachManagementAction_(ss, payload, actor);
     }
 
     else if (action === "deleteBooking") {
@@ -282,54 +319,52 @@ function doPost(e) {
 
     else if (action === "approveBooking") {
       const sheetBookings = ss.getSheetByName(SHEET_BOOKINGS);
-      const bData = sheetBookings.getDataRange().getValues();
-      for (let i = 1; i < bData.length; i++) {
-        if (bData[i][7] === payload.bookingId) {
-          sheetBookings.getRange(i + 1, 6).setValue("預約成功");
-          break;
-        }
-      }
+      const booking = monthlyUniqueRow_(sheetBookings, 7, payload.bookingId, '訂單');
+      if (['審核中', '預約成功', '成功', '已完成'].indexOf(booking.row[5] || '預約成功') < 0) throw new Error('只能核准審核中或已確認且尚未完課的訂單。');
+      sheetBookings.getRange(booking.index, 6).setValue('預約成功');
       result = { status: "success" };
     }
 
     else if (action === "updatePayment") {
       const sheetBookings = ss.getSheetByName(SHEET_BOOKINGS);
-      const bData = sheetBookings.getDataRange().getValues();
-      for (let i = 1; i < bData.length; i++) {
-        if (bData[i][7] === payload.bookingId) {
-          sheetBookings.getRange(i + 1, 7).setValue(payload.paymentCode);
-          break;
-        }
-      }
+      const booking = monthlyUniqueRow_(sheetBookings, 7, payload.bookingId, '訂單');
+      if (!actor.isAdmin && booking.row[2] !== actor.lineId) throw new Error('只能修改自己帳號的付款資料。');
+      if (!actor.isAdmin && booking.row[5] !== '審核中') throw new Error('已核准的付款資料請由教練核對修改。');
+      if (!/^\d{5}$/.test(String(payload.paymentCode || ''))) throw new Error('匯款後五碼必須為五位數字。');
+      sheetBookings.getRange(booking.index, 7).setValue(String(payload.paymentCode));
       result = { status: "success" };
     }
 
     else if (action === "addLog") {
       const account = accountFor_(ss, payload.lineId);
-      const students = account ? accountStudents_(account) : [];
-      const booking = payload.bookingId ? monthlyUniqueRow_(ss.getSheetByName(SHEET_BOOKINGS), 7, payload.bookingId, '訂單').row : null;
+      if (!account) throw new Error('找不到學員帳號，無法寫入日誌。');
+      const students = accountStudents_(account);
+      const bookingSheet = ss.getSheetByName(SHEET_BOOKINGS);
+      const booked = payload.bookingId ? monthlyUniqueRow_(bookingSheet, 7, payload.bookingId, '訂單') : null;
+      const booking = booked ? booked.row : null;
       if (booking && booking[2] !== payload.lineId) throw new Error('學生與訂單不符。');
+      if (booking && ['預約成功', '成功', '已完成'].indexOf(booking[5] || '預約成功') < 0) throw new Error('請先核准預約；已完課訂單不能重複建立日誌。');
       const studentId = booking ? (booking[9] || '') : (payload.studentId || '');
-      const student = students.find(item => item.id === studentId);
-      if ((students.length > 1 || studentId) && !student) throw new Error('請選擇要填寫日誌的學生。');
+      const matches = students.filter(item => item.id === studentId);
+      if (matches.length !== 1) throw new Error('請選擇唯一且有效的學生。');
+      const student = matches[0];
+      safeSheetName_(student.name);
+      validateLogPayload_(payload);
       accountReserveColumn_(sheetLogs, 15, '學生編號');
-      // 1. 寫入日誌
-      sheetLogs.appendRow([
-        new Date(), payload.lineId, student ? student.name : payload.name, payload.date,
-        payload.stats.clears, payload.stats.drives, payload.stats.lifts, payload.stats.drops, payload.stats.net, 
-        payload.stats.pushes, payload.stats.smashes, payload.stats.defense, payload.stats.combo, payload.note, studentId
-      ]);
-      
-      // 2. 如果有帶入 bookingId，代表教練從預約單按下「結課」，則將該預約狀態改為「已完課」
-      if (payload.bookingId) {
-        const sheetBookings = ss.getSheetByName(SHEET_BOOKINGS);
-        const bData = sheetBookings.getDataRange().getValues();
-        for (let i = 1; i < bData.length; i++) {
-          if (bData[i][7] === payload.bookingId) {
-            sheetBookings.getRange(i + 1, 6).setValue("已完課");
-            break;
-          }
-        }
+      const firstRow = sheetLogs.getDataRange().getValues().length + 1;
+      try {
+        sheetLogs.appendRow([
+          new Date(), payload.lineId, student.name, payload.date,
+          payload.stats.clears, payload.stats.drives, payload.stats.lifts, payload.stats.drops, payload.stats.net,
+          payload.stats.pushes, payload.stats.smashes, payload.stats.defense, payload.stats.combo, payload.note, studentId
+        ]);
+        if (booked) bookingSheet.getRange(booked.index, 6).setValue('已完課');
+        SpreadsheetApp.flush();
+      } catch (error) {
+        for (let row = sheetLogs.getDataRange().getValues().length; row >= firstRow; row--) sheetLogs.deleteRow(row);
+        if (booked) bookingSheet.getRange(booked.index, 6).setValue(booking[5]);
+        SpreadsheetApp.flush();
+        throw new Error('日誌未完成儲存，請重新讀取後再試。');
       }
       result = { status: "success" };
     }
@@ -397,14 +432,204 @@ function doPost(e) {
     }
 
     if (!result.status) throw new Error("不支援的操作：" + String(action || "未提供"));
-    return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ ...result, securityVersion: API_SECURITY_VERSION })).setMimeType(ContentService.MimeType.JSON);
     
   } catch(error) {
-    return ContentService.createTextOutput(JSON.stringify({status: "error", message: error.message || "操作失敗"})).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({status: "error", securityVersion: API_SECURITY_VERSION, message: error.message || "操作失敗"})).setMimeType(ContentService.MimeType.JSON);
   } finally {
     if (requestLock) requestLock.releaseLock();
   }
 }
+
+// ===== 所有費用與付款彙總均由伺服器計算 =====
+function getVIPDiscount_(level) {
+  // 保留現行團課價格建議政策；既有課程仍以試算表收費欄位為準。
+  return [1, 1, 0.98, 0.95, 0.90, 0.53][Number(level)] || 1;
+}
+
+function groupTariff_(mode, startTime, endTime, count) {
+  if (count == null) count = 4;
+  var minutes = function(value) {
+    var match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+    return match && Number(match[1]) < 24 && Number(match[2]) < 60 ? Number(match[1]) * 60 + Number(match[2]) : NaN;
+  };
+  var duration = minutes(endTime) - minutes(startTime);
+  if ([60, 120].indexOf(duration) < 0 || (mode === 'monthly' && count !== 4) || ['single', 'monthly'].indexOf(mode) < 0) return null;
+  var single = duration === 60 ? 300 : 580;
+  return { duration: duration, regular: mode === 'monthly' ? single * 4 : single, price: mode === 'monthly' ? (duration === 60 ? 1000 : 2000) : single };
+}
+
+function slotGroupTariff_(slot) {
+  var time = String(slot.time || '').match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
+  if (!time || /^\[專屬教練課\]/.test(slot.title)) return null;
+  var monthly = String(slot.title).match(/^\[月繳(\d+)堂\]/);
+  var tariff = groupTariff_(monthly ? 'monthly' : 'single', time[1], time[2], monthly ? Number(monthly[1]) : 4);
+  return tariff && Number(slot.prices[1]) === tariff.price ? tariff : null;
+}
+
+function money_(value) {
+  if (value === '' || value == null || typeof value === 'boolean' || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 10000000 || Math.abs(Number(value) * 100 - Math.round(Number(value) * 100)) > 0.00001) throw new Error('金額需為有效非負數，最多小數點後兩位。');
+  return Number(value);
+}
+
+function safeSheetName_(value) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 100 || /^[=+@-]/.test(value) || /[\u0000-\u001f\u007f]/.test(value)) throw new Error('學員姓名資料不正確，請核對資料。');
+  return value;
+}
+
+function pricingPreview_(payload) {
+  var coachDefaults = { oneToOne: 1000, oneToTwo: 1400 };
+  var dates = emptyCourseDates_(payload.date || '');
+  // 新增表單以完整日期選擇當月星期；堂數由後端重新計算，不採信前端 count。
+  var count = 4;
+  if (payload.mode === 'monthly') {
+    if (!dates.length) return { tariff: null, prices: {}, coachDefaults: coachDefaults };
+    var day = new Date(dates[0] + 'T00:00:00Z'), month = day.getUTCMonth(), weekday = day.getUTCDay();
+    count = 0;
+    for (var i = 1; i <= 31; i++) { var date = new Date(Date.UTC(day.getUTCFullYear(), month, i)); if (date.getUTCMonth() !== month) break; if (date.getUTCDay() === weekday) count++; }
+  }
+  var tariff = groupTariff_(payload.mode, payload.startTime, payload.endTime, count);
+  var base = payload.basePrice != null ? money_(payload.basePrice) : tariff ? tariff.price : null;
+  var prices = {};
+  if (base !== null) [1, 2, 3, 4, 5].forEach(function(level) { prices[level] = level === 1 ? base : Math.round(base * getVIPDiscount_(level)); });
+  return { tariff: tariff, prices: prices, coachDefaults: coachDefaults };
+}
+
+function privateLocations_(row) {
+  if (!/^\[專屬教練課\]/.test(String(row[1] || ''))) return [];
+  var location = String(row[4] || '');
+  return Array.from(new Set((location.indexOf('coach_loc:') === 0 ? location.slice(10).split(',') : [location]).map(function(value) { return value.trim(); }).filter(Boolean)));
+}
+
+function bookingQuote_(ss, payload, actor, forDisplay, suppliedSlot, suppliedAccount) {
+  var account = suppliedAccount || accountFor_(ss, payload.lineId);
+  if (!account) throw new Error('找不到帳號學生資料，請重新登入。');
+  var row = suppliedSlot || monthlyUniqueRow_(ss.getSheetByName(SHEET_SLOTS), 0, payload.slotId, '課程').row;
+  var students = accountStudents_(account);
+  students.forEach(function(student) { safeSheetName_(student.name); });
+  var kind = payload.action === 'coachRegisterMonthly' ? 'monthly' : payload.action === 'coachRegisterSingle' ? 'single' : payload.kind;
+  if (kind != null) {
+    if (!actor.isAdmin || ['monthly', 'single'].indexOf(kind) < 0) throw new Error('僅教練可替指定學生報價或代登記。');
+    if (!Array.isArray(payload.studentIds) || !payload.studentIds.length || new Set(payload.studentIds).size !== payload.studentIds.length || payload.studentIds.some(function(id) { return !students.some(function(student) { return student.id === id; }); })) throw new Error('請選擇有效且不重複的學生。');
+    students = students.filter(function(student) { return payload.studentIds.indexOf(student.id) >= 0; });
+    if (kind === 'monthly' && !/^\[月繳/.test(String(row[1]).trim())) throw new Error('教練代登記僅限月繳團課。');
+    if (kind === 'single' && /^\[(月繳|專屬教練課)/.test(String(row[1]).trim())) throw new Error('單堂代登記僅限單堂團課。');
+  } else if (payload.studentIds != null) throw new Error('一般預約依帳號全部學員登記。');
+  var level = Math.min(5, Math.max(1, Number(account[5]) || 1));
+  if (!Number.isInteger(level)) throw new Error('會員等級資料異常。');
+  var isCoach = /^\[專屬教練課\]/.test(String(row[1]));
+  var seats = isCoach ? 1 : students.length, unitPrice, regular, plans = null;
+  var eligible = Number.isInteger(Number(row[5])) && Number.isInteger(Number(row[6])) && Number(row[5]) >= Number(row[6]) && Number(row[6]) >= seats && (!isCoach || students.length <= 2);
+  if (isCoach) {
+    var match = String(row[1]).match(/1v1:(\d+)\|1v2:(\d+)/);
+    if (!match) throw new Error('專屬教練課價格設定不正確。');
+    // 沿用後端原本實際收費的私人課折扣，避免移轉時變動既有收費。
+    var discount = [1, 1, 0.98, 0.95, 0.90, 0.88][level];
+    plans = { '1對1': Math.round(money_(match[1]) * discount), '1對2': Math.round(money_(match[2]) * discount) };
+    var type = payload.coachType || (!account[6] ? '1對1' : null);
+    if (!forDisplay && !Object.prototype.hasOwnProperty.call(plans, type)) throw new Error('請選擇教練課類型。');
+    unitPrice = plans[type] == null ? plans['1對1'] : plans[type];
+    regular = Number(match[type === '1對2' ? 2 : 1]);
+    var locations = privateLocations_(row);
+    if (!forDisplay && locations.indexOf(String(payload.location || '')) < 0) throw new Error('請選擇此課程允許的上課場地。');
+  } else {
+    unitPrice = money_(row[6 + level]);
+    regular = money_(row[7]);
+    var offer = slotGroupTariff_({ title: row[1], time: row[3], prices: { 1: row[7] } });
+    if (offer) regular = offer.regular;
+  }
+  if (!forDisplay && !eligible) throw new Error(isCoach && students.length > 2 ? '專屬教練課限同帳號 1～2 位學生預約。' : '剩餘名額不足或課程名額資料異常。');
+  var total = isCoach ? unitPrice : Math.round(unitPrice * 100) * students.length / 100;
+  return { students: students.map(function(student) { return { id: student.id, name: student.name }; }), isCoach: isCoach, unitPrice: unitPrice, totalPrice: total, regularTotalPrice: isCoach ? regular : Math.round(regular * 100) * students.length / 100, participantCount: students.length, seatsRequired: seats, eligible: eligible, coachPlans: plans };
+}
+
+function validateNewSlot_(payload) {
+  if (typeof payload.title !== 'string' || !payload.title.trim() || /^[=+@-]/.test(payload.title) || typeof payload.location !== 'string' || !payload.location.trim() || /^[=+@-]/.test(payload.location)) throw new Error('請填寫有效課程名稱及場地。');
+  var dates = emptyCourseDates_(payload.date);
+  if (!dates.length) throw new Error('請填寫有效的完整上課日期。');
+  var times = String(payload.time || '').match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
+  if (!times || monthlyStart_(dates[0], times[2]).getTime() <= monthlyStart_(dates[0], times[1]).getTime()) throw new Error('上課時間格式不正確。');
+  if (!Number.isInteger(Number(payload.capacity)) || Number(payload.capacity) < 1) throw new Error('總名額至少為 1。');
+  if (/^\[專屬教練課\]/.test(payload.title) && (Number(payload.capacity) !== 1 || monthlyStart_(dates[0], times[2]).getTime() - monthlyStart_(dates[0], times[1]).getTime() !== 3600000)) throw new Error('專屬教練時段限一小時、一個名額。');
+  [1, 2, 3, 4, 5].forEach(function(level) { money_(payload.prices && payload.prices[level]); });
+}
+
+function validateLogPayload_(payload) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payload.date || ''))) throw new Error('請選擇有效日誌日期。');
+  monthlyStart_(payload.date, '00:00');
+  var keys = ['clears', 'drives', 'lifts', 'drops', 'net', 'pushes', 'smashes', 'defense', 'combo'];
+  if (!payload.stats || typeof payload.stats !== 'object') throw new Error('請填寫有效訓練時數。');
+  var stats = {};
+  keys.forEach(function(key) { var value = payload.stats[key] == null ? 0 : payload.stats[key]; if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 2 || Math.abs(value * 12 - Math.round(value * 12)) > 0.00001) throw new Error('訓練時數需為 5 分鐘倍數，每項最多 2 小時。'); stats[key] = value; });
+  payload.stats = stats;
+  if (typeof payload.note !== 'string' || payload.note.length > 8000 || /^=/.test(payload.note)) throw new Error('請填寫有效日誌內容。');
+}
+
+function paymentSummaryJSON_(summary) {
+  return { ...summary, studentTotals: Array.from(summary.studentTotals.entries()) };
+}
+
+function paymentSummary_(ss, month) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month || ''))) throw new Error('請選擇有效的統計月份。');
+  var data = coachPaymentData_(ss);
+  return paymentSummaryJSON_(calculateCoachPayments_(data.bookings.concat(historicalBookings_(ss)), month, data.members));
+}
+
+function coachPaymentData_(ss) {
+  var bookings = ss.getSheetByName(SHEET_BOOKINGS).getDataRange().getValues().slice(1).map(function(row) { return { timestamp: row[0], lineId: row[2], paidPrice: row[4], status: row[5] || '預約成功', paymentCode: row[6], bookingId: row[7], studentId: row[9] || '' }; });
+  var members = [];
+  ss.getSheetByName(SHEET_USERS).getDataRange().getValues().slice(1).forEach(function(row) { accountStudents_(row).forEach(function(student) { members.push({ lineId: row[0], studentId: student.id }); }); });
+  return { bookings: bookings, members: members };
+}
+
+function studentPaymentKey_(lineId, studentId) { return JSON.stringify([String(lineId), String(studentId ?? '')]); }
+function taipeiMonth_(value) {
+    let text = value;
+    if (typeof text === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(text)) text += 'T00:00:00+08:00';
+    if (!(text instanceof Date) && (typeof text !== 'string' || !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(text))) return null;
+    const date = text instanceof Date ? text : new Date(text);
+    if (!Number.isFinite(date.getTime())) return null;
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit' }).formatToParts(date);
+    return `${parts.find(p => p.type === 'year').value}-${parts.find(p => p.type === 'month').value}`;
+};
+function calculateCoachPayments_(bookings, month, roster) {
+    const students = new Map();
+    const rosterByAccount = Array.isArray(roster) ? new Map() : null;
+    if (rosterByAccount) roster.forEach(member => {
+        if (!member.lineId) return;
+        const accountId = String(member.lineId);
+        if (!rosterByAccount.has(accountId)) rosterByAccount.set(accountId, []);
+        rosterByAccount.get(accountId).push(member);
+    });
+    let monthlyCents = 0, invalidAmounts = 0, missingDates = 0, duplicateOrders = 0, unmatchedStudents = 0;
+    const seen = new Set();
+    for (const booking of bookings) {
+        if (!['預約成功', '已完課', '成功', '已完成'].includes(booking.status) || booking.paymentCode === '現場現金' || (booking.isHistorical && booking.paymentStatus !== 'paid')) continue;
+        if (booking.bookingId && seen.has(booking.bookingId)) { duplicateOrders++; continue; }
+        if (booking.bookingId) seen.add(booking.bookingId);
+        const amount = Number(booking.paidPrice);
+        if (booking.paidPrice === '' || booking.paidPrice == null || !Number.isFinite(amount) || amount < 0) { invalidAmounts++; continue; }
+        const cents = Math.round(amount * 100);
+        let studentKey = null;
+        if (booking.lineId) {
+            const studentId = String(booking.studentId ?? '');
+            if (rosterByAccount) {
+                const accountMembers = rosterByAccount.get(String(booking.lineId)) || [];
+                const matching = accountMembers.filter(member => String(member.studentId ?? '') === studentId);
+                if (matching.length === 1) studentKey = studentPaymentKey_(booking.lineId, matching[0].studentId);
+                // Missing IDs are safe only for an explicit legacy student or a single-student account.
+                else if (!studentId && accountMembers.length === 1) studentKey = studentPaymentKey_(booking.lineId, accountMembers[0].studentId);
+            } else studentKey = studentPaymentKey_(booking.lineId, studentId);
+        }
+        if (studentKey !== null) students.set(studentKey, (students.get(studentKey) || 0) + cents);
+        else if (cents) unmatchedStudents++;
+        const bookedMonth = taipeiMonth_(booking.timestamp);
+        if (!bookedMonth && cents) missingDates++;
+        if (bookedMonth === month) monthlyCents += cents;
+    }
+    return { studentTotals: new Map([...students].map(([id, cents]) => [id, cents / 100])), monthlyTotal: monthlyCents / 100, invalidAmounts, missingDates, duplicateOrders, unmatchedStudents };
+};
+
 
 // ===== 教練補登歷史預約：獨立紀錄，不建立可預約時段、不改名額或訓練日誌 =====
 function historicalBookingRows_(sheet) {
@@ -434,6 +659,7 @@ function addHistoricalBooking_(ss, payload) {
   var students = accountStudents_(accounts[0]).filter(function(item) { return item.id === payload.studentId; });
   if (students.length !== 1) throw new Error('找不到唯一的指定學員，請核對帳號及學員編號。');
   var student = students[0];
+  safeSheetName_(student.name);
   var text = function(value, label, max, required) {
     if (typeof value !== 'string') throw new Error('請填寫' + label + '。');
     var result = value.trim();
@@ -826,8 +1052,8 @@ function accountReserveColumn_(sheet, column, title) {
 var MONTHLY_LEAVE_SHEET = '請假補課';
 var MONTHLY_LEAVE_HEADERS = ['編號', '登記時間', '月繳訂單編號', 'LINE_ID', '學生姓名', '原課程編號', '請假日期', '原上課時間', '原因', '狀態', '補課課程編號', '補課日期', '補課訂單編號', '安排時間', '補課課程名稱', '補課時間', '補課場地', '月繳課程名稱', '學生編號'];
 
-function monthlyLeaveAction_(ss, payload) {
-  monthlyVerifyCoach_(payload.accessToken);
+function monthlyLeaveAction_(ss, payload, actor) {
+  if (!actor) monthlyVerifyCoach_(payload.accessToken);
   if (payload.action === 'getMonthlyLeaves') {
     var existing = ss.getSheetByName(MONTHLY_LEAVE_SHEET);
     return { status: 'success', leaves: existing ? monthlyLeaveRows_(existing) : [] };
@@ -989,8 +1215,8 @@ function monthlyVerifyCoach_(accessToken) {
 
 // ===== 教練管理（已內建，不需另外新增分檔） =====
 // Requires MonthlyLeave.gs and the original worksheet constants.
-function coachManagementAction_(ss, payload) {
-  monthlyVerifyCoach_(payload.accessToken);
+function coachManagementAction_(ss, payload, actor) {
+  if (!actor) monthlyVerifyCoach_(payload.accessToken);
   if (payload.action === 'confirmCashPayment') {
     var sheet = ss.getSheetByName(SHEET_BOOKINGS);
     var cashBooking = monthlyUniqueRow_(sheet, 7, payload.bookingId, '訂單');

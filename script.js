@@ -57,15 +57,6 @@
         // ==========================================
         // 🔹 共用功能與 API
         // ==========================================
-        const getVIPDiscount = (lvl) => {
-            const l = Number(lvl);
-            if(l === 2) return 0.98;
-            if(l === 3) return 0.95;
-            if(l === 4) return 0.90;
-            if(l === 5) return 0.53;
-            return 1;
-        };
-
         const generateTimeOptions = () => {
             const times = [];
             for (let h = 6; h <= 23; h++) {
@@ -136,18 +127,20 @@
 
         const fetchAPI = async (payload) => {
           try {
+              const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+              if (!accessToken) return { status: 'error', message: '請重新登入 LINE。' };
               if (window.BadmintonI18n) window.BadmintonI18n.remember(payload);
               const res = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({ ...payload, accessToken })
               });
               const result = await res.json();
+              if (result.securityVersion !== 2) return { status: 'error', message: '後端尚未支援安全驗證與報價，請聯絡管理員更新系統。' };
               if (window.BadmintonI18n) window.BadmintonI18n.remember(result);
               return result;
           } catch (err) {
-              console.error("API 錯誤", err);
-              return { status: 'error' };
+              return { status: 'error', message: '服務暫時無法連線，請稍後再試。' };
           }
         };
 
@@ -260,7 +253,7 @@
             const handleSubmit = async (e) => {
                 e.preventDefault();
                 setSubmitting(true);
-                await fetchAPI({ 
+                const result = await fetchAPI({
                     action: 'addLog', 
                     lineId: targetData.lineId,
                     studentId: targetData.studentId || '',
@@ -270,6 +263,7 @@
                     stats: Object.fromEntries(Object.entries(stats).map(([key, minutes]) => [key, minutes / 60])),
                     note: note 
                 });
+                if (result.status !== 'success') { setSubmitting(false); alert(result.message || '日誌儲存失敗，請稍後再試。'); return; }
                 alert('日誌儲存成功！' + (targetData.bookingId ? ' 該預約單已順利結案。' : ''));
                 setSubmitting(false);
                 if(onSuccess) onSuccess();
@@ -738,23 +732,6 @@
             return Array.from({ length: (to - from) / 60 }, (_, i) => `${format(from + i * 60)} - ${format(from + (i + 1) * 60)}`);
         };
 
-        const groupTariff = (mode, startTime, endTime, count = 4) => {
-            const minutes = value => {
-                const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
-                return match ? Number(match[1]) * 60 + Number(match[2]) : NaN;
-            };
-            const duration = minutes(endTime) - minutes(startTime);
-            if (![60, 120].includes(duration) || (mode === 'monthly' && count !== 4) || !['single', 'monthly'].includes(mode)) return null;
-            const single = duration === 60 ? 300 : 580;
-            return { duration, regular: mode === 'monthly' ? single * 4 : single, price: mode === 'monthly' ? (duration === 60 ? 1000 : 2000) : single };
-        };
-        const slotGroupTariff = slot => {
-            const time = String(slot.time || '').match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
-            if (!time || /^\[專屬教練課\]/.test(slot.title)) return null;
-            const monthly = String(slot.title).match(/^\[月繳(\d+)堂\]/);
-            const tariff = groupTariff(monthly ? 'monthly' : 'single', time[1], time[2], monthly ? Number(monthly[1]) : 4);
-            return tariff && Number(slot.prices[1]) === tariff.price ? tariff : null;
-        };
         const BOOKING_AGREEMENTS = [
             ['預約確認', '為了確保每堂課的教學品質，送出預約登記後，需經由我們確認，並收到預約成功通知，才算真正完成預約喔！'],
             ['開課門檻', '大家一起練球最有氣氛！若該預約時段未達基本開課人數，課程將會取消，我們也會通知您，並協助辦理當次課程的全額退費。'],
@@ -913,29 +890,28 @@
           const userLevel = userRecord ? (userRecord.level || 1) : 1;
 
           useEffect(() => {
-            fetchAPI({ action: 'getSlots' }).then(res => {
+            fetchAPI({ action: 'getSlots', lineId: profile ? profile.userId : '' }).then(res => {
+                if (res.status !== 'success') { alert(res.message || '課程讀取失敗'); return; }
                 const validSlots = (res.slots || []).filter(s => s.id && s.title && s.date);
                 setSlots(validSlots);
                 setSupportsSharedCoach(res.coachAccountPricingVersion === 1);
             });
           }, []);
 
-          const handleBookClick = (slot, type = null, customPrice = null, selectedLoc = null) => {
-            const isCoach = slot.title.startsWith('[專屬教練課]');
-            if (isCoach && studentCount === 2 && !supportsSharedCoach) { alert('雙人帳號的專屬教練課預約尚未啟用，請聯絡教練。'); return; }
-            if (isCoach && studentCount > 2) { alert('專屬教練課限同帳號 1～2 位學生預約。'); return; }
-            const myPrice = Number(customPrice ?? slot.prices[userLevel]) * (isCoach ? 1 : studentCount);
-            if (!Number.isFinite(myPrice) || myPrice < 0) { alert('課程價格設定不正確，請聯絡教練。'); return; }
-            if (Number(slot.remaining) < (isCoach ? 1 : studentCount)) { alert('剩餘名額不足以預約此帳號的全部學生。'); return; }
-            let titleDisplay = slot.title;
-            let finalName = userRecord ? userRecord.name : '';
-            if (type) {
-                titleDisplay = `專屬教練課 (${type} 於 ${selectedLoc})`;
-                finalName = `${userRecord ? userRecord.name : ''} [${type} - ${selectedLoc}]`;
-            }
-            setAgreementAccepted(false);
-            setBookingTarget({ slot, titleDisplay, finalName, myPrice, type, selectedLoc });
-            setPaymentCode(''); 
+          const quotingRef = React.useRef(false);
+          const handleBookClick = async (slot, type = null, selectedLoc = null) => {
+            if (quotingRef.current || status === 'booking') return;
+            quotingRef.current = true; setStatus('quoting');
+            try {
+                const result = await fetchAPI({ action: 'getBookingQuote', lineId: profile ? profile.userId : '', slotId: slot.id, coachType: type, location: selectedLoc });
+                if (result.status !== 'success' || !result.quote?.eligible) throw new Error(result.message || '無法取得課程報價，請重新讀取。');
+                const quote = result.quote;
+                const titleDisplay = type ? `專屬教練課 (${type} 於 ${selectedLoc})` : slot.title;
+                setAgreementAccepted(false);
+                setBookingTarget({ slot, titleDisplay, myPrice: quote.totalPrice, type, selectedLoc });
+                setPaymentCode('');
+            } catch (error) { alert(error.message); }
+            finally { quotingRef.current = false; setStatus('idle'); }
           };
 
           const confirmBooking = async () => {
@@ -945,8 +921,7 @@
                 action: 'bookClass', accountBooking: true,
                 slotId: bookingTarget.slot.id, 
                 lineId: profile ? profile.userId : '', 
-                name: bookingTarget.finalName, 
-                paidPrice: bookingTarget.myPrice,
+                expectedTotalPrice: bookingTarget.myPrice,
                 coachType: bookingTarget.type, location: bookingTarget.selectedLoc,
                 paymentCode: bookingTarget.slot.title.startsWith('[專屬教練課]') ? '現場現金' : (paymentCode || '')
             });
@@ -1037,23 +1012,18 @@
                           const isFull = isCoachSlot ? studentCount > 2 || Number(slot.remaining) < 1 : Number(slot.remaining) < studentCount;
 
                           const safeLocation = slot.location || '';
-                          let availableLocs = LOCATIONS_LIST;
+                          const availableLocs = slot.availableLocations || [];
                           let slotDisplayLocation = safeLocation;
 
                           if (safeLocation.startsWith('coach_loc:')) {
-                              availableLocs = safeLocation.replace('coach_loc:', '').split(',');
                               slotDisplayLocation = '學員自選場地';
                           } else if (isCoachSlot) {
                               slotDisplayLocation = '學員自選場地'; 
                           }
 
                           if (isCoachSlot) {
-                              const match = slot.title.match(/1v1:(\d+)\|1v2:(\d+)/);
-                              const base1v1 = match ? parseInt(match[1]) : 1000;
-                              const base1v2 = match ? parseInt(match[2]) : 1500;
-                              const discount = getVIPDiscount(userLevel);
-                              const my1v1 = Math.round(base1v1 * discount);
-                              const my1v2 = Math.round(base1v2 * discount);
+                              const my1v1 = slot.priceQuote?.coachPlans?.['1對1'];
+                              const my1v2 = slot.priceQuote?.coachPlans?.['1對2'];
                               const selectedLoc = studentLocations[slot.id] || availableLocs[0] || '關聖里活動中心';
 
                               return (
@@ -1086,23 +1056,22 @@
                                                 <span className={`font-bold text-sm md:text-base ${isFull ? 'text-gray-500' : 'text-green-700'}`}>1對1 教練課</span>
                                                 <div className="mt-0.5"><span className={`${isFull ? 'text-gray-500' : 'text-emerald-600'} font-bold text-lg`}>每帳號 NT$ {my1v1}</span></div>
                                             </div>
-                                            <button onClick={() => handleBookClick(slot, '1對1', my1v1, selectedLoc)} disabled={status==='booking' || isFull || (studentCount === 2 && !supportsSharedCoach)} className={`font-bold py-2 px-5 rounded-lg text-sm md:text-base active:scale-95 transition-transform ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}>{isFull ? '已額滿' : '預約 1對1'}</button>
+                                            <button onClick={() => handleBookClick(slot, '1對1', selectedLoc)} disabled={(status==='booking' || status==='quoting') || isFull || (studentCount === 2 && !supportsSharedCoach)} className={`font-bold py-2 px-5 rounded-lg text-sm md:text-base active:scale-95 transition-transform ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}>{isFull ? '已額滿' : '預約 1對1'}</button>
                                         </div>
                                         <div className={`flex-1 min-w-0 flex justify-between items-center p-3 rounded-lg border shadow-sm ${isFull ? 'bg-gray-100 border-gray-200' : 'bg-white border-green-100'}`}>
                                             <div className={isFull ? 'opacity-60' : ''}>
                                                 <span className={`font-bold text-sm md:text-base ${isFull ? 'text-gray-500' : 'text-green-700'}`}>1對2 教練課</span>
                                                 <div className="mt-0.5"><span className={`${isFull ? 'text-gray-500' : 'text-emerald-600'} font-bold text-lg`}>每帳號 NT$ {my1v2}</span></div>
                                             </div>
-                                            <button onClick={() => handleBookClick(slot, '1對2', my1v2, selectedLoc)} disabled={status==='booking' || isFull || (studentCount === 2 && !supportsSharedCoach)} className={`font-bold py-2 px-5 rounded-lg text-sm md:text-base active:scale-95 transition-transform ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}>{isFull ? '已額滿' : '預約 1對2'}</button>
+                                            <button onClick={() => handleBookClick(slot, '1對2', selectedLoc)} disabled={(status==='booking' || status==='quoting') || isFull || (studentCount === 2 && !supportsSharedCoach)} className={`font-bold py-2 px-5 rounded-lg text-sm md:text-base active:scale-95 transition-transform ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}>{isFull ? '已額滿' : '預約 1對2'}</button>
                                         </div>
                                     </div>
                                 </div>
                               );
                           }
 
-                          const tariff = slotGroupTariff(slot);
-                          const originalPrice = (tariff ? tariff.regular : slot.prices[1]) * studentCount;
-                          const myPrice = slot.prices[userLevel] * studentCount;
+                          const originalPrice = slot.priceQuote?.regularTotalPrice;
+                          const myPrice = slot.priceQuote?.totalPrice;
                           const isDiscounted = Number(myPrice) < Number(originalPrice);
 
                           return (
@@ -1115,7 +1084,7 @@
                                   <div className="text-sm text-gray-500 mt-1">{slot.time} • {safeLocation}</div>
                                   <p className="text-sm text-gray-600 mt-1 break-words">授課教練：{slot.teachingCoachName || '未指定'}</p>
                                 </div>
-                                <button onClick={() => handleBookClick(slot)} disabled={status==='booking' || isFull} className={`font-bold py-2.5 px-6 rounded-lg shadow-sm text-sm md:text-base active:scale-95 transition-transform whitespace-nowrap ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>{isFull ? '已額滿' : '預約'}</button>
+                                <button onClick={() => handleBookClick(slot)} disabled={(status==='booking' || status==='quoting') || isFull} className={`font-bold py-2.5 px-6 rounded-lg shadow-sm text-sm md:text-base active:scale-95 transition-transform whitespace-nowrap ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>{isFull ? '已額滿' : '預約'}</button>
                               </div>
                               <div className={`mt-4 pt-4 border-t flex items-center justify-between w-full ${isFull ? 'border-gray-200 opacity-60' : 'border-gray-100'}`}>
                                 <div className="flex flex-wrap items-baseline gap-2">
@@ -1554,44 +1523,6 @@
             const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit' }).formatToParts(date);
             return `${parts.find(p => p.type === 'year').value}-${parts.find(p => p.type === 'month').value}`;
         };
-        const calculateCoachPayments = (bookings, month, roster) => {
-            const students = new Map();
-            const rosterByAccount = Array.isArray(roster) ? new Map() : null;
-            if (rosterByAccount) roster.forEach(member => {
-                if (!member.lineId) return;
-                const accountId = String(member.lineId);
-                if (!rosterByAccount.has(accountId)) rosterByAccount.set(accountId, []);
-                rosterByAccount.get(accountId).push(member);
-            });
-            let monthlyCents = 0, invalidAmounts = 0, missingDates = 0, duplicateOrders = 0, unmatchedStudents = 0;
-            const seen = new Set();
-            for (const booking of bookings) {
-                if (!['預約成功', '已完課', '成功', '已完成'].includes(booking.status) || booking.paymentCode === '現場現金' || (booking.isHistorical && booking.paymentStatus !== 'paid')) continue;
-                if (booking.bookingId && seen.has(booking.bookingId)) { duplicateOrders++; continue; }
-                if (booking.bookingId) seen.add(booking.bookingId);
-                const amount = Number(booking.paidPrice);
-                if (booking.paidPrice === '' || booking.paidPrice == null || !Number.isFinite(amount) || amount < 0) { invalidAmounts++; continue; }
-                const cents = Math.round(amount * 100);
-                let studentKey = null;
-                if (booking.lineId) {
-                    const studentId = String(booking.studentId ?? '');
-                    if (rosterByAccount) {
-                        const accountMembers = rosterByAccount.get(String(booking.lineId)) || [];
-                        const matching = accountMembers.filter(member => String(member.studentId ?? '') === studentId);
-                        if (matching.length === 1) studentKey = studentPaymentKey(booking.lineId, matching[0].studentId);
-                        // Missing IDs are safe only for an explicit legacy student or a single-student account.
-                        else if (!studentId && accountMembers.length === 1) studentKey = studentPaymentKey(booking.lineId, accountMembers[0].studentId);
-                    } else studentKey = studentPaymentKey(booking.lineId, studentId);
-                }
-                if (studentKey !== null) students.set(studentKey, (students.get(studentKey) || 0) + cents);
-                else if (cents) unmatchedStudents++;
-                const bookedMonth = taipeiMonth(booking.timestamp);
-                if (!bookedMonth && cents) missingDates++;
-                if (bookedMonth === month) monthlyCents += cents;
-            }
-            return { studentTotals: new Map([...students].map(([id, cents]) => [id, cents / 100])), monthlyTotal: monthlyCents / 100, invalidAmounts, missingDates, duplicateOrders, unmatchedStudents };
-        };
-
         const CoachRevenue = ({ revision }) => {
             const [data, setData] = useState(null);
             const [error, setError] = useState('');
@@ -1601,9 +1532,9 @@
             useEffect(() => {
                 let active = true;
                 setLoading(true); setError('');
-                fetchAPI({ action: 'getCoachData' }).then(result => {
-                    if (!result || !Array.isArray(result.bookings) || result.status === 'error') throw new Error((result && result.message) || '無法讀取收入資料');
-                    if (active) setData(calculateCoachPayments([...(result.bookings || []), ...(result.historicalBookings || [])], month, result.members));
+                fetchAPI({ action: 'getPaymentSummary', month }).then(result => {
+                    if (!result || !result.paymentSummary || result.status !== 'success') throw new Error(result?.message || '無法讀取收入資料');
+                    if (active) setData(result.paymentSummary);
                 }).catch(err => { if (active) { setData(null); setError(err.message); } }).finally(() => { if (active) setLoading(false); });
                 return () => { active = false; };
             }, [revision, refresh, month]);
@@ -1741,18 +1672,32 @@
             const selected = (account?.students || []).filter(student => studentIds.includes(student.studentId || ''));
             const courseSlots = slots.filter(slot => isMonthly ? /^\[月繳/.test(slot.title.trim()) : !/^\[(月繳|專屬教練課)/.test(slot.title.trim()));
             const slot = courseSlots.find(slot => slot.id === slotId);
-            const price = slot ? Number(slot.prices[selected[0]?.level || 1]) : NaN;
-            const validPrice = slot && slot.prices[selected[0]?.level || 1] !== '' && slot.prices[selected[0]?.level || 1] != null && Number.isFinite(price) && price >= 0;
-            const ready = enabled && selected.length > 0 && slot && Number(slot.remaining) >= selected.length && validPrice;
+            const [quote, setQuote] = useState(null);
+            const quoteRequest = React.useRef(0);
+            const selectedKey = JSON.stringify(studentIds);
+            useEffect(() => {
+                const request = ++quoteRequest.current;
+                setQuote(null);
+                if (!enabled || !lineId || !slotId || !studentIds.length) return;
+                fetchAPI({ action: 'getBookingQuote', lineId, slotId, kind: isMonthly ? 'monthly' : 'single', studentIds }).then(result => {
+                    if (request !== quoteRequest.current) return;
+                    if (result.status !== 'success' || !result.quote) { setError(result.message || '無法取得課程報價，請重新讀取。'); return; }
+                    setQuote(result.quote); setError('');
+                });
+                return () => { quoteRequest.current++; };
+            }, [enabled, lineId, slotId, selectedKey, isMonthly, slots, members]);
+            const price = quote?.unitPrice;
+            const validPrice = !!quote;
+            const ready = enabled && selected.length > 0 && slot && quote?.eligible;
             const submit = async event => {
                 event.preventDefault();
                 if (busyRef.current || !ready) return;
-                if (!confirm(`${isMonthly ? '確認代登記月繳團課？' : '確認代登記單堂團課？'}\n${selected.map(student => student.name).join('、')}\n${slot.title} · ${slot.date} ${slot.time}\n共 ${selected.length} 人，合計 NT$ ${price * selected.length}\n登記後為審核中，收款後請再核准預約。`)) return;
+                if (!confirm(`${isMonthly ? '確認代登記月繳團課？' : '確認代登記單堂團課？'}\n${selected.map(student => student.name).join('、')}\n${slot.title} · ${slot.date} ${slot.time}\n共 ${selected.length} 人，合計 NT$ ${quote.totalPrice}\n登記後為審核中，收款後請再核准預約。`)) return;
                 busyRef.current = true; setBusy(true); setMessage(''); setError('');
                 try {
                     const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
                     if (!accessToken) throw new Error('請重新登入 LINE。');
-                    const result = await fetchAPI({ action: isMonthly ? 'coachRegisterMonthly' : 'coachRegisterSingle', lineId, studentIds, slotId, accessToken });
+                    const result = await fetchAPI({ action: isMonthly ? 'coachRegisterMonthly' : 'coachRegisterSingle', lineId, studentIds, slotId, expectedTotalPrice: quote.totalPrice, accessToken });
                     if (result.status !== 'success') throw new Error(result.message || '登記失敗，請稍後再試。');
                     if (result.registeredCount !== selected.length) throw new Error('登記結果人數不一致，請重新整理預約名單確認。');
                     setMessage(`已登記 ${result.registeredCount} 位學生，合計 NT$ ${result.totalPrice}，狀態為審核中。`);
@@ -1770,7 +1715,7 @@
                     {account && <fieldset disabled={busy} className="border rounded-lg p-3 bg-white"><legend className="font-bold">參加學生</legend>{account.students.map((student, index) => <label key={student.studentId || index} className="flex gap-2 items-center p-2"><input type="checkbox" checked={studentIds.includes(student.studentId || '')} onChange={e => setStudentIds(previous => e.target.checked ? [...previous, student.studentId || ''] : previous.filter(id => id !== (student.studentId || '')))} />{student.name}{student.nickname ? `（${student.nickname}）` : ''}</label>)}</fieldset>}
                     <label className="block font-bold">{courseLabel}<select aria-label={isMonthly ? '代登記月繳課程' : '代登記單堂課程'} disabled={busy} required value={slotId} onChange={e => { setSlotId(e.target.value); setMessage(''); setError(''); }} className="block w-full border p-3 rounded-lg mt-1 bg-white"><option value="">{isMonthly ? '請選擇月繳課程' : '請選擇單堂課程'}</option>{courseSlots.map(slot => <option key={slot.id} value={slot.id} disabled={Number(slot.remaining) < Math.max(1, selected.length)}>{slot.title} · {slot.date} {slot.time} · {slot.location}（剩 {slot.remaining} 名）</option>)}</select></label>
                     {courseSlots.length === 0 && <p className="text-sm">{isMonthly ? '目前沒有月繳課程，請先新增課程。' : '目前沒有單堂團課，請先新增課程。'}</p>}
-                    <p className="font-bold">登記 {selected.length} 人{validPrice ? ` · 每人 NT$ ${price} · 合計 NT$ ${price * selected.length}` : ''}</p>
+                    <p className="font-bold">登記 {selected.length} 人{validPrice ? ` · 每人 NT$ ${price} · 合計 NT$ ${quote.totalPrice}` : ''}</p>
                     {message && <p role="status" className="text-emerald-800">{message}</p>}{error && <p role="alert" className="text-red-700">{error}</p>}
                     <button type="submit" disabled={busy || !ready} className="bg-sky-700 text-white rounded-lg px-4 py-3 font-bold disabled:opacity-50">{busy ? '登記中...' : '確認代登記'}</button>
                 </form>
@@ -1781,8 +1726,8 @@
           const [form, setForm] = useState({ 
             mode: 'single', title: '新手團課', location: '關聖里活動中心', teachingCoachId: '',
             date: '', startTime: '21:00', endTime: '22:00', capacity: '1', 
-            prices: { 1: 280, 2: 275, 3: 265, 4: 250, 5: 150 },
-            coachBase1v1: '1000', coachBase1v2: '1400'
+            prices: { 1: '', 2: '', 3: '', 4: '', 5: '' },
+            coachBase1v1: '', coachBase1v2: ''
           });
           const [allowedLocations, setAllowedLocations] = useState([...LOCATIONS_LIST]);
           const [bookings, setBookings] = useState([]);
@@ -1805,11 +1750,19 @@
             catch (error) { coachHoursError = error.message; }
           }
           const monthlyInfo = getMonthlyDatesInfo(form.date);
-          const tariff = groupTariff(form.mode, form.startTime, form.endTime, monthlyInfo.count);
+          const [tariff, setTariff] = useState(null);
+          const [pricingBusy, setPricingBusy] = useState(false);
+          const pricingRequest = React.useRef(0);
           useEffect(() => {
-            if (form.mode === 'coach') return;
-            const next = groupTariff(form.mode, form.startTime, form.endTime, getMonthlyDatesInfo(form.date).count);
-            setForm(prev => ({ ...prev, prices: Object.fromEntries([1,2,3,4,5].map(level => [level, next ? Math.round(next.price * getVIPDiscount(level)) : ''])) }));
+            const request = ++pricingRequest.current;
+            setPricingBusy(true);
+            fetchAPI({ action: 'getPricingPreview', mode: form.mode, startTime: form.startTime, endTime: form.endTime, date: form.date }).then(result => {
+                if (request !== pricingRequest.current) return;
+                if (result.status !== 'success') { setDataError(result.message || '無法讀取後端價格建議，請稍後再試。'); return; }
+                setTariff(result.tariff);
+                setForm(prev => ({ ...prev, ...(form.mode !== 'coach' ? { prices: Object.fromEntries([1,2,3,4,5].map(level => [level, result.prices[level] ?? ''])) } : {}), coachBase1v1: prev.coachBase1v1 || String(result.coachDefaults.oneToOne), coachBase1v2: prev.coachBase1v2 || String(result.coachDefaults.oneToTwo) }));
+            }).finally(() => { if (request === pricingRequest.current) setPricingBusy(false); });
+            return () => { pricingRequest.current++; };
           }, [form.mode, form.startTime, form.endTime, form.date]);
 
           const fetchData = () => {
@@ -1870,11 +1823,18 @@
             } finally { addingSlotsRef.current = false; setLoading(false); }
           };
 
-          const updatePrice = (level, value) => {
-            const val = parseInt(value, 10) || 0;
-            if (Number(level) === 1) {
-              setForm(prev => ({...prev, prices: { 1: val, 2: Math.round(val*getVIPDiscount(2)), 3: Math.round(val*getVIPDiscount(3)), 4: Math.round(val*getVIPDiscount(4)), 5: Math.round(val*getVIPDiscount(5)) }}));
-            } else setForm(prev => ({ ...prev, prices: { ...prev.prices, [level]: val }}));
+          const updatePrice = async (level, value) => {
+            const request = ++pricingRequest.current;
+            setForm(prev => ({ ...prev, prices: { ...prev.prices, [level]: value } }));
+            if (Number(level) !== 1 || value === '') { setPricingBusy(false); return; }
+            setPricingBusy(true);
+            try {
+                const result = await fetchAPI({ action: 'getPricingPreview', mode: form.mode, startTime: form.startTime, endTime: form.endTime, date: form.date, basePrice: value });
+                if (request !== pricingRequest.current) return;
+                if (result.status !== 'success') throw new Error(result.message || '無法讀取後端價格建議，請稍後再試。');
+                setForm(prev => ({ ...prev, prices: result.prices }));
+            } catch (error) { setDataError(error.message); }
+            finally { if (request === pricingRequest.current) setPricingBusy(false); }
           };
 
           const handleCancelBooking = async booking => {
@@ -1895,7 +1855,8 @@
           const handleDeleteSlot = async (slotId, title, dateStr) => {
             if (!confirm(`確定要刪除這堂課嗎？\n\n${title} (${dateStr})\n\n⚠️ 此操作無法復原。`)) return;
             setLoading(true);
-            await fetchAPI({ action: 'deleteSlot', slotId: slotId });
+            const result = await fetchAPI({ action: 'deleteSlot', slotId: slotId });
+            if (result.status !== 'success') alert(result.message || '課程刪除失敗');
             fetchData().catch(() => {}); setLoading(false);
           };
 
@@ -1963,7 +1924,8 @@
           const handleApprove = async (bookingId, cash = false) => {
             if (!confirm(cash ? '確認此教練時段預約？學員將於現場付現，本次核准不代表已收款。' : "確認已收到款項並核准此預約？\n核准後可為該學員填寫訓練日誌結課。")) return;
             setLoading(true);
-            await fetchAPI({ action: 'approveBooking', bookingId });
+            const result = await fetchAPI({ action: 'approveBooking', bookingId });
+            if (result.status !== 'success') alert(result.message || '預約核准失敗');
             fetchData().catch(() => {});
             setLoading(false);
           };
@@ -2082,7 +2044,7 @@
                         <p className="font-bold">每小時自動分割，獨立預約</p>
                         {coachHoursError ? <p role="alert" className="text-red-700 mt-2">{coachHoursError}</p> : <><p className="mt-2">將建立 {coachHours.length} 個時段，每段 1 小時、各 1 個名額。以上價格為每小時教練費，不含場地費，學員須自行預約場地。</p><ul className="mt-2 space-y-1">{coachHours.map(time => <li key={time}>{time}</li>)}</ul></>}
                     </div>}
-                    <button type="submit" disabled={loading || !supportsTeachingCoaches || !teachingCoaches.some(coach => coach.id === form.teachingCoachId) || (form.mode === 'coach' && !!coachHoursError)} className="w-full bg-slate-800 text-white p-4 rounded-lg font-bold text-lg mt-6 active:scale-[0.98] transition">上架時段</button>
+                    <button type="submit" disabled={loading || pricingBusy || !supportsTeachingCoaches || !teachingCoaches.some(coach => coach.id === form.teachingCoachId) || (form.mode === 'coach' && !!coachHoursError)} className="w-full bg-slate-800 text-white p-4 rounded-lg font-bold text-lg mt-6 active:scale-[0.98] transition">上架時段</button>
                   </form>
                 </div>
 
@@ -2200,8 +2162,9 @@
                 return fetchAPI({ action: 'getCoachData' }).then(res => {
                     setMembers(res.members || []);
                     if (res.status !== 'error' && Array.isArray(res.bookings)) {
-                        const totals = calculateCoachPayments([...(res.bookings || []), ...(res.historicalBookings || [])], taipeiMonth(new Date()), res.members || []);
-                        setPaymentTotals(totals.studentTotals);
+                        const totals = res.paymentSummary;
+                        if (!totals || !Array.isArray(totals.studentTotals)) { setPaymentTotals(null); setPaymentError('無法讀取付款資料，累積金額暫不顯示。'); return res; }
+                        setPaymentTotals(new Map(totals.studentTotals));
                         setPaymentError([
                             totals.invalidAmounts || totals.duplicateOrders ? '付款資料存在異常或缺漏，請參閱收入統計並核對原訂單。' : '',
                             totals.unmatchedStudents ? '部分訂單無法對應個別學員，未列入個人累積金額；請核對原訂單的學員編號。' : ''

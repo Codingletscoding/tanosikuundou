@@ -1,7 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const source=fs.readFileSync(path.join(__dirname,'../script.js'),'utf8');
-const code=source.slice(source.indexOf('        const formatMoney ='),source.indexOf('        const CoachRevenue ='))+'\nglobalThis.payments={calculateCoachPayments,taipeiMonth,studentPaymentKey};';
-const ctx={Intl,Date};vm.createContext(ctx);vm.runInContext(code,ctx);
+const source=fs.readFileSync(path.join(__dirname,'../apps-script/complete/Code.gs'),'utf8');
+const ctx={Intl,Date};vm.createContext(ctx);vm.runInContext(source+'\nglobalThis.payments={calculateCoachPayments:calculateCoachPayments_,taipeiMonth:taipeiMonth_,studentPaymentKey:studentPaymentKey_};',ctx);
 const {calculateCoachPayments:sum,taipeiMonth:month,studentPaymentKey:key}=ctx.payments;
 const order=(extra={})=>({bookingId:'one',lineId:'student',paidPrice:300,status:'預約成功',timestamp:'2026-10-01T00:00:00+08:00',...extra});
 test('counts approved and completed, excludes pending and cancelled',()=>{const result=sum(['預約成功','已完課','審核中','已取消'].map((status,i)=>order({status,bookingId:String(i)})),'2026-10');assert.equal(result.monthlyTotal,600);assert.equal(result.studentTotals.get(key('student','')),600);});

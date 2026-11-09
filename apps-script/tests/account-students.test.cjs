@@ -17,10 +17,10 @@ function fixture(options={}) {
   getRange:(row,column)=>({setValue:value=>{assert(locked);rows[name][row-1][column-1]=value;},setValues:values=>{assert(locked);values.forEach((cells,y)=>cells.forEach((value,x)=>rows[name][row-1+y][column-1+x]=value));}})
  };
  const ss={getSheetByName:sheet};
- const context={PropertiesService:{getScriptProperties:()=>({getProperty:()=> 'channel'})},UrlFetchApp:{fetch:url=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify(url.includes('/verify?')?{client_id:'channel',expires_in:3600}:{userId:options.otherUser?'other':'account'})})},SpreadsheetApp:{getActiveSpreadsheet:()=>ss,flush(){}},LockService:{getScriptLock:()=>({tryLock:()=>{locked=true;return true;},releaseLock:()=>{locked=false;}})},Utilities:{getUuid:()=>`id-${++sequence}`},ContentService:{MimeType:{JSON:'json'},createTextOutput:text=>({text,setMimeType(){return this;}})}};
+ const context={PropertiesService:{getScriptProperties:()=>({getProperty:()=> 'channel'})},UrlFetchApp:{fetch:(url,request)=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify(url.includes('/verify?')?{client_id:'channel',expires_in:3600}:{userId:request?.headers?.Authorization==='Bearer mock-coach'?'U3a76953e63578ec8607297044ac54e5a':options.otherUser?'other':'account'})})},SpreadsheetApp:{getActiveSpreadsheet:()=>ss,flush(){}},LockService:{getScriptLock:()=>({tryLock:()=>{locked=true;return true;},releaseLock:()=>{locked=false;}})},Utilities:{getUuid:()=>`id-${++sequence}`,formatDate:(date,zone)=>new Date(date.getTime()+8*3600000).toISOString().slice(0,10)},ContentService:{MimeType:{JSON:'json'},createTextOutput:text=>({text,setMimeType(){return this;}})}};
  vm.createContext(context);
  vm.runInContext(['complete/Code.gs'].map(file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8')).join('\n'),context);
- const run=payload=>JSON.parse(context.doPost({postData:{contents:JSON.stringify({lineId:'account',...payload})}}).text);
+ const run=payload=>JSON.parse(context.doPost({postData:{contents:JSON.stringify({accessToken:'mock-user',lineId:'account',...payload})}}).text);
  const register=(count=2,extra={})=>run({action:'registerUser',students:Array.from({length:count},(_,i)=>({name:'學生'+i,nickname:'暱稱'+i,gender:'女',age:10+i})),phone:'0912345678',idNumber:'A123456789',...extra});
  return {rows,run,register,context};
 }
@@ -45,36 +45,37 @@ test('student log and completion affect only selected student even with identica
  const f=fixture();f.register();const students=JSON.parse(f.rows['會員資料'][1][6]);students[1].name=students[0].name;f.rows['會員資料'][1][6]=JSON.stringify(students);
  f.run({action:'bookClass',slotId:'slot'});
  const booking=f.rows['預約名單'][2];
- assert.equal(f.run({action:'addLog',bookingId:booking[7],name:'wrong',date:'2026-12-01',stats:{clears:1},note:'第二位紀錄'}).status,'success');
+ f.run({accessToken:'mock-coach',action:'approveBooking',bookingId:booking[7]});
+ assert.equal(f.run({accessToken:'mock-coach',action:'addLog',bookingId:booking[7],name:'wrong',date:'2026-12-01',stats:{clears:1},note:'第二位紀錄'}).status,'success');
  assert.equal(f.rows['預約名單'][1][5],'審核中');assert.equal(booking[5],'已完課');
  const first=f.run({action:'getStudentStats',studentId:students[0].id});const second=f.run({action:'getStudentStats',studentId:students[1].id});
  assert.equal(first.totalClasses,0);assert.equal(first.bookings.length,1);assert.equal(second.totalClasses,1);assert.equal(second.logs[0].note,'第二位紀錄');assert.equal(second.bookings.length,0);
  assert.equal(f.run({action:'getStudentStats',studentId:'someone-else'}).status,'error');
- const members=f.run({action:'getCoachData'}).members;assert.deepEqual(members.map(m=>m.totalClasses),[0,1]);
+ const members=f.run({accessToken:'mock-coach',action:'getCoachData'}).members;assert.deepEqual(members.map(m=>m.totalClasses),[0,1]);
 });
-test('unbooked logs require a student and reject mismatched account booking',()=>{const f=fixture();f.register();f.run({action:'bookClass',slotId:'slot'});assert.equal(f.run({action:'addLog',stats:{}}).status,'error');assert.equal(f.run({action:'addLog',lineId:'other',bookingId:f.rows['預約名單'][1][7],stats:{}}).status,'error');assert.equal(f.rows['訓練日誌'].length,1);});
+test('unbooked logs require a student and reject mismatched account booking',()=>{const f=fixture();f.register();f.run({action:'bookClass',slotId:'slot'});assert.equal(f.run({accessToken:'mock-coach',action:'addLog',stats:{}}).status,'error');assert.equal(f.run({accessToken:'mock-coach',action:'addLog',lineId:'other',bookingId:f.rows['預約名單'][1][7],stats:{}}).status,'error');assert.equal(f.rows['訓練日誌'].length,1);});
 test('legacy single account retains historical logs and bookings',()=>{const f=fixture();f.rows['會員資料'].push(['account','舊學生',20,'0912345678',0,1]);f.rows['訓練日誌'].push([0,'account','舊學生','2026-01-01',1,0,0,0,0,0,0,0,0,'舊紀錄']);assert.equal(f.run({action:'getStudentStats'}).totalClasses,1);assert.equal(f.run({action:'bookClass',slotId:'slot'}).status,'success');assert.equal(f.rows['可用時段'][1][6],4);});
 test('private coach charges one account price for two students and consumes one slot',()=>{
  const f=fixture({remaining:1});f.register(2);f.rows['會員資料'][1][5]=2;f.rows['可用時段'][1][5]=1;f.rows['可用時段'][1][1]='[專屬教練課] 1v1:1000|1v2:1500';
- assert.equal(f.run({action:'bookClass',slotId:'slot',coachType:'1對2',paidPrice:0}).status,'success');
+ assert.equal(f.run({action:'bookClass',slotId:'slot',location:'場地',coachType:'1對2',paidPrice:0}).status,'success');
  const orders=f.rows['預約名單'].slice(1);assert.equal(orders.reduce((sum,row)=>sum+row[4],0),1470);assert.equal(orders.length,2);assert(orders.every(row=>row[6]==='現場現金'));assert.equal(orders[0][10],orders[1][10]);assert.equal(f.rows['可用時段'][1][6],0);
- assert.equal(f.run({action:'bookClass',slotId:'slot',coachType:'1對2'}).status,'error');
+ assert.equal(f.run({action:'bookClass',slotId:'slot',location:'場地',coachType:'1對2'}).status,'error');
 });
 test('reserved custom columns are never overwritten by account registration',()=>{const f=fixture();f.rows['會員資料'][0][6]='自訂欄位';assert.equal(f.register().status,'error');assert.equal(f.rows['會員資料'].length,1);assert.equal(f.rows['會員資料'][0][6],'自訂欄位');});
 test('cancel and delete restore only each student seat and preserve siblings',()=>{
  const f=fixture();f.register(3);f.run({action:'bookClass',slotId:'slot'});
  f.context.monthlyVerifyCoach_=()=>{};f.context.verifyBookingDeletionCoach_=()=>{};
  const orders=f.rows['預約名單'].slice(1);
- assert.equal(f.run({action:'cancelBooking',bookingId:orders[0][7]}).status,'success');
+ assert.equal(f.run({accessToken:'mock-coach',action:'cancelBooking',bookingId:orders[0][7]}).status,'success');
  assert.equal(f.rows['可用時段'][1][6],3);assert.equal(orders[1][5],'審核中');
- assert.equal(f.run({action:'deleteBooking',bookingId:orders[1][7]}).status,'success');
+ assert.equal(f.run({accessToken:'mock-coach',action:'deleteBooking',bookingId:orders[1][7]}).status,'success');
  assert.equal(f.rows['可用時段'][1][6],4);assert(f.rows['預約名單'].some(row=>row[7]===orders[2][7]));
 });
 
 test('repair upgrades a legacy account to three students and preserves level and original records',()=>{
  const f=fixture();f.rows['會員資料'].push(['account','舊姓名',20,'0912345678','original-date',3]);
  f.rows['訓練日誌'].push([0,'account','舊姓名','2026-01-01',1,0,0,0,0,0,0,0,0,'原有紀錄']);
- f.rows['預約名單'].push([0,'slot','account','舊姓名',285,'預約成功','','old-booking']);
+ f.rows['預約名單'].push([0,'old-slot','account','舊姓名',285,'預約成功','','old-booking']);
  assert.equal(f.run({action:'checkUser'}).user.registrationComplete,false);
  const students=[1,2,3].map(i=>({name:'學生'+i,nickname:'暱稱'+i,gender:'男',age:12}));
  const result=f.run({action:'completeAccountRegistration',accessToken:'mock',students,phone:'0912345678',idNumber:'A123456789'});
@@ -98,25 +99,25 @@ function sharedCoach(options={}) {
  return f;
 }
 test('shared coach slot is restored only after both students cancel',()=>{
- const f=sharedCoach();f.run({action:'bookClass',slotId:'slot',coachType:'1對1'});const orders=f.rows['預約名單'].slice(1);
+ const f=sharedCoach();f.run({action:'bookClass',slotId:'slot',location:'場地',coachType:'1對1'});const orders=f.rows['預約名單'].slice(1);
  assert.equal(orders.reduce((sum,row)=>sum+row[4],0),1001);
- assert.equal(f.run({action:'cancelBooking',bookingId:orders[0][7]}).status,'success');assert.equal(f.rows['可用時段'][1][6],0);
- assert.equal(f.run({action:'cancelBooking',bookingId:orders[1][7]}).status,'success');assert.equal(f.rows['可用時段'][1][6],1);
- assert.equal(f.run({action:'cancelBooking',bookingId:orders[1][7]}).status,'error');
+ assert.equal(f.run({accessToken:'mock-coach',action:'cancelBooking',bookingId:orders[0][7]}).status,'success');assert.equal(f.rows['可用時段'][1][6],0);
+ assert.equal(f.run({accessToken:'mock-coach',action:'cancelBooking',bookingId:orders[1][7]}).status,'success');assert.equal(f.rows['可用時段'][1][6],1);
+ assert.equal(f.run({accessToken:'mock-coach',action:'cancelBooking',bookingId:orders[1][7]}).status,'error');
 });
 test('deleting one shared coach order keeps slot reserved until the final order is deleted',()=>{
- const f=sharedCoach();f.run({action:'bookClass',slotId:'slot',coachType:'1對2'});const ids=f.rows['預約名單'].slice(1).map(row=>row[7]);
- assert.equal(f.run({action:'deleteBooking',bookingId:ids[0]}).status,'success');assert.equal(f.rows['可用時段'][1][6],0);
- assert.equal(f.run({action:'deleteBooking',bookingId:ids[1]}).status,'success');assert.equal(f.rows['可用時段'][1][6],1);
+ const f=sharedCoach();f.run({action:'bookClass',slotId:'slot',location:'場地',coachType:'1對2'});const ids=f.rows['預約名單'].slice(1).map(row=>row[7]);
+ assert.equal(f.run({accessToken:'mock-coach',action:'deleteBooking',bookingId:ids[0]}).status,'success');assert.equal(f.rows['可用時段'][1][6],0);
+ assert.equal(f.run({accessToken:'mock-coach',action:'deleteBooking',bookingId:ids[1]}).status,'success');assert.equal(f.rows['可用時段'][1][6],1);
 });
 test('shared coach partial write rolls back both student orders and the slot',()=>{
- const f=sharedCoach({failAppend:2});assert.equal(f.run({action:'bookClass',slotId:'slot',coachType:'1對2'}).status,'error');assert.equal(f.rows['預約名單'].length,1);assert.equal(f.rows['可用時段'][1][6],1);
+ const f=sharedCoach({failAppend:2});assert.equal(f.run({action:'bookClass',slotId:'slot',location:'場地',coachType:'1對2'}).status,'error');assert.equal(f.rows['預約名單'].length,1);assert.equal(f.rows['可用時段'][1][6],1);
 });
 test('completed sibling still reserves a shared coach slot',()=>{
- const f=sharedCoach();f.run({action:'bookClass',slotId:'slot',coachType:'1對2'});f.rows['預約名單'][1][5]='已完課';assert.equal(f.run({action:'cancelBooking',bookingId:f.rows['預約名單'][2][7]}).status,'success');assert.equal(f.rows['可用時段'][1][6],0);
+ const f=sharedCoach();f.run({action:'bookClass',slotId:'slot',location:'場地',coachType:'1對2'});f.rows['預約名單'][1][5]='已完課';assert.equal(f.run({accessToken:'mock-coach',action:'cancelBooking',bookingId:f.rows['預約名單'][2][7]}).status,'success');assert.equal(f.rows['可用時段'][1][6],0);
 });
 test('three-student accounts cannot book one-to-two private lessons',()=>{
- const f=fixture();f.register(3);f.rows['可用時段'][1][1]='[專屬教練課] 1v1:1000|1v2:1500';assert.equal(f.run({action:'bookClass',slotId:'slot',coachType:'1對2'}).status,'error');assert.equal(f.rows['預約名單'].length,1);
+ const f=fixture();f.register(3);f.rows['可用時段'][1][1]='[專屬教練課] 1v1:1000|1v2:1500';assert.equal(f.run({action:'bookClass',slotId:'slot',location:'場地',coachType:'1對2'}).status,'error');assert.equal(f.rows['預約名單'].length,1);
 });
 
 function monthlyCoach(options={}) {
@@ -165,7 +166,7 @@ test('new registration persists individual profiles and returns a compatible acc
  assert.equal(stored[0].phone,'0912345678');assert.equal(stored[0].emergencyPhone,'0223456789');assert.equal(stored[1].phone,'');
  assert.equal(f.rows['會員資料'][1][3],'0912345678');assert.equal(f.rows['會員資料'][1][7],'');
  const read=f.run({action:'checkUser'});assert.equal(read.user.registrationProfileVersion,2);
- for(const response of [result,read,f.run({action:'getCoachData'}),f.run({action:'getStudentStats'})])for(const key of ['birthDate','injuryHistory','emergencyPhone','learningGoals','lessonStyle'])assert(!JSON.stringify(response).includes('"'+key+'"'),key+' leaked');
+ for(const response of [result,read,f.run({accessToken:'mock-coach',action:'getCoachData'}),f.run({action:'getStudentStats'})])for(const key of ['birthDate','injuryHistory','emergencyPhone','learningGoals','lessonStyle'])assert(!JSON.stringify(response).includes('"'+key+'"'),key+' leaked');
  assert.equal(f.run({action:'bookClass',slotId:'slot',accountBooking:true}).status,'success');
  assert.equal(f.rows['預約名單'].length,4);assert.equal(f.rows['可用時段'][1][6],2);
 });

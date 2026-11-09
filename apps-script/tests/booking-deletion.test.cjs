@@ -8,7 +8,7 @@ const source = fs.readFileSync(path.join(__dirname, complete ? '../complete/Code
 function setup(options = {}) {
   const bookingRows = [['headers'], [0, 'slot-1', 'student', '學生', 980, options.status ?? '預約成功', '', 'booking-1']];
   if (options.duplicate) bookingRows.push([...bookingRows[1]]);
-  const slotRows = [['headers'], ['slot-1', '課程', '2026-10-29', '18:00', '', 5, options.remaining ?? 3]];
+  const slotRows = [['headers'], ['slot-1', '課程', '2026-10-29', '18:00', '', 5, options.remaining ?? 3,980,960,930,880,860]];
   const calls = []; let locked = false;
   const sheet = rows => ({
     appendRow: row => { assert(locked, 'writes must hold the shared lock'); rows.push(row); },
@@ -16,11 +16,11 @@ function setup(options = {}) {
     getRange: (row, col) => ({ setValue: value => { rows[row - 1][col - 1] = value; } }),
     deleteRow: row => { if (options.deleteError) throw new Error('write failed'); rows.splice(row - 1, 1); }
   });
-  const bookings = sheet(bookingRows), slots = sheet(slotRows);
+  const bookings = sheet(bookingRows), slots = sheet(slotRows), users=sheet([['headers'],['student','學生',20,'0912345678',0,1],['second','第二位',20,'0912345678',0,1]]);
   const context = {
     Utilities: { getUuid: () => 'new-booking' },
     SHEET_BOOKINGS: '預約名單', SHEET_SLOTS: '可用時段', ADMIN_LINE_IDS: ['coach'],
-    SpreadsheetApp: { flush() {}, getActiveSpreadsheet: () => ({ getSheetByName: name => name === '預約名單' ? bookings : name === '可用時段' ? (options.missingSlot ? { getDataRange: () => ({ getValues: () => [['headers']] }) } : slots) : null }) },
+    SpreadsheetApp: { flush() {}, getActiveSpreadsheet: () => ({ getSheetByName: name => name === '預約名單' ? bookings : name === '可用時段' ? (options.missingSlot ? { getDataRange: () => ({ getValues: () => [['headers']] }) } : slots) : name==='會員資料' ? users : null }) },
     LockService: { getScriptLock: () => ({ tryLock: () => { locked = !options.busy; return locked; }, releaseLock: () => { locked = false; } }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => options.noChannel ? null : 'channel' }) },
     UrlFetchApp: { fetch: url => {
@@ -92,7 +92,7 @@ test('authentication network errors never echo credentials', () => {
 if (complete) {
   test('original booking action holds the shared lock and updates seats', () => {
     const state = setup();
-    const result = state.run({ action: 'bookClass', slotId: 'slot-1', lineId: 'student', name: '學生', paidPrice: 980 });
+    const result = state.run({ action: 'bookClass', slotId: 'slot-1', lineId: 'second', name: '第二位', paidPrice: 980 });
     assert.equal(result.status, 'success'); assert.equal(state.bookingRows.length, 3);
     assert.equal(state.slotRows[1][6], 2); assert.equal(state.isLocked(), false);
   });
