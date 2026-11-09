@@ -35,7 +35,7 @@ test('account repair uses the same trusted channel while retaining account owner
 });
 
 test('the production channel matches the LIFF SDK channel extraction rule',()=>{
- const frontend=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
+ const frontend=fs.readFileSync(path.join(__dirname,'../../script.js'),'utf8');
  const liffId=frontend.match(/const LIFF_ID = '([^']+)'/)[1];
  const channel=original.match(/const DEFAULT_LINE_LOGIN_CHANNEL_ID = '([^']+)'/)[1];
  assert.equal(channel,liffId.match(/([^-]+)-[^-]+/)[1]);assert.equal(channel,'2012115245');

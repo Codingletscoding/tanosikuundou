@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+const html=fs.readFileSync(path.join(__dirname,'../script.js'),'utf8');
 const code=html.slice(html.indexOf('const formatTrainingDate ='),html.indexOf('const getDayOfWeek ='))+'\nthis.format = formatTrainingDate;';
 const context={Intl,Date};vm.createContext(context);vm.runInContext(code,context);const format=context.format;
 test('spreadsheet midnight in Taiwan displays the logged calendar date',()=>{

@@ -1,0 +1,2401 @@
+        // 1. 鎖定滑鼠右鍵（防止點擊「檢查」或「檢視網頁原始碼」）
+        document.addEventListener('contextmenu', function (e) {
+            e.preventDefault();
+        });
+        
+        // 2. 鎖定開發者工具常用的鍵盤快捷鍵
+        document.addEventListener('keydown', function (e) {
+            // 鎖定 F12
+            if (e.key === 'F12' || e.keyCode === 123) {
+                e.preventDefault();
+            }
+            // 鎖定 Ctrl+Shift+I (Windows) / Cmd+Option+I (Mac) - 開啟開發人員工具
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'i')) {
+                e.preventDefault();
+            }
+            // 鎖定 Ctrl+Shift+J (Windows) / Cmd+Option+J (Mac) - 開啟主控台
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'J' || e.key === 'j')) {
+                e.preventDefault();
+            }
+            // 鎖定 Ctrl+U (Windows) / Cmd+Option+U (Mac) - 檢視網頁原始碼
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'U' || e.key === 'u')) {
+                e.preventDefault();
+            }
+        });
+        const { useState, useEffect } = React;
+
+        // ==========================================
+        // 🔹 基本設定與常數
+        // ==========================================
+        const API_URL = 'https://script.google.com/macros/s/AKfycbzEgH-9zNLvzhNzsZISAc6a3IY4ojbMhpYDUPOgkFElBt1pqTYhJINyaezPfEjMlo9KLA/exec';
+        const LIFF_ID = '2012115245-A7HBSYsv';
+
+        const LEVEL_NAMES = { 1: '普通', 2: 'VIP', 3: 'VVIP', 4: 'SVVIP', 5: 'GVIP' };
+        
+        const SKILL_KEYS = [
+            { key: 'clears', label: '高遠球' }, { key: 'drives', label: '平抽' },
+            { key: 'lifts', label: '挑球' }, { key: 'drops', label: '切球' },
+            { key: 'net', label: '網前小球' }, { key: 'pushes', label: '撲球' },
+            { key: 'smashes', label: '殺球' }, { key: 'defense', label: '防守技術' },
+            { key: 'combo', label: '組合訓練' }
+        ];
+
+        const TRAINING_STEP_MINUTES = 5;
+        const TRAINING_REPETITIONS_PER_STEP = 40;
+        const normalizeTrainingMinutes = value => {
+            const minutes = Number(value);
+            if (!Number.isFinite(minutes)) return 0;
+            return Math.min(120, Math.max(0, Math.round(minutes / TRAINING_STEP_MINUTES) * TRAINING_STEP_MINUTES));
+        };
+        const estimateTrainingRepetitions = hours => {
+            const duration = Number(hours);
+            return Number.isFinite(duration) && duration > 0 ? Math.round(duration * 60 / TRAINING_STEP_MINUTES * TRAINING_REPETITIONS_PER_STEP) : 0;
+        };
+
+        const LOCATIONS_LIST = ['關聖里活動中心', '中愛羽球館', '永康嘉世','永康騰耀', '華中羽球館', '仁德羽潮','南區羽潮', '其他場地(需instagram私訊確認)'];
+
+        // ==========================================
+        // 🔹 共用功能與 API
+        // ==========================================
+        const getVIPDiscount = (lvl) => {
+            const l = Number(lvl);
+            if(l === 2) return 0.98;
+            if(l === 3) return 0.95;
+            if(l === 4) return 0.90;
+            if(l === 5) return 0.53;
+            return 1;
+        };
+
+        const generateTimeOptions = () => {
+            const times = [];
+            for (let h = 6; h <= 23; h++) {
+                const hour = h.toString().padStart(2, '0');
+                times.push(`${hour}:00`, `${hour}:30`);
+            }
+            return times;
+        };
+        const timeOptions = generateTimeOptions();
+
+        const formatDate = (dateObj) => {
+            if (!dateObj) return '';
+            const y = dateObj.getFullYear();
+            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const d = String(dateObj.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        };
+
+        const formatTrainingDate = value => {
+            const text = String(value || '').trim();
+            // Sheet dates arrive as UTC timestamps; display their calendar day in Taiwan.
+            if (!/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(text)) return text;
+            const date = new Date(text);
+            if (!Number.isFinite(date.getTime())) return text;
+            const parts = new Intl.DateTimeFormat('en-US', {
+                timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit'
+            }).formatToParts(date);
+            const part = type => parts.find(item => item.type === type).value;
+            return `${part('year')}-${part('month')}-${part('day')}`;
+        };
+
+        const getDayOfWeek = (dateString) => {
+            if (!dateString) return '';
+            const days = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
+            return days[new Date(dateString).getDay()];
+        };
+
+        const getMonthlyDatesInfo = (startDateStr) => {
+            if (!startDateStr) return { text: '', count: 0 };
+            const d = new Date(startDateStr);
+            const year = d.getFullYear();
+            const month = d.getMonth();
+            const targetDayOfWeek = d.getDay(); 
+            const dates = [];
+            for (let day = 1; day <= 31; day++) {
+                const tempDate = new Date(year, month, day);
+                if (tempDate.getMonth() !== month) break; 
+                if (tempDate.getDay() === targetDayOfWeek) dates.push(`${tempDate.getMonth() + 1}/${tempDate.getDate()}`);
+            }
+            return { text: `${dates.join(', ')} (${getDayOfWeek(startDateStr)})`, count: dates.length };
+        };
+
+        const doesSlotMatchDate = (slot, dateStr) => {
+            if (!slot || !slot.date || !dateStr) return false;
+            const sDate = String(slot.date);
+            if (sDate.includes(dateStr)) return true;
+            if (sDate.includes('T') && sDate.includes('Z')) {
+                const dObj = new Date(sDate);
+                if (formatDate(dObj) === dateStr) return true;
+            }
+            const target = new Date(dateStr);
+            const m = target.getMonth() + 1;
+            const d = target.getDate();
+            const reg = new RegExp(`(^|[^\\d/])(0?${m}/0?${d})([^\\d/]|$)`);
+            if (reg.test(sDate)) return true;
+            return false;
+        };
+
+        const fetchAPI = async (payload) => {
+          try {
+              if (window.BadmintonI18n) window.BadmintonI18n.remember(payload);
+              const res = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+              });
+              const result = await res.json();
+              if (window.BadmintonI18n) window.BadmintonI18n.remember(result);
+              return result;
+          } catch (err) {
+              console.error("API 錯誤", err);
+              return { status: 'error' };
+          }
+        };
+
+        // ==========================================
+        // 🔹 獨立 UI 基礎元件
+        // ==========================================
+        
+        const CircleProgress = ({ label, value }) => {
+            const max = 20; 
+            const radius = 32;
+            const circumference = 2 * Math.PI * radius;
+            const safeValue = Math.min(Number(value) || 0, max);
+            const strokeDashoffset = circumference - (safeValue / max) * circumference;
+            
+            return (
+                <div className="min-w-0 flex flex-col items-center justify-center p-1 sm:p-2">
+                    <div className="relative w-full max-w-[80px] aspect-square flex items-center justify-center">
+                        <svg viewBox="0 0 80 80" className="w-full h-auto transform -rotate-90">
+                            <circle cx="40" cy="40" r="32" stroke="#e2e8f0" strokeWidth="6" fill="transparent" />
+                            <circle cx="40" cy="40" r="32" stroke="#10b981" strokeWidth="6" fill="transparent" 
+                                strokeDasharray={circumference} 
+                                strokeDashoffset={strokeDashoffset} 
+                                className="transition-all duration-1000 ease-out" 
+                            />
+                        </svg>
+                        <div className="absolute flex flex-col items-center justify-center">
+                            <span className="text-sm font-bold text-slate-700" title={`${Math.round((Number(value) || 0) * 60)} 分鐘`}>{Number((Number(value) || 0).toFixed(2))}</span>
+                            <span className="text-[9px] text-slate-400">時數</span>
+                        </div>
+                    </div>
+                    <span className="text-xs mt-2 font-bold text-slate-600 text-center leading-tight">{label}</span>
+                    <span className="text-xs mt-1 text-emerald-700 text-center tabular-nums">{`約 ${estimateTrainingRepetitions(value)} 次`}</span>
+                </div>
+            );
+        };
+
+        const BookingStatusItem = ({ booking, onUpdate }) => {
+            const [code, setCode] = useState(booking.paymentCode || '');
+            const [updating, setUpdating] = useState(false);
+
+            const handleUpdate = async () => {
+                if(!code || code.length < 5) return alert("請輸入完整的帳號後5碼！");
+                setUpdating(true);
+                const result = await fetchAPI({ action: 'updatePayment', bookingId: booking.bookingId, paymentCode: code });
+                if (result.status !== 'success') { setUpdating(false); alert(result.message || '更新失敗，請稍後再試。'); return; }
+                alert("帳號後5碼已成功更新！請等待教練審核。");
+                setUpdating(false);
+                if (onUpdate) onUpdate();
+            };
+
+            const isApproved = booking.status === '預約成功';
+            const isCash = ['現場現金', '現金已收'].includes(booking.paymentCode) || /^\[專屬教練課\]/.test(booking.slotTitle || '');
+            const isCancelled = booking.status === '已取消';
+
+            return (
+                <div className={`border p-4 md:p-5 rounded-xl flex flex-col shadow-sm relative overflow-hidden ${isApproved ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                    {isCancelled ? <div className="text-gray-500 font-bold mb-2">預約已取消</div> : isApproved ? (
+                        <div className="absolute top-0 right-0 bg-emerald-200 text-emerald-800 text-[10px] px-3 py-1 rounded-bl-lg font-bold">預約成功</div>
+                    ) : (
+                        <div className="absolute top-0 right-0 bg-amber-200 text-amber-800 text-[10px] px-3 py-1 rounded-bl-lg font-bold animate-pulse">審核中</div>
+                    )}
+                    
+                    <div className="pr-14">
+                        <div className={`font-bold text-base md:text-lg ${isApproved ? 'text-emerald-800' : 'text-amber-800'}`}>
+                            {booking.slotTitle || '未知課程'}
+                        </div>
+                        <div className="text-xs md:text-sm text-gray-500 mt-1">
+                            {booking.slotDate || ''} {booking.slotTime || ''}
+                        </div>
+                    </div>
+
+                    {isCash && <p className="text-sm text-amber-900 mt-3">{booking.paymentCode === '現金已收' ? '現金已收款' : '付款方式：現場現金付款（教練費不含場地費）'}</p>}
+                    {!isCash && !isApproved && !isCancelled && booking.bookingId && (
+                        <div className="mt-4 pt-3 border-t border-amber-200/50 flex items-center gap-2">
+                            <input 
+                                type="text" 
+                                placeholder="請輸入匯款後5碼" 
+                                maxLength="5"
+                                value={code} 
+                                onChange={e=>setCode(e.target.value.replace(/\D/g, ''))} 
+                                className="flex-1 min-w-0 border border-amber-200 bg-white rounded-lg p-2 md:p-2.5 text-sm md:text-base outline-none focus:ring-1 focus:ring-amber-500 font-mono transition"
+                            />
+                            <button 
+                                onClick={handleUpdate} 
+                                disabled={updating || (code === booking.paymentCode && code !== '')} 
+                                className="bg-amber-600 text-white px-4 py-2 md:py-2.5 rounded-lg text-sm font-bold active:scale-95 transition disabled:opacity-50 whitespace-nowrap"
+                            >
+                                {updating ? '更新中' : (booking.paymentCode ? '修改' : '補登')}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const LogFormModal = ({ targetData, onClose, onSuccess }) => {
+            const [date, setDate] = useState(formatDate(new Date()));
+            const [note, setNote] = useState('');
+            const [submitting, setSubmitting] = useState(false);
+            
+            const [stats, setStats] = useState({
+                clears: 0, drives: 0, lifts: 0, drops: 0, net: 0, pushes: 0, smashes: 0, defense: 0, combo: 0
+            });
+
+            const handleStatChange = (key, val) => {
+                const minutes = normalizeTrainingMinutes(val);
+                setStats(prev => ({ ...prev, [key]: minutes }));
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setSubmitting(true);
+                await fetchAPI({ 
+                    action: 'addLog', 
+                    lineId: targetData.lineId,
+                    studentId: targetData.studentId || '',
+                    name: targetData.name, 
+                    bookingId: targetData.bookingId || "", 
+                    date: date, 
+                    stats: Object.fromEntries(Object.entries(stats).map(([key, minutes]) => [key, minutes / 60])),
+                    note: note 
+                });
+                alert('日誌儲存成功！' + (targetData.bookingId ? ' 該預約單已順利結案。' : ''));
+                setSubmitting(false);
+                if(onSuccess) onSuccess();
+                onClose();
+            };
+
+            return (
+                <div className="fixed inset-0 bg-slate-900 bg-opacity-60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden my-auto max-h-[90dvh] flex flex-col">
+                        <div className="bg-slate-800 p-4 md:p-5 text-white flex gap-3 justify-between items-center shrink-0">
+                            <h3 className="font-bold text-base md:text-lg">訓練日誌：{targetData.name || '學員'}</h3>
+                            <button onClick={onClose} className="text-slate-400 hover:text-white font-bold text-3xl px-2 shrink-0 leading-none active:scale-90">&times;</button>
+                        </div>
+                        
+                        <form onSubmit={handleSubmit} className="p-4 md:p-6 overflow-y-auto">
+                            <div className="mb-5">
+                                <label className="block text-sm font-bold text-slate-700 mb-2">本次上課日期</label>
+                                <input type="date" required className="border border-gray-300 p-2.5 rounded-lg w-full md:max-w-xs text-base" value={date} onChange={e=>setDate(e.target.value)} />
+                            </div>
+
+                            <div className="mb-5">
+                                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-4 border-b pb-3 gap-2">
+                                    <label className="block text-sm md:text-base font-bold text-slate-700">訓練時數</label>
+                                    <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded w-fit font-bold">每格 5 分鐘（約 40 次），每項最多 2 小時</span>
+                                </div>
+                                <div className="grid grid-cols-1 min-[360px]:grid-cols-2 md:grid-cols-3 gap-3 md:gap-x-6 md:gap-y-5">
+                                    {SKILL_KEYS.map(skill => (
+                                        <div key={skill.key} className="flex flex-col bg-slate-50 p-3 md:p-4 rounded-xl border border-slate-100">
+                                            <div className="flex flex-wrap gap-1 justify-between text-sm md:text-base font-bold text-slate-700 mb-2.5">
+                                                <span>{skill.label}</span>
+                                                <span className={stats[skill.key] > 0 ? "text-emerald-600 font-extrabold" : "text-slate-400"}>{stats[skill.key]} 分鐘</span>
+                                            </div>
+                                            <input type="range" aria-label={`${skill.label}訓練分鐘`} aria-valuetext={`${stats[skill.key]} 分鐘，約 ${estimateTrainingRepetitions(stats[skill.key] / 60)} 次`} min="0" max="120" step={TRAINING_STEP_MINUTES} value={stats[skill.key]} onChange={e => handleStatChange(skill.key, e.target.value)} className="w-full accent-emerald-500" />
+                                            <p className="text-xs text-emerald-700 mt-2 tabular-nums">{`約 ${estimateTrainingRepetitions(stats[skill.key] / 60)} 次`}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="mb-4">
+                                <label className="block text-sm md:text-base font-bold text-slate-700 mb-2">教練綜合短評 (日誌)</label>
+                                <textarea className="w-full border border-gray-300 p-4 rounded-xl h-28 text-base outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 leading-relaxed" placeholder="例如：發力明顯進步，但防守步伐需要加強..." value={note} onChange={e=>setNote(e.target.value)}></textarea>
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-5 border-t mt-auto">
+                                <button type="button" onClick={onClose} className="px-5 py-2.5 font-bold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 text-sm md:text-base active:scale-95 transition">取消</button>
+                                <button type="submit" disabled={submitting} className="px-5 py-2.5 font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 shadow-sm disabled:opacity-50 text-sm md:text-base active:scale-95 transition">
+                                    {submitting ? '儲存中...' : (targetData.bookingId ? '送出日誌並結案' : '送出日誌')}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )
+        };
+
+        const StudentRegistrationDetails = ({ profile }) => {
+            const birthday = profile.birthDate || (profile.age != null && profile.age !== '' ? `${profile.age} 歲（舊資料未記錄生日）` : '');
+            const fields = [
+                ['姓名', profile.name], ['暱稱', profile.nickname], ['出生年月日', birthday],
+                ['手機號碼', profile.phone], ['緊急連絡人電話', profile.emergencyPhone],
+                ['傷病史', profile.injuryHistory, true], ['學習目標', profile.learningGoals, true]
+            ];
+            return (
+                <div className="space-y-5">
+                    <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                        {fields.map(([label, value, wide]) => <div key={label} className={`min-w-0 ${wide ? 'sm:col-span-2' : ''}`}>
+                            <dt className="text-xs font-bold text-slate-500 mb-1">{label}</dt>
+                            <dd className="text-sm text-slate-800 whitespace-pre-wrap break-words">{value || '未填寫'}</dd>
+                        </div>)}
+                    </dl>
+                    <div>
+                        <h4 className="text-xs font-bold text-slate-500 mb-2">偏好上課風格</h4>
+                        {profile.lessonStyle ? <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            {LESSON_STYLE_OPTIONS.map(([key, label]) => <div key={key} className="bg-slate-50 border rounded-lg p-3 min-w-0">
+                                <dt className="text-xs text-slate-600 leading-relaxed">{label}</dt>
+                                <dd className="text-lg font-bold text-emerald-800 mt-2 tabular-nums">{profile.lessonStyle[key]}%</dd>
+                            </div>)}
+                        </dl> : <p className="text-sm text-slate-600">未填寫</p>}
+                    </div>
+                    {!profile.isRepresentative && <div className="border-t pt-4">
+                        <h4 className="text-xs font-bold text-slate-500 mb-1">帳號代表聯絡方式</h4>
+                        <p className="text-sm text-slate-800 break-words">{profile.representativeName || '未填寫'} · {profile.representativePhone || '未填寫'}</p>
+                    </div>}
+                </div>
+            );
+        };
+
+        const BookingHistoryList = ({ bookings = [] }) => (
+            <div className="space-y-3 max-h-96 overflow-y-auto pr-1 min-w-0">
+                {!bookings.length ? <p className="text-center text-gray-400 text-sm py-6">無預約紀錄</p> : bookings.map((booking, index) => <article key={`${booking.isHistorical ? 'history' : 'booking'}-${booking.bookingId || index}`} className="border rounded-xl p-4 bg-white min-w-0">
+                    <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-bold text-slate-800 break-words">{booking.slotTitle || '未知課程'}</h4><span className="text-xs bg-slate-100 text-slate-700 rounded px-2 py-1">{booking.status || '未知狀態'}</span></div>
+                    <p className="text-sm text-slate-600 mt-2">{formatTrainingDate(booking.slotDate || '')} {booking.slotTime || ''}</p>
+                    {booking.location && <p className="text-sm text-slate-600 mt-1 break-words">{booking.location}</p>}
+                    {booking.teachingCoachName && <p className="text-sm text-slate-600 mt-1 break-words">授課教練：{booking.teachingCoachName}</p>}
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm mt-2"><span className="font-bold text-emerald-700">{booking.paidPrice !== '' && booking.paidPrice != null && Number.isFinite(Number(booking.paidPrice)) ? formatMoney(Number(booking.paidPrice)) : '未填寫'}</span><span className="text-slate-600">{booking.isHistorical ? (booking.paymentStatus === 'paid' ? '已收款' : '尚未收款') : (booking.paymentCode || '-')}</span></div>
+                    {booking.isHistorical && <p className="text-xs text-amber-800 mt-2">手動補登 · 原預約日期：{formatTrainingDate(booking.timestamp)}</p>}
+                </article>)}
+            </div>
+        );
+
+        const HistoricalBookingModal = ({ student, onClose, onSuccess }) => {
+            const initialForm = { title: '', date: '', startTime: '19:00', endTime: '20:00', location: '', teachingCoachName: '', amount: '', paymentStatus: 'unpaid', bookingDate: '', status: '已完課' };
+            const [form, setForm] = useState(initialForm);
+            const [coaches, setCoaches] = useState([]);
+            const [history, setHistory] = useState([]);
+            const [ready, setReady] = useState(false);
+            const [loading, setLoading] = useState(true);
+            const [busy, setBusy] = useState(false);
+            const [error, setError] = useState('');
+            const [message, setMessage] = useState('');
+            const [refresh, setRefresh] = useState(0);
+            const busyRef = React.useRef(false);
+            const requestRef = React.useRef(null);
+            const readHistory = async () => {
+                const result = await fetchAPI({ action: 'getStudentStats', lineId: student.lineId, studentId: student.studentId || '' });
+                if (result.status !== 'success' || !Array.isArray(result.bookingHistory)) throw new Error(result.message || '無法讀取歷史預約紀錄，請稍後再試。');
+                return result.bookingHistory;
+            };
+            useEffect(() => {
+                let active = true;
+                setReady(false); setLoading(true); setError('');
+                const load = async () => {
+                    try {
+                        const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                        if (!accessToken) throw new Error('請重新登入 LINE。');
+                        const result = await fetchAPI({ action: 'getHistoricalBookingOptions', accessToken });
+                        if (result.status !== 'success' || result.historicalBookingVersion !== 1) throw new Error('歷史預約補登尚未啟用，請聯絡管理員更新系統。');
+                        const records = await readHistory();
+                        if (active) { setCoaches(result.teachingCoaches || []); setHistory(records); setReady(true); }
+                    } catch (err) { if (active) setError(err.message); }
+                    finally { if (active) setLoading(false); }
+                };
+                load();
+                return () => { active = false; };
+            }, [student, refresh]);
+            const update = (key, value) => { requestRef.current = null; setMessage(''); setForm(prev => ({ ...prev, [key]: value })); };
+            const save = async event => {
+                event.preventDefault();
+                if (!ready || busyRef.current) return;
+                busyRef.current = true; setBusy(true); setError(''); setMessage('');
+                let saved = false;
+                try {
+                    const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                    if (!accessToken) throw new Error('請重新登入 LINE。');
+                    if (!requestRef.current) requestRef.current = window.crypto?.randomUUID ? window.crypto.randomUUID() : 'history-' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+                    const result = await fetchAPI({ action: 'coachAddHistoricalBooking', lineId: student.lineId, studentId: student.studentId || '', ...form, requestId: requestRef.current, accessToken });
+                    if (result.status !== 'success' || !result.bookingId) throw new Error(result.message || '歷史預約補登失敗，請稍後再試。');
+                    saved = true;
+                    setHistory(await readHistory());
+                    await onSuccess();
+                    requestRef.current = null; setForm(initialForm); setMessage('歷史預約已新增，付款統計已更新。');
+                } catch (err) { setError(saved ? '歷史預約已儲存，但重新讀取失敗。請先重新整理確認，勿重複補登。' : err.message); }
+                finally { busyRef.current = false; setBusy(false); }
+            };
+            return <div className="fixed inset-0 z-50 bg-slate-900 bg-opacity-60 p-3 md:p-5 flex items-center justify-center">
+                <div role="dialog" aria-modal="true" aria-labelledby="historical-booking-title" className="bg-gray-50 rounded-2xl shadow-xl w-full max-w-4xl max-h-[90dvh] overflow-y-auto min-w-0">
+                    <div className="sticky top-0 z-10 bg-slate-800 text-white p-4 flex flex-wrap items-center justify-between gap-3"><h2 id="historical-booking-title" className="font-bold">補登歷史預約：{student.name}</h2><button type="button" disabled={busy} onClick={onClose} className="border border-slate-500 rounded-lg px-3 py-2">關閉</button></div>
+                    <div className="p-4 md:p-6 space-y-5">
+                        <p className="text-sm text-slate-600 leading-relaxed">僅補登此學員已結束的課程，不佔用目前名額。已收款且未取消的紀錄會計入累積付款，月份依原預約日期統計；不會自動產生日誌或增加訓練時數，完成堂數仍依訓練日誌計算。</p>
+                        {loading && <p role="status" className="text-sm text-slate-500">讀取歷史預約中...</p>}
+                        {error && <div role="alert" className="text-sm text-red-700 bg-red-50 rounded-lg p-3"><p>{error}</p>{!ready && !loading && <button type="button" onClick={() => setRefresh(n => n + 1)} className="border rounded-lg px-3 py-2 mt-2">重新讀取歷史預約</button>}</div>}
+                        {message && <p role="status" className="text-sm text-emerald-800 bg-emerald-50 rounded-lg p-3">{message}</p>}
+                        <form onSubmit={save} aria-label="歷史預約資料" className="bg-white border rounded-xl p-4 space-y-4">
+                            <fieldset disabled={!ready || busy} className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
+                                <label className="block text-sm font-bold">歷史課程名稱<input aria-label="歷史課程名稱" required maxLength={100} value={form.title} onChange={e => update('title', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /></label>
+                                <label className="block text-sm font-bold">歷史上課日期<input aria-label="歷史上課日期" type="date" required min="1900-01-01" max={registrationToday()} value={form.date} onChange={e => update('date', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /></label>
+                                <label className="block text-sm font-bold">歷史開始時間<input aria-label="歷史開始時間" type="time" required value={form.startTime} onChange={e => update('startTime', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /></label>
+                                <label className="block text-sm font-bold">歷史結束時間<input aria-label="歷史結束時間" type="time" required value={form.endTime} onChange={e => update('endTime', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /></label>
+                                <label className="block text-sm font-bold">歷史上課地點<input aria-label="歷史上課地點" required maxLength={120} value={form.location} onChange={e => update('location', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /></label>
+                                <label className="block text-sm font-bold">歷史授課教練（選填）<input aria-label="歷史授課教練（選填）" list="historical-coach-names" maxLength={60} value={form.teachingCoachName} onChange={e => update('teachingCoachName', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /><datalist id="historical-coach-names">{coaches.map(coach => <option key={coach.id} value={coach.name} />)}</datalist></label>
+                                <label className="block text-sm font-bold">歷史課程金額<input aria-label="歷史課程金額" type="number" min="0" max="10000000" step="0.01" required value={form.amount} onChange={e => update('amount', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /></label>
+                                <label className="block text-sm font-bold">歷史付款狀態<select aria-label="歷史付款狀態" value={form.paymentStatus} onChange={e => update('paymentStatus', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 bg-white font-normal"><option value="unpaid">尚未收款</option><option value="paid">已收款</option></select></label>
+                                <label className="block text-sm font-bold">歷史課程狀態<select aria-label="歷史課程狀態" value={form.status} onChange={e => update('status', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 bg-white font-normal">{['已完課', '預約成功', '已取消'].map(status => <option key={status} value={status}>{status}</option>)}</select></label>
+                                <label className="block text-sm font-bold">原預約日期（選填）<input aria-label="原預約日期（選填）" type="date" min="1900-01-01" max={form.date || registrationToday()} value={form.bookingDate} onChange={e => update('bookingDate', e.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /><span className="block font-normal text-xs text-slate-500 mt-1">未填寫時，依上課日期記錄原預約日期。</span></label>
+                            </fieldset>
+                            <button type="submit" disabled={!ready || busy} className="bg-emerald-700 text-white font-bold rounded-lg px-5 py-3 disabled:opacity-50">{busy ? '儲存中...' : '新增歷史預約'}</button>
+                        </form>
+                        <section aria-label="此學員的歷史預約"><h3 className="font-bold text-slate-800 mb-3">歷史預約紀錄</h3><BookingHistoryList bookings={history} /></section>
+                    </div>
+                </div>
+            </div>;
+        };
+
+        const StudentDetailsModal = ({ student, onClose }) => {
+            const [data, setData] = useState(null);
+            const [statsError, setStatsError] = useState('');
+            const [profile, setProfile] = useState(null);
+            const [profileError, setProfileError] = useState('');
+            const [profileLoading, setProfileLoading] = useState(true);
+            const [refresh, setRefresh] = useState(0);
+
+            useEffect(() => {
+                let active = true;
+                setData(null); setStatsError(''); setProfile(null); setProfileError(''); setProfileLoading(true);
+                if (!student || !student.lineId) {
+                    setStatsError('找不到學員帳號。'); setProfileError('找不到學員帳號。'); setProfileLoading(false);
+                    return () => { active = false; };
+                }
+                fetchAPI({ action: 'getStudentStats', lineId: student.lineId, studentId: student.studentId || '' }).then(result => {
+                    if (!result || result.status !== 'success') throw new Error(result?.message || '無法讀取訓練紀錄，請稍後再試。');
+                    if (active) setData(result);
+                }).catch(error => { if (active) setStatsError(error.message); });
+                const loadProfile = async () => {
+                    try {
+                        const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                        if (!accessToken) throw new Error('請重新登入 LINE 後檢視學員基本資料。');
+                        const result = await fetchAPI({ action: 'getStudentProfile', lineId: student.lineId, studentId: student.studentId || '', accessToken });
+                        if (!result || result.status !== 'success') {
+                            const message = String(result?.message || '無法讀取學員基本資料，請稍後再試。');
+                            throw new Error(message.startsWith('不支援的操作') ? '尚未啟用基本資料檢視，請聯絡管理員更新系統。' : message);
+                        }
+                        if (!result.profile || result.profile.lineId !== student.lineId || result.profile.studentId !== (student.studentId || '')) throw new Error('基本資料回應不完整，請稍後再試。');
+                        if (active) setProfile(result.profile);
+                    } catch (error) { if (active) setProfileError(error.message); }
+                    finally { if (active) setProfileLoading(false); }
+                };
+                loadProfile();
+                return () => { active = false; };
+            }, [student, refresh]);
+
+            return (
+                <div className="fixed inset-0 bg-slate-900 bg-opacity-60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden my-auto max-h-[90dvh] flex flex-col">
+                        <div className="bg-slate-800 p-4 md:p-5 text-white flex gap-3 justify-between items-center shrink-0">
+                            <h3 className="font-bold text-base md:text-lg flex items-center gap-2">
+                                <span className="text-emerald-400">學員檔案：</span> {student ? student.name : ''}
+                            </h3>
+                            <button onClick={onClose} className="text-slate-400 hover:text-white font-bold text-3xl px-2 shrink-0 leading-none active:scale-90">&times;</button>
+                        </div>
+                        
+                        <div className="p-4 md:p-6 overflow-y-auto bg-gray-50 flex-1 min-w-0">
+                            <section aria-labelledby="student-registration-title" className="bg-white rounded-2xl shadow-sm border p-5 md:p-6 mb-6">
+                                <div className="flex flex-wrap items-center gap-3 mb-4">
+                                    <h3 id="student-registration-title" className="font-bold text-base md:text-lg text-slate-800">註冊基本資料</h3>
+                                    {profile?.isRepresentative && <span className="bg-amber-100 text-amber-900 text-xs px-2 py-1 rounded">帳號代表</span>}
+                                </div>
+                                {profileLoading ? <p role="status" className="text-sm text-slate-500">讀取基本資料中...</p> : profileError ? <div role="alert" className="text-sm text-red-700"><p>{profileError}</p><button type="button" onClick={() => setRefresh(value => value + 1)} className="mt-3 border border-red-200 rounded-lg px-3 py-2">重新讀取基本資料</button></div> : profile && <StudentRegistrationDetails profile={profile} />}
+                            </section>
+                            {!data ? (
+                                statsError ? <div role="alert" className="text-sm text-red-700"><p>{statsError}</p><button type="button" onClick={() => setRefresh(value => value + 1)} className="mt-3 border rounded-lg px-3 py-2">重新讀取訓練紀錄</button></div> : <div className="text-center py-20 text-gray-500 font-bold animate-pulse">讀取學員資料中...</div>
+                            ) : (
+                                <div className="space-y-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6 h-fit">
+                                            <h3 className="font-bold text-slate-800 mb-4 ml-1 flex items-center text-base md:text-lg">
+                                                <span className="w-1.5 h-5 bg-emerald-500 rounded mr-2"></span>能力時數雷達
+                                            </h3>
+                                            <p className="text-xs text-slate-500 mb-3">訓練次數依每 5 分鐘約 40 次估算。</p>
+                                            <div data-layout="skill-radar" className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                                {SKILL_KEYS.map(skill => (
+                                                    <CircleProgress key={skill.key} label={skill.label} value={data.stats ? data.stats[skill.key] : 0} />
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6">
+                                            <h3 className="font-bold text-slate-800 mb-4 ml-1 flex items-center text-base md:text-lg">
+                                                <span className="w-1.5 h-5 bg-blue-500 rounded mr-2"></span>歷史訓練日誌
+                                            </h3>
+                                            <div className="space-y-4 max-h-[350px] overflow-y-auto pr-2">
+                                                {!data.logs || data.logs.length === 0 ? (
+                                                    <div className="text-center text-gray-400 text-sm py-6">尚無日誌紀錄</div>
+                                                ) : (
+                                                    data.logs.map((log, i) => (
+                                                        <div key={i} className="border-b border-dashed border-gray-200 pb-4 last:border-0 last:pb-0">
+                                                            <div className="text-sm font-bold text-emerald-600 mb-1.5">{formatTrainingDate(log.date)}</div>
+                                                            <p className="text-sm md:text-base text-gray-700 whitespace-pre-wrap leading-relaxed">{log.note || '本次無特別備註'}</p>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6">
+                                        <h3 className="font-bold text-slate-800 mb-4 ml-1 flex items-center text-base md:text-lg">
+                                            <span className="w-1.5 h-5 bg-amber-500 rounded mr-2"></span>歷史預約紀錄
+                                        </h3>
+                                        <BookingHistoryList bookings={data.bookingHistory || data.bookings || []} />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )
+        };
+
+        // ==========================================
+        // 🔹 學生端主頁面與子視圖
+        // ==========================================
+
+        const LanguageSwitch = () => {
+            const [language, setLanguage] = useState(() => window.BadmintonI18n?.getLanguage() || 'zh-TW');
+            useEffect(() => {
+                const syncLanguage = event => setLanguage(event.detail);
+                window.addEventListener('badminton-language-change', syncLanguage);
+                return () => window.removeEventListener('badminton-language-change', syncLanguage);
+            }, []);
+            return (
+                <nav className="language-switch" translate="no" aria-label="Language / 語言">
+                    {[['zh-TW', '中文'], ['ja', '日本語']].map(([value, label]) => (
+                        <button key={value} type="button" data-language={value} aria-pressed={language === value} onClick={() => window.BadmintonI18n?.setLanguage(value)}>{label}</button>
+                    ))}
+                </nav>
+            );
+        };
+
+        const BrandBanner = () => (
+            <div role="img" aria-label="樂動羽球，樂在運動，動出健康" className="brand-banner w-full shrink-0" style={{ aspectRatio: '8 / 3', backgroundImage: 'url("./jj.png")', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }} />
+        );
+
+        const studentNickname = (student, index = 0) => {
+            const nickname = typeof student?.nickname === 'string' ? student.nickname.trim() : '';
+            return nickname || `學員 ${index + 1}`;
+        };
+
+        const validateAccountRecord = (user, expectedCount = null) => {
+          if (!user || !Array.isArray(user.students) || user.students.length < 1 || user.students.length > 3) throw new Error('後端尚未回傳完整學生資料，請先更新原有 Apps Script 部署為最新完整 Code.gs，再重新登入。');
+          if (user.studentCount != null && Number(user.studentCount) !== user.students.length) throw new Error('帳號學生人數資料不一致，請聯絡教練確認。');
+          if (expectedCount != null && (user.students.length !== expectedCount || user.registrationComplete === false)) throw new Error('學生資料尚未完整儲存，請保留表單並確認 Apps Script 已更新，再重試。');
+          return user;
+        };
+
+        const REGISTRATION_NOTES = {
+            name: '請填寫真實中文姓名，以便於核對預約名單與後續行政作業。',
+            nickname: '請填寫您希望在課堂上教練稱呼您的名字，讓我們更親切地互動！',
+            birthDate: '協助教練了解您的年齡層，以安排最適合您的體能訓練強度。',
+            phone: '用於課程預約成功通知與重要異動提醒。',
+            injuryHistory: '若您有任何關節（如肩膀、手腕、腰部、膝蓋）舊傷或近期不適，請務必簡述。教練會依此調整您的專屬訓練動作與發力方式，預防代償受傷。無則免填。',
+            emergencyPhone: '運動安全至上，此資訊僅供課堂突發緊急狀況時聯繫使用，請放心填寫。',
+            learningGoals: '請簡述您最想改善的技術或上課目的（例如：「想學正確發力方式」、「想把動作矯正漂亮」、「避免受傷」、「加強穩定度」或「純粹想運動流汗」），這將幫助教練快速為您量身設定訓練菜單與進度。',
+            lessonStyle: '每位學員吸收技巧的方式與期望的節奏不同，請選擇您最希望在課堂中 ABC 的佔比。'
+        };
+        const LESSON_STYLE_OPTIONS = [
+            ['theory', 'A. 動作原理解說教學時間', '適合喜歡先清楚理解發力原理與腳步邏輯的學員'],
+            ['multiball', 'B. 多球訓練時間', '適合喜歡透過大量擊球建立肌肉記憶，追求運動量與流汗快感的學員'],
+            ['correction', 'C. 動作矯正說明時間', '適合已有基礎，希望教練針對現有動作抓漏、微調發力習慣並突破瓶頸的學員']
+        ];
+        const rebalanceLessonStyle = (style, key, value) => {
+            const others = ['theory', 'multiball', 'correction'].filter(item => item !== key);
+            const chosen = Math.max(0, Math.min(100, Math.round(Number(value))));
+            const remaining = 100 - chosen;
+            const previous = style[others[0]] + style[others[1]];
+            const first = previous ? Math.round(remaining * style[others[0]] / previous) : Math.round(remaining / 2);
+            return { ...style, [key]: chosen, [others[0]]: first, [others[1]]: remaining - first };
+        };
+        const registrationToday = () => new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const registrationBirthday = (student, today = registrationToday()) => {
+            const birthDate = `${student.birthYear}-${String(student.birthMonth).padStart(2, '0')}-${String(student.birthDay).padStart(2, '0')}`;
+            const date = new Date(birthDate + 'T00:00:00Z');
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== birthDate || birthDate > today || Number(student.birthYear) < Number(today.slice(0, 4)) - 120) throw new Error('請選擇有效的出生年月日。');
+            return birthDate;
+        };
+
+        const RegisterView = ({ profile, onRegistered, existingUser = null, onCancel }) => {
+          const emptyStudent = () => ({ name: '', nickname: '', birthYear: '', birthMonth: '', birthDay: '', phone: '', injuryHistory: '', emergencyPhone: '', learningGoals: '', lessonStyle: { theory: 34, multiball: 33, correction: 33 } });
+          const [students, setStudents] = useState([{ ...emptyStudent(), name: existingUser?.name || '', phone: existingUser?.phone || '' }]);
+          const [submitting, setSubmitting] = useState(false);
+          const today = registrationToday();
+          const currentYear = Number(today.slice(0, 4));
+          const updateStudent = (index, key, value) => setStudents(previous => previous.map((student, i) => i === index ? { ...student, [key]: value } : student));
+          const updateBirthday = (index, key, value) => setStudents(previous => previous.map((student, i) => {
+            if (i !== index) return student;
+            const next = { ...student, [key]: value };
+            const days = next.birthYear && next.birthMonth ? new Date(Number(next.birthYear), Number(next.birthMonth), 0).getDate() : 31;
+            if (Number(next.birthDay) > days) next.birthDay = '';
+            return next;
+          }));
+          const handleSubmit = async (e) => {
+            e.preventDefault();
+            if (submitting) return;
+            setSubmitting(true);
+            try {
+              const registrationStudents = students.map((student, index) => {
+                const birthDate = registrationBirthday(student);
+                const phone = student.phone.replace(/[\s-]/g, '');
+                const emergencyPhone = student.emergencyPhone.replace(/[\s()-]/g, '');
+                if ((index === 0 || phone) && !/^09\d{8}$/.test(phone)) throw new Error('請填寫有效手機號碼。');
+                if ((index === 0 || emergencyPhone) && !/^0\d{8,9}$/.test(emergencyPhone)) throw new Error('請填寫有效緊急連絡人電話。');
+                return { name: student.name.trim(), nickname: student.nickname.trim(), birthDate, phone, injuryHistory: student.injuryHistory.trim(), emergencyPhone, learningGoals: student.learningGoals.trim(), lessonStyle: student.lessonStyle };
+              });
+              const lineId = profile ? profile.userId : '';
+              const support = await fetchAPI({ action: 'checkUser', lineId });
+              if (support.status !== 'success' || support.registrationProfileVersion !== 2) throw new Error('目前後端尚未支援新版註冊資料，本次尚未送出資料。');
+              const action = existingUser ? 'completeAccountRegistration' : 'registerUser';
+              const accessToken = existingUser && typeof liff !== 'undefined' ? liff.getAccessToken() : undefined;
+              const result = await fetchAPI({ action, lineId, students: registrationStudents, registrationProfileVersion: 2, accessToken });
+              if (result.status !== 'success') throw new Error(result.message || '註冊失敗，請稍後再試');
+              validateAccountRecord(result.user, students.length);
+              if (result.user.registrationProfileVersion !== 2) throw new Error('新版註冊資料尚未完整儲存，請聯絡教練確認。');
+              const registered = await fetchAPI({ action: 'checkUser', lineId });
+              if (registered.status !== 'success') throw new Error('資料已送出，讀取失敗，請重新登入確認。');
+              const savedUser = validateAccountRecord(registered.user, students.length);
+              if (savedUser.registrationProfileVersion !== 2) throw new Error('新版註冊資料尚未完整儲存，請聯絡教練確認。');
+              if (onRegistered) onRegistered(savedUser);
+            } catch (error) { alert(error.message); }
+            finally { setSubmitting(false); }
+          };
+          const inputClass = 'block w-full border p-3 rounded-lg mt-1 font-normal';
+          const noteClass = 'block text-xs leading-relaxed text-slate-500 font-normal mt-1';
+          return (
+            <div className="registration-shell max-w-md md:max-w-lg mx-auto md:my-16 p-5 md:p-8 bg-white md:rounded-2xl shadow-xl border-t-4 border-slate-800 min-h-screen md:min-h-0">
+              <div className="registration-heading mb-6 border-b pb-5">
+                <BrandBanner />
+                <div className="language-switch-row mt-4">
+                  <h2 className="text-xl font-bold text-slate-800">學員資料登記</h2>
+                  <LanguageSwitch />
+                </div>
+                <p className="text-sm text-slate-500 mt-1">{existingUser ? '補登同帳號學生資料（保留既有預約與紀錄）' : '首次登入請綁定學員資料'}</p>
+              </div>
+              <form onSubmit={handleSubmit} className="registration-form space-y-5">
+                <label className="block font-bold">學生人數
+                  <select aria-label="學生人數" disabled={submitting} className={inputClass} value={students.length} onChange={e => setStudents(previous => Array.from({ length: Number(e.target.value) }, (_, i) => previous[i] || emptyStudent()))}>
+                    {[1,2,3].map(count => <option key={count} value={count}>{count} 人</option>)}
+                  </select>
+                </label>
+                <p className="text-sm text-slate-600">預約時將自動預訂全部學生的名額並加總費用。第一位學生為代表；其他學員可省略手機號碼及緊急連絡人電話。傷病史無則免填。</p>
+                {students.map((student, index) => <fieldset key={index} disabled={submitting} className="registration-student border rounded-xl p-4 space-y-5">
+                  <legend className="font-bold">學生 {index + 1}{index === 0 ? '（代表）' : ''}</legend>
+                  {['name','nickname'].map(key => <label key={key} className="block text-sm font-bold">{key === 'name' ? '姓名' : '暱稱'}
+                    <input required maxLength="60" autoComplete={key === 'name' ? 'name' : 'nickname'} pattern={key === 'name' ? '[\\p{Script=Han}·・‧ ]+' : undefined} aria-describedby={`registration-${index}-${key}-note`} className={inputClass} value={student[key]} onChange={e => updateStudent(index, key, e.target.value)} />
+                    <span id={`registration-${index}-${key}-note`} className={noteClass}>{REGISTRATION_NOTES[key]}</span>
+                  </label>)}
+                  <div role="group" aria-labelledby={`registration-${index}-birth-label`} aria-describedby={`registration-${index}-birth-note`}>
+                    <p id={`registration-${index}-birth-label`} className="text-sm font-bold">出生年月日</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <label className="text-xs text-slate-500">年<select required aria-label={`學生 ${index + 1} 出生年`} className={inputClass} value={student.birthYear} onChange={e => updateBirthday(index, 'birthYear', e.target.value)}><option value="">年</option>{Array.from({ length: 121 }, (_, i) => currentYear - i).map(year => <option key={year} value={year}>{year}</option>)}</select></label>
+                      <label className="text-xs text-slate-500">月<select required aria-label={`學生 ${index + 1} 出生月`} className={inputClass} value={student.birthMonth} onChange={e => updateBirthday(index, 'birthMonth', e.target.value)}><option value="">月</option>{Array.from({ length: 12 }, (_, i) => i + 1).map(month => <option key={month} value={month}>{month}</option>)}</select></label>
+                      <label className="text-xs text-slate-500">日<select required aria-label={`學生 ${index + 1} 出生日`} className={inputClass} value={student.birthDay} onChange={e => updateBirthday(index, 'birthDay', e.target.value)}><option value="">日</option>{Array.from({ length: student.birthYear && student.birthMonth ? new Date(Number(student.birthYear), Number(student.birthMonth), 0).getDate() : 31 }, (_, i) => i + 1).map(day => <option key={day} value={day}>{day}</option>)}</select></label>
+                    </div>
+                    <p id={`registration-${index}-birth-note`} className={noteClass}>{REGISTRATION_NOTES.birthDate}</p>
+                  </div>
+                  <label className="block text-sm font-bold">手機號碼{index > 0 && '（選填）'}<input required={index === 0} type="tel" autoComplete="tel" maxLength="20" aria-describedby={`registration-${index}-phone-note`} className={inputClass} value={student.phone} onChange={e => updateStudent(index, 'phone', e.target.value)} /><span id={`registration-${index}-phone-note`} className={noteClass}>{REGISTRATION_NOTES.phone}</span></label>
+                  <label className="block text-sm font-bold">傷病史（選填）<textarea maxLength="2000" rows="3" aria-describedby={`registration-${index}-injury-note`} className={inputClass} value={student.injuryHistory} onChange={e => updateStudent(index, 'injuryHistory', e.target.value)} /><span id={`registration-${index}-injury-note`} className={noteClass}>{REGISTRATION_NOTES.injuryHistory}</span></label>
+                  <label className="block text-sm font-bold">緊急連絡人電話{index > 0 && '（選填）'}<input required={index === 0} type="tel" maxLength="20" aria-describedby={`registration-${index}-emergency-note`} className={inputClass} value={student.emergencyPhone} onChange={e => updateStudent(index, 'emergencyPhone', e.target.value)} /><span id={`registration-${index}-emergency-note`} className={noteClass}>{REGISTRATION_NOTES.emergencyPhone}</span></label>
+                  <label className="registration-goals block text-sm font-bold">學習目標<textarea required maxLength="2000" rows="3" aria-describedby={`registration-${index}-goals-note`} className={inputClass} value={student.learningGoals} onChange={e => updateStudent(index, 'learningGoals', e.target.value)} /><span id={`registration-${index}-goals-note`} className={noteClass}>{REGISTRATION_NOTES.learningGoals}</span></label>
+                  <div role="group" aria-labelledby={`registration-${index}-style-label`} className="registration-style bg-slate-50 rounded-lg p-3 space-y-4">
+                    <p id={`registration-${index}-style-label`} className="text-sm font-bold">偏好上課風格</p>
+                    <p className={noteClass}>{REGISTRATION_NOTES.lessonStyle}</p>
+                    {LESSON_STYLE_OPTIONS.map(([key, label, note]) => <label key={key} className="block text-sm font-bold">
+                      <span className="flex items-start justify-between gap-2"><span>{label}</span><output className="shrink-0 tabular-nums" htmlFor={`registration-${index}-${key}`}>{student.lessonStyle[key]}%</output></span>
+                      <input id={`registration-${index}-${key}`} type="range" min="0" max="100" step="1" aria-label={`學生 ${index + 1} ${label}`} aria-describedby={`registration-${index}-${key}-note`} className="w-full accent-emerald-600 mt-2" value={student.lessonStyle[key]} onChange={e => updateStudent(index, 'lessonStyle', rebalanceLessonStyle(student.lessonStyle, key, e.target.value))} />
+                      <span id={`registration-${index}-${key}-note`} className={noteClass}>{note}</span>
+                    </label>)}
+                    <p role="status" className="text-sm font-bold text-emerald-800">合計：{Object.values(student.lessonStyle).reduce((sum, value) => sum + value, 0)}%</p>
+                    <p className={noteClass}>拖動任一項時，其餘兩項會自動按比例調整，合計 100%。</p>
+                  </div>
+                </fieldset>)}
+                <button type="submit" disabled={submitting} className="w-full bg-slate-800 text-white p-4 mt-4 rounded-lg font-bold text-lg hover:bg-slate-700 transition active:scale-[0.98]">{submitting ? '處理中...' : (existingUser ? '儲存學生資料' : '確認綁定')}</button>
+                {onCancel && <button type="button" disabled={submitting} onClick={onCancel} className="w-full border p-3 rounded-lg">返回</button>}
+              </form>
+            </div>
+          );
+        };
+
+        const splitCoachHours = (start, end) => {
+            const minutes = value => {
+                const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+                if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) throw new Error('請選擇有效的開始與結束時間。');
+                return Number(match[1]) * 60 + Number(match[2]);
+            };
+            const from = minutes(start), to = minutes(end);
+            if (to <= from) throw new Error('結束時間必須晚於開始時間，不支援跨日設定。');
+            if ((to - from) % 60 !== 0) throw new Error('教練時段以每小時分割，總時長需為整小時，請調整結束時間。');
+            const format = value => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+            return Array.from({ length: (to - from) / 60 }, (_, i) => `${format(from + i * 60)} - ${format(from + (i + 1) * 60)}`);
+        };
+
+        const groupTariff = (mode, startTime, endTime, count = 4) => {
+            const minutes = value => {
+                const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+                return match ? Number(match[1]) * 60 + Number(match[2]) : NaN;
+            };
+            const duration = minutes(endTime) - minutes(startTime);
+            if (![60, 120].includes(duration) || (mode === 'monthly' && count !== 4) || !['single', 'monthly'].includes(mode)) return null;
+            const single = duration === 60 ? 300 : 580;
+            return { duration, regular: mode === 'monthly' ? single * 4 : single, price: mode === 'monthly' ? (duration === 60 ? 1000 : 2000) : single };
+        };
+        const slotGroupTariff = slot => {
+            const time = String(slot.time || '').match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
+            if (!time || /^\[專屬教練課\]/.test(slot.title)) return null;
+            const monthly = String(slot.title).match(/^\[月繳(\d+)堂\]/);
+            const tariff = groupTariff(monthly ? 'monthly' : 'single', time[1], time[2], monthly ? Number(monthly[1]) : 4);
+            return tariff && Number(slot.prices[1]) === tariff.price ? tariff : null;
+        };
+        const BOOKING_AGREEMENTS = [
+            ['預約確認', '為了確保每堂課的教學品質，送出預約登記後，需經由我們確認，並收到預約成功通知，才算真正完成預約喔！'],
+            ['開課門檻', '大家一起練球最有氣氛！若該預約時段未達基本開課人數，課程將會取消，我們也會通知您，並協助辦理當次課程的全額退費。'],
+            ['請假規範', '因為場地與教練的時間皆已為您專屬保留，若您因個人因素需請假或取消預約，將無法另行退費，再請大家多多包涵。固定團課學員若提前兩週完成請假，可與我們協調另外安排時段補課。'],
+            ['教練或場地臨時異動', '若因教練臨時有事，或場地安排異動等主辦方因素，導致當次課程無法如期進行，我們將儘早通知您，並辦理當次課程的全額退費，謝謝您的體諒！'],
+            ['天災停課', '安全永遠是第一考量！若遇颱風等天災，上課所在地政府公告停班或停課，或場地因天災無法使用時，當次課程將會取消。我們將儘早通知您，並與您協調安排補課；若無法配合補課時段，也可選擇辦理當次課程的全額退費。請大家安心，也記得照顧好自己的安全喔！'],
+            ['互相尊重', '我們非常珍惜每次與大家在球場交流的機會。若預約後無故缺席且未提前請假，為了保障其他球友的權益，我們將視情況暫停受理您後續的預約。']
+        ];
+        const BookingAgreement = ({ target, onCancel, onContinue }) => {
+            const [reachedEnd, setReachedEnd] = useState(false);
+            const [accepted, setAccepted] = useState(false);
+            const contentRef = React.useRef(null);
+            const checkEnd = () => {
+                const el = contentRef.current;
+                if (el && el.clientHeight > 0 && el.scrollHeight - el.scrollTop - el.clientHeight <= 3) setReachedEnd(true);
+            };
+            useEffect(() => {
+                const el = contentRef.current;
+                if (!el) return;
+                el.focus(); checkEnd();
+                const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(checkEnd) : null;
+                if (observer) observer.observe(el);
+                return () => { if (observer) observer.disconnect(); };
+            }, []);
+            return <div className="fixed inset-0 z-50 bg-slate-900 bg-opacity-60 flex items-center justify-center p-3 md:p-4">
+                <div role="dialog" aria-modal="true" aria-labelledby="booking-agreement-title" className="bg-white rounded-2xl shadow-xl w-full min-w-0 max-w-2xl max-h-[90dvh] flex flex-col overflow-hidden">
+                    <header className="bg-slate-800 text-white p-4 shrink-0">
+                        <h2 id="booking-agreement-title" className="font-bold text-lg">預約前，請詳閱課前小約定</h2>
+                        <p className="text-sm mt-1 text-slate-200">{target.titleDisplay} · {target.slot.date} {target.slot.time}</p>
+                    </header>
+                    <div ref={contentRef} tabIndex="0" role="region" aria-label="課前小約定全文" onScroll={checkEnd} className="min-h-0 overflow-y-auto overscroll-contain p-4 md:p-6 space-y-5 text-sm md:text-base leading-relaxed text-gray-700">
+                        <p>我們的初衷很簡單：希望透過專業、高品質的羽球教學，讓每個人都能輕鬆體會羽球的魅力！</p>
+                        <p><strong className="text-slate-900">我們的團班採用依個人程度客製化的教學方式，告別傳統全班統一課表，依照每位學員的基礎、學習進度與需要加強的地方，安排適合的練習內容。</strong>讓大家一起練球，也能按照自己的步調，享受學習與進步的樂趣！</p>
+                        <p>為了維持良好的教學品質，並讓每一堂課都能順利進行，預約前請大家先幫我們詳閱以下幾點「課前小約定」喔！</p>
+                        {BOOKING_AGREEMENTS.map(([title, text]) => <section key={title}><h3 className="font-bold text-emerald-800 mb-2">【{title}】</h3><p>{text}</p></section>)}
+                        <p>期待能在球場上與大家相見！希望透過每一堂課，陪伴您逐步掌握更流暢、更合理的擊球動作與知識，也讓您在揮灑汗水的過程中，收穫滿滿的健康與歡笑，真正享受羽球帶來的純粹樂趣！</p>
+                    </div>
+                    <footer className="border-t p-4 shrink-0 space-y-3 bg-white">
+                        <p role="status" className="text-xs text-gray-600">{reachedEnd ? '已瀏覽至文末，請勾選確認後繼續。' : '請向下捲動至文末，閱讀完整內容後才能繼續。'}</p>
+                        <label className={`flex items-start gap-3 text-sm font-bold p-2 ${reachedEnd ? 'text-slate-800' : 'text-gray-400'}`}>
+                            <input type="checkbox" disabled={!reachedEnd} checked={accepted} onChange={e => setAccepted(e.target.checked)} className="mt-1 w-5 h-5 shrink-0 accent-emerald-600" />
+                            <span>我已閱讀並同意以上課前小約定</span>
+                        </label>
+                        <div className="flex gap-3"><button onClick={onCancel} className="flex-1 min-w-0 border rounded-lg p-3 font-bold text-gray-600">返回選課</button><button disabled={!reachedEnd || !accepted} onClick={() => { if (reachedEnd && accepted) onContinue(); }} className="flex-1 min-w-0 bg-emerald-700 text-white rounded-lg p-3 font-bold disabled:opacity-40">繼續預約</button></div>
+                    </footer>
+                </div>
+            </div>;
+        };
+
+        const StudentBookingTracking = ({ lineId, students, revision }) => {
+            const [groups, setGroups] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState('');
+            const requestRef = React.useRef(0);
+            const fetchTracking = async () => {
+                const requestId = ++requestRef.current;
+                setLoading(true); setError('');
+                try {
+                    if (!lineId) throw new Error('無法確認帳號，請重新登入。');
+                    const results = await Promise.all(students.map(async student => {
+                        const result = await fetchAPI({ action: 'getStudentStats', lineId, studentId: student.id });
+                        if (result.status !== 'success' || !Array.isArray(result.bookings)) throw new Error(result.message || '預約紀錄讀取失敗，請重試。');
+                        return { student, bookings: result.bookings };
+                    }));
+                    if (requestId === requestRef.current) setGroups(results);
+                } catch (error) {
+                    if (requestId === requestRef.current) setError(error.message);
+                } finally {
+                    if (requestId === requestRef.current) setLoading(false);
+                }
+            };
+            useEffect(() => {
+                fetchTracking();
+                return () => { requestRef.current++; };
+            }, [lineId, students, revision]);
+            return <section aria-labelledby="booking-tracking-title" className="m-4 md:mx-8 mb-8 bg-white rounded-2xl shadow-sm border p-5 md:p-6">
+                <h3 id="booking-tracking-title" className="font-bold text-slate-800 mb-4 text-base md:text-lg">追蹤中預約單 <span className="text-xs text-gray-400 font-normal">（完課後自動隱藏）</span></h3>
+                {loading ? <p role="status" className="text-gray-500">讀取預約紀錄中...</p> : error ? <div role="alert"><p>{error}</p><button onClick={fetchTracking} className="mt-3 border rounded-lg p-3">重新讀取預約單</button></div> : <div className="tracking-groups space-y-6">
+                    {groups.map(({ student, bookings }, index) => <div key={student.id}>
+                        <h4 className="font-bold text-slate-700 mb-3">{studentNickname(student, index)}</h4>
+                        <div className="space-y-4">{bookings.length === 0 ? <p className="text-gray-400 text-sm">目前尚無未結案之預約紀錄</p> : bookings.map((booking, index) => <BookingStatusItem key={booking.bookingId || `${student.id}-${index}`} booking={booking} onUpdate={fetchTracking} />)}</div>
+                    </div>)}
+                </div>}
+            </section>;
+        };
+
+        const BookingBrandIntroduction = () => (
+            <article aria-label="樂動羽球品牌介紹" className="m-4 md:mx-8 mt-5 md:mt-8 p-5 md:p-8 bg-white rounded-2xl border border-amber-100 border-t-4 border-t-amber-500 shadow-sm text-slate-700">
+                <h3 className="text-lg md:text-2xl font-bold leading-relaxed text-slate-900 mb-5">我們相信，運動的價值不只在於技術的提升，更在於過程中的快樂、健康與成長。</h3>
+                <div className="space-y-3 text-sm md:text-base leading-7">
+                    <p>樂動羽球致力於打造一個能夠輕鬆接觸、自在學習、持續享受的羽球教學環境。</p>
+                    <p>我們不追求枯燥乏味的苦練，也不以每個人都必須成為競技選手為目標。</p>
+                    <p>我們希望透過科學化的教學方式，讓每位學員理解動作、認識自己的身體，在享受運動樂趣的同時，逐步建立正確的羽球技術。</p>
+                </div>
+                <section aria-labelledby="brand-teaching-features" className="mt-7">
+                    <h4 id="brand-teaching-features" className="text-base md:text-lg font-bold text-slate-900 mb-4">我們的教學特色</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-amber-50 rounded-xl p-4 min-w-0">
+                            <h5 className="font-bold text-amber-900 mb-2">因材施教，而非統一課表</h5>
+                            <p className="text-sm md:text-base leading-7">尊重每位學員的體能、程度與學習速度，依照個人需求調整訓練內容，讓每個人都能找到適合自己的學習方式。</p>
+                        </div>
+                        <div className="bg-amber-50 rounded-xl p-4 min-w-0">
+                            <h5 className="font-bold text-amber-900 mb-2">科學教學，而非盲目苦練</h5>
+                            <p className="text-sm md:text-base leading-7">重視人體動作原理、身體協調與正確發力，透過有目的、有方法的練習提升學習效率，並重視運動安全。</p>
+                        </div>
+                        <div className="bg-amber-50 rounded-xl p-4 min-w-0">
+                            <h5 className="font-bold text-amber-900 mb-2">享受過程，而非只有結果</h5>
+                            <p className="text-sm md:text-base leading-7">我們相信，真正能讓人持續運動的動力，來自快樂與成就感。每一次成功擊球、每一個動作的改善，都是值得享受的進步。</p>
+                        </div>
+                        <div className="bg-amber-50 rounded-xl p-4 min-w-0">
+                            <h5 className="font-bold text-amber-900 mb-2">心懷感恩，珍惜每次相遇</h5>
+                            <p className="text-sm md:text-base leading-7">感謝每一位願意投入時間學習的學員，珍惜彼此的信任與陪伴。讓羽球不只是運動，更成為連結人與人、豐富生活的橋梁。</p>
+                        </div>
+                    </div>
+                </section>
+                <section aria-labelledby="brand-vision" className="mt-7 text-sm md:text-base leading-7">
+                    <h4 id="brand-vision" className="text-base md:text-lg font-bold text-slate-900 mb-3">我們的願景</h4>
+                    <p>讓更多人不受年齡與程度限制，都能透過科學、健康而快樂的羽球學習，培養終身運動的習慣。</p>
+                    <p className="font-bold text-amber-900 mt-4">以快樂為初心，以健康為根本，以科學為方法，以運動為實踐，以感恩為態度。</p>
+                    <p className="text-slate-800 mt-3">樂動羽球，讓每一次揮拍，都成為生活中的美好時刻。</p>
+                </section>
+            </article>
+        );
+
+        const BookingInstructions = () => (
+            <section aria-labelledby="booking-instructions-title" className="m-4 md:mx-8 p-5 md:p-6 bg-emerald-50 rounded-2xl border border-emerald-100 text-slate-700">
+                <h3 id="booking-instructions-title" className="text-lg md:text-xl font-bold leading-relaxed text-emerald-900 mb-4">📅 只要簡單幾個步驟，就能輕鬆完成課程預約！</h3>
+                <ol className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <li className="bg-white rounded-xl p-4 min-w-0">
+                        <h4 className="font-bold text-emerald-900 mb-2">① 選擇上課日期</h4>
+                        <p className="text-sm md:text-base leading-7">點選行事曆上有開課的日期，選擇您想要上課的時間。</p>
+                    </li>
+                    <li className="bg-white rounded-xl p-4 min-w-0">
+                        <h4 className="font-bold text-emerald-900 mb-2">② 選擇課程並完成預約</h4>
+                        <p className="text-sm md:text-base leading-7">在可預約時段，選取該日期想要參加的課程，依照指示完成預約。</p>
+                    </li>
+                    <li className="bg-white rounded-xl p-4 min-w-0">
+                        <h4 className="font-bold text-emerald-900 mb-2">③ 專屬教練課注意事項</h4>
+                        <p className="text-sm md:text-base leading-7">專屬教練課需由學員自行預約羽球場地。如需協助預約場地，歡迎提前諮詢教練。</p>
+                    </li>
+                </ol>
+            </section>
+        );
+
+        const StudentBookingView = ({ profile, userRecord, onBooked }) => {
+          const [slots, setSlots] = useState([]);
+          const [supportsSharedCoach, setSupportsSharedCoach] = useState(false);
+          const [status, setStatus] = useState('idle');
+          const [currentMonth, setCurrentMonth] = useState(new Date());
+          const [selectedDate, setSelectedDate] = useState(formatDate(new Date()));
+          const [studentLocations, setStudentLocations] = useState({}); 
+          const [bookingTarget, setBookingTarget] = useState(null);
+          const [agreementAccepted, setAgreementAccepted] = useState(false);
+          const [paymentCode, setPaymentCode] = useState(''); 
+          const studentCount = validateAccountRecord(userRecord).students.length;
+          const userLevel = userRecord ? (userRecord.level || 1) : 1;
+
+          useEffect(() => {
+            fetchAPI({ action: 'getSlots' }).then(res => {
+                const validSlots = (res.slots || []).filter(s => s.id && s.title && s.date);
+                setSlots(validSlots);
+                setSupportsSharedCoach(res.coachAccountPricingVersion === 1);
+            });
+          }, []);
+
+          const handleBookClick = (slot, type = null, customPrice = null, selectedLoc = null) => {
+            const isCoach = slot.title.startsWith('[專屬教練課]');
+            if (isCoach && studentCount === 2 && !supportsSharedCoach) { alert('雙人帳號的專屬教練課預約尚未啟用，請聯絡教練。'); return; }
+            if (isCoach && studentCount > 2) { alert('專屬教練課限同帳號 1～2 位學生預約。'); return; }
+            const myPrice = Number(customPrice ?? slot.prices[userLevel]) * (isCoach ? 1 : studentCount);
+            if (!Number.isFinite(myPrice) || myPrice < 0) { alert('課程價格設定不正確，請聯絡教練。'); return; }
+            if (Number(slot.remaining) < (isCoach ? 1 : studentCount)) { alert('剩餘名額不足以預約此帳號的全部學生。'); return; }
+            let titleDisplay = slot.title;
+            let finalName = userRecord ? userRecord.name : '';
+            if (type) {
+                titleDisplay = `專屬教練課 (${type} 於 ${selectedLoc})`;
+                finalName = `${userRecord ? userRecord.name : ''} [${type} - ${selectedLoc}]`;
+            }
+            setAgreementAccepted(false);
+            setBookingTarget({ slot, titleDisplay, finalName, myPrice, type, selectedLoc });
+            setPaymentCode(''); 
+          };
+
+          const confirmBooking = async () => {
+            if (!bookingTarget || !agreementAccepted || status === 'booking') return;
+            setStatus('booking');
+            const result = await fetchAPI({
+                action: 'bookClass', accountBooking: true,
+                slotId: bookingTarget.slot.id, 
+                lineId: profile ? profile.userId : '', 
+                name: bookingTarget.finalName, 
+                paidPrice: bookingTarget.myPrice,
+                coachType: bookingTarget.type, location: bookingTarget.selectedLoc,
+                paymentCode: bookingTarget.slot.title.startsWith('[專屬教練課]') ? '現場現金' : (paymentCode || '')
+            });
+            if (result.status !== 'success') { setStatus('idle'); alert(result.message || '預約失敗，請稍後再試'); return; }
+            setStatus('success');
+            setBookingTarget(null);
+            if (onBooked) onBooked();
+          };
+
+          const year = currentMonth.getFullYear();
+          const month = currentMonth.getMonth();
+          const firstDay = new Date(year, month, 1).getDay();
+          const daysInMonth = new Date(year, month + 1, 0).getDate();
+          const allCells = [...Array.from({ length: firstDay }, () => null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+
+          const nextMonth = () => setCurrentMonth(new Date(year, month + 1, 1));
+          const prevMonth = () => setCurrentMonth(new Date(year, month - 1, 1));
+
+          const dailySlots = slots.filter(s => doesSlotMatchDate(s, selectedDate));
+
+          if (status === 'success') return (
+            <div className="p-8 text-center bg-white rounded-xl shadow-md m-6 md:m-10 border-t-4 border-emerald-500">
+              <h2 className="text-2xl font-bold text-emerald-600 mb-4">預約成功！</h2>
+              <p className="text-gray-500 mb-6">您的訂單目前為<span className="text-amber-600 font-bold mx-1">審核中</span><br/>可在本頁下方「追蹤中預約單」查看狀態。專屬教練課請於現場付現；團課可在預約單補登匯款後五碼。</p>
+              <button onClick={() => window.location.reload()} className="w-full max-w-xs mx-auto bg-slate-800 text-white py-3 rounded-lg font-bold block transition hover:bg-slate-700">繼續預約</button>
+            </div>
+          );
+
+          return (
+            <div>
+            <BookingBrandIntroduction />
+            <BookingInstructions />
+            {studentCount > 1 && <p className="booking-notice m-4 p-3 rounded-lg bg-emerald-50 text-emerald-900">此帳號共 {studentCount} 位學生。團課預約佔用 {studentCount} 個名額，費用依人數加總；專屬教練課限同帳號 1～2 人，共用一個名額，按所選方案原價收費。</p>}
+            <div className="booking-layout flex flex-col md:flex-row gap-0 md:gap-8 p-0 md:p-8 pb-10 relative">
+              <div className="booking-calendar bg-white px-2 md:px-6 py-4 md:py-6 shadow-sm border-b md:border md:rounded-2xl w-full md:w-1/3 md:sticky md:top-6 h-fit">
+                <div className="flex justify-between items-center mb-4 px-4">
+                    <button onClick={prevMonth} className="font-bold text-gray-500 hover:text-emerald-600 px-4 py-1 bg-gray-100 rounded active:scale-95">&lt;</button>
+                    <div className="font-bold text-lg md:text-xl text-gray-800">{year}年 {month + 1}月</div>
+                    <button onClick={nextMonth} className="font-bold text-gray-500 hover:text-emerald-600 px-4 py-1 bg-gray-100 rounded active:scale-95">&gt;</button>
+                </div>
+                <div className="grid grid-cols-7 text-center text-xs md:text-sm font-bold text-gray-400 mb-2">
+                    <div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>
+                </div>
+                <div role="group" aria-label="課程行事曆" className="grid grid-cols-7 text-center gap-y-2">
+                    {allCells.map((day, i) => {
+                      if (!day) return <div key={i} className="h-10"></div>;
+                      const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                      
+                      const availableSlots = slots.filter(slot => doesSlotMatchDate(slot, dateStr) && (slot.title.startsWith('[專屬教練課]') ? studentCount <= 2 && Number(slot.remaining) >= 1 : Number(slot.remaining) >= studentCount));
+                      const hasAvailableGroupClass = availableSlots.some(slot => !slot.title.startsWith('[專屬教練課]'));
+                      const hasAvailableCoachSlot = availableSlots.some(slot => slot.title.startsWith('[專屬教練課]'));
+                      const teachingCoachNames = [...new Set(availableSlots.map(slot => slot.teachingCoachName || '未指定'))];
+                      
+                      if (!hasAvailableGroupClass && !hasAvailableCoachSlot) return <div key={i} className="min-h-[76px]" aria-hidden="true" />;
+                      const isSelected = dateStr === selectedDate;
+                      const isToday = dateStr === formatDate(new Date());
+
+                      return (
+                        <button type="button" key={i} aria-label={`${dateStr} 可預約`} aria-describedby={`student-calendar-coaches-${dateStr}`} aria-pressed={isSelected} onClick={() => setSelectedDate(dateStr)} className="min-h-[76px] min-w-0 pb-1 flex flex-col items-center justify-start cursor-pointer relative active:scale-90 transition-transform">
+                          <span className={`w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full text-sm md:text-base transition-colors ${isSelected ? 'bg-emerald-600 text-white font-bold shadow-md' : isToday ? 'bg-emerald-100 text-emerald-800 font-bold' : 'text-gray-700 hover:bg-gray-100'}`}>
+                            {day}
+                          </span>
+                          <span className="flex gap-1 mt-1 justify-center w-full">
+                              {hasAvailableGroupClass && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>}
+                              {hasAvailableCoachSlot && <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>}
+                          </span>
+                          <span id={`student-calendar-coaches-${dateStr}`} className="mt-1 w-full min-w-0 space-y-0.5 text-[9px] md:text-[10px] leading-tight text-gray-500">
+                            {teachingCoachNames.map(name => <span key={name} title={name} className="block truncate px-0.5">{name}</span>)}
+                          </span>
+                        </button>
+                      )
+                    })}
+                </div>
+                <div className="flex justify-center gap-3 md:gap-4 mt-6 text-[10px] md:text-xs text-gray-500">
+                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-blue-500 rounded-full"></div>團課</div>
+                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-green-500 rounded-full"></div>專屬教練課</div>
+                </div>
+              </div>
+
+              <div className="booking-slots p-4 md:p-0 w-full md:w-2/3">
+                <h3 className="font-bold text-gray-800 mb-4 ml-1 text-sm md:text-lg border-b-2 border-emerald-500 w-fit pb-1">可預約時段</h3>
+                {dailySlots.length === 0 ? (
+                    <div className="text-center text-gray-400 py-12 bg-white rounded-xl border border-dashed text-sm md:text-base">本日無排定課程</div>
+                ) : (
+                    <div className="space-y-4">
+                        {dailySlots.map(slot => {
+                          const isCoachSlot = slot.title.startsWith('[專屬教練課]');
+                          const isFull = isCoachSlot ? studentCount > 2 || Number(slot.remaining) < 1 : Number(slot.remaining) < studentCount;
+
+                          const safeLocation = slot.location || '';
+                          let availableLocs = LOCATIONS_LIST;
+                          let slotDisplayLocation = safeLocation;
+
+                          if (safeLocation.startsWith('coach_loc:')) {
+                              availableLocs = safeLocation.replace('coach_loc:', '').split(',');
+                              slotDisplayLocation = '學員自選場地';
+                          } else if (isCoachSlot) {
+                              slotDisplayLocation = '學員自選場地'; 
+                          }
+
+                          if (isCoachSlot) {
+                              const match = slot.title.match(/1v1:(\d+)\|1v2:(\d+)/);
+                              const base1v1 = match ? parseInt(match[1]) : 1000;
+                              const base1v2 = match ? parseInt(match[2]) : 1500;
+                              const discount = getVIPDiscount(userLevel);
+                              const my1v1 = Math.round(base1v1 * discount);
+                              const my1v2 = Math.round(base1v2 * discount);
+                              const selectedLoc = studentLocations[slot.id] || availableLocs[0] || '關聖里活動中心';
+
+                              return (
+                                <div key={slot.id} className={`border p-5 rounded-2xl flex flex-col shadow-sm transition relative overflow-hidden ${isFull ? 'bg-gray-50 border-l-4 border-l-gray-400 opacity-80' : 'bg-green-50 border-l-4 border-l-green-500'}`}>
+                                    <div className={`absolute top-0 right-0 text-xs px-3 py-1.5 rounded-bl-lg font-bold tracking-wide ${isFull ? 'bg-gray-200 text-gray-600' : 'bg-green-200 text-green-800'}`}>專屬教練課開放時段</div>
+                                    <div className={`font-bold text-lg md:text-xl mt-1 ${isFull ? 'text-gray-500' : 'text-green-800'}`}>專屬教練課</div>
+                                    <p className="text-xs text-green-900 mt-1">每小時教練費，現場現金付款；不含場地費，場地由學員自行預約。</p>
+                                    <div className="font-semibold text-gray-800 mt-2 text-sm md:text-base">{slot.date}</div>
+                                    <div className="text-sm text-gray-500 mt-1">{slot.time} • {slotDisplayLocation}</div>
+                                    <p className="text-sm text-gray-600 mt-1 break-words">授課教練：{slot.teachingCoachName || '未指定'}</p>
+                                    
+                                    {studentCount === 2 && !supportsSharedCoach && <p className="mt-3 text-sm text-amber-800">雙人帳號的專屬教練課預約尚未啟用，請聯絡教練。</p>}
+                                    {!isFull && (
+                                      <div className="mt-4">
+                                          <div className="text-xs md:text-sm text-red-600 bg-red-50 px-3 py-2 rounded border border-red-100 mb-3 font-medium">
+                                            ⚠️ 此費用僅含教練教學，<strong>不含場地費；場地請學員自行預約並支付場地費</strong>。本系統不代訂場地。
+                                          </div>
+                                          <label className="block text-sm font-bold text-green-900 mb-2">上課場地（請學員自行預約）</label>
+                                          <select aria-label="上課場地（請學員自行預約）" className="w-full border border-green-200 p-2.5 rounded-lg bg-white text-base md:text-sm outline-none shadow-sm" value={selectedLoc} onChange={(e) => setStudentLocations(prev => ({...prev, [slot.id]: e.target.value}))}>
+                                              {availableLocs.map(loc => (
+                                                  <option key={loc} value={loc}>{loc === '自理場地(需私訊確認)' ? '其他場地(請先私訊教練)' : loc}</option>
+                                              ))}
+                                          </select>
+                                      </div>
+                                    )}
+
+                                    <div className={`coach-lesson-options mt-5 pt-4 border-t flex flex-col md:flex-row gap-3 ${isFull ? 'border-gray-200' : 'border-green-200'}`}>
+                                        <div className={`flex-1 min-w-0 flex justify-between items-center p-3 rounded-lg border shadow-sm ${isFull ? 'bg-gray-100 border-gray-200' : 'bg-white border-green-100'}`}>
+                                            <div className={isFull ? 'opacity-60' : ''}>
+                                                <span className={`font-bold text-sm md:text-base ${isFull ? 'text-gray-500' : 'text-green-700'}`}>1對1 教練課</span>
+                                                <div className="mt-0.5"><span className={`${isFull ? 'text-gray-500' : 'text-emerald-600'} font-bold text-lg`}>每帳號 NT$ {my1v1}</span></div>
+                                            </div>
+                                            <button onClick={() => handleBookClick(slot, '1對1', my1v1, selectedLoc)} disabled={status==='booking' || isFull || (studentCount === 2 && !supportsSharedCoach)} className={`font-bold py-2 px-5 rounded-lg text-sm md:text-base active:scale-95 transition-transform ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}>{isFull ? '已額滿' : '預約 1對1'}</button>
+                                        </div>
+                                        <div className={`flex-1 min-w-0 flex justify-between items-center p-3 rounded-lg border shadow-sm ${isFull ? 'bg-gray-100 border-gray-200' : 'bg-white border-green-100'}`}>
+                                            <div className={isFull ? 'opacity-60' : ''}>
+                                                <span className={`font-bold text-sm md:text-base ${isFull ? 'text-gray-500' : 'text-green-700'}`}>1對2 教練課</span>
+                                                <div className="mt-0.5"><span className={`${isFull ? 'text-gray-500' : 'text-emerald-600'} font-bold text-lg`}>每帳號 NT$ {my1v2}</span></div>
+                                            </div>
+                                            <button onClick={() => handleBookClick(slot, '1對2', my1v2, selectedLoc)} disabled={status==='booking' || isFull || (studentCount === 2 && !supportsSharedCoach)} className={`font-bold py-2 px-5 rounded-lg text-sm md:text-base active:scale-95 transition-transform ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}>{isFull ? '已額滿' : '預約 1對2'}</button>
+                                        </div>
+                                    </div>
+                                </div>
+                              );
+                          }
+
+                          const tariff = slotGroupTariff(slot);
+                          const originalPrice = (tariff ? tariff.regular : slot.prices[1]) * studentCount;
+                          const myPrice = slot.prices[userLevel] * studentCount;
+                          const isDiscounted = Number(myPrice) < Number(originalPrice);
+
+                          return (
+                            <div key={slot.id} className={`border p-5 rounded-2xl flex flex-col shadow-sm transition relative overflow-hidden ${isFull ? 'bg-gray-50 border-l-4 border-l-gray-400 opacity-80' : 'bg-white border-l-4 border-l-blue-500 hover:shadow-md'}`}>
+                              {slot.title.includes('[月繳') && <div className={`absolute top-0 right-0 text-xs px-3 py-1.5 rounded-bl-lg font-bold ${isFull ? 'bg-gray-200 text-gray-600' : 'bg-amber-100 text-amber-800'}`}>套裝課程</div>}
+                              <div className="flex flex-col sm:flex-row gap-3 justify-between items-start mt-1">
+                                <div className={`w-full sm:w-3/4 min-w-0 sm:pr-2 ${isFull ? 'opacity-60' : ''}`}>
+                                  <div className={`font-bold text-lg md:text-xl leading-tight ${isFull ? 'text-gray-500' : 'text-blue-700'}`}>{slot.title}</div>
+                                  <div className="font-semibold text-gray-800 mt-2 text-sm md:text-base">{slot.date}</div>
+                                  <div className="text-sm text-gray-500 mt-1">{slot.time} • {safeLocation}</div>
+                                  <p className="text-sm text-gray-600 mt-1 break-words">授課教練：{slot.teachingCoachName || '未指定'}</p>
+                                </div>
+                                <button onClick={() => handleBookClick(slot)} disabled={status==='booking' || isFull} className={`font-bold py-2.5 px-6 rounded-lg shadow-sm text-sm md:text-base active:scale-95 transition-transform whitespace-nowrap ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>{isFull ? '已額滿' : '預約'}</button>
+                              </div>
+                              <div className={`mt-4 pt-4 border-t flex items-center justify-between w-full ${isFull ? 'border-gray-200 opacity-60' : 'border-gray-100'}`}>
+                                <div className="flex flex-wrap items-baseline gap-2">
+                                  {isDiscounted && <del className="text-gray-500 text-xs">NT$ {originalPrice}</del>}
+                                  <span className={`${isFull ? 'text-gray-500' : 'text-emerald-600'} font-bold text-xl`}>NT$ {myPrice}（{studentCount} 人合計）</span>
+                                  {isDiscounted && <span className="bg-red-50 text-red-600 border border-red-200 text-[10px] md:text-xs px-2 py-0.5 rounded font-bold">特價</span>}
+                                </div>
+                                <span className={`text-xs md:text-sm font-medium px-3 py-1 rounded-full ${isFull ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600'}`}>{isFull ? '已滿班' : `剩 ${slot.remaining} 名`}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                )}
+              </div>
+
+              {/* 預約結帳彈窗 */}
+              {bookingTarget && !agreementAccepted && <BookingAgreement target={bookingTarget} onCancel={() => setBookingTarget(null)} onContinue={() => setAgreementAccepted(true)} />}
+              {bookingTarget && agreementAccepted && (
+                <div className="fixed inset-0 bg-slate-900 bg-opacity-60 backdrop-blur-sm z-50 flex items-center justify-center p-3 md:p-4 overflow-y-auto">
+                    <div className="booking-confirmation bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[90dvh] overflow-y-auto my-auto animate-[pulse_0.2s_ease-out_1]">
+                        <div className="bg-slate-800 p-4 text-white">
+                            <h3 className="font-bold text-lg">確認預約資訊</h3>
+                        </div>
+                        <div className="p-6 space-y-5">
+                            <div>
+                                <div className="text-sm text-gray-500 mb-1">預約項目</div>
+                                <div className="font-bold text-lg text-slate-800 leading-tight">{bookingTarget.titleDisplay}</div>
+                                <div className="text-sm text-emerald-600 font-bold mt-1.5">{bookingTarget.slot.date} {bookingTarget.slot.time}</div>
+                            </div>
+                            <div>
+                                <div className="text-sm text-gray-500 mb-1">應繳金額</div>
+                                <div className="font-black text-2xl text-emerald-600">NT$ {bookingTarget.myPrice}（共 {studentCount} 人）</div>
+                            </div>
+                            
+                            {bookingTarget.slot.title.startsWith('[專屬教練課]') && <p className="text-sm text-red-800 bg-red-50 border border-red-200 p-3 rounded-lg">此金額為教練費，不含場地費。學員須自行預約上課場地並支付場地費，本系統不代訂場地。</p>}
+                            {bookingTarget.slot.title.startsWith('[專屬教練課]') ? <div className="bg-amber-50 border border-amber-200 rounded-lg p-4"><h4 className="font-bold text-amber-950">付款方式：現場現金付款</h4><p className="text-sm text-amber-900 mt-2">請於上課當天現場支付教練費，不需事先匯款或填寫匯款後五碼。預約仍需教練確認。</p></div> : <>
+                            <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                                <div className="text-xs font-bold text-emerald-700 mb-1">請匯款至以下指定帳戶：</div>
+                                <div className="text-sm text-slate-700">銀行代號：<span className="font-bold text-slate-900">391</span></div>
+                                <div className="text-sm text-slate-700 mt-0.5">匯款帳號：<span className="font-bold text-slate-900 font-mono tracking-wider">0000001528897673</span></div>
+                            </div>
+
+                            <div className="border-t pt-5">
+                                <label className="block text-sm font-bold text-slate-700 mb-2">匯款帳號後5碼 (選填)</label>
+                                <input 
+                                    type="text" 
+                                    maxLength="5" 
+                                    placeholder="例如: 12345"
+                                    className="w-full border border-gray-300 p-3 rounded-lg focus:ring-1 focus:ring-emerald-500 outline-none font-mono text-lg"
+                                    value={paymentCode}
+                                    onChange={e => setPaymentCode(e.target.value.replace(/\D/g, ''))}
+                                />
+                                <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded mt-3 leading-relaxed">
+                                    💡 若尚未匯款，您可先按確認，稍後再至紀錄中補登後五碼。
+                                </p>
+                            </div>
+                            </>}
+                        </div>
+                        <div className="flex border-t border-gray-100">
+                            <button onClick={() => setBookingTarget(null)} className="flex-1 min-w-0 py-4 font-bold text-gray-500 hover:bg-gray-50 border-r border-gray-100 transition">取消</button>
+                            <button onClick={confirmBooking} disabled={status === 'booking'} className="flex-1 min-w-0 py-4 font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition active:scale-95 disabled:opacity-50">
+                                {status === 'booking' ? '處理中...' : '確定送出'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+              )}
+            </div></div>
+          );
+        };
+
+        const MonthlyLeaveSummary = ({ records }) => !records.length ? null : (
+            <section className="monthly-leave-summary bg-amber-50 border border-amber-200 rounded-2xl p-4 md:p-6 mb-6" aria-label="請假與補課紀錄">
+                <h3 className="font-bold text-amber-950 mb-3">月繳請假與補課</h3>
+                <div className="space-y-3">
+                    {records.map(record => <div key={record.id} className="bg-white rounded-xl border p-3 text-sm">
+                        <p className="font-bold">{record.originalDate} {record.originalTime} 請假 · {record.status}</p>
+                        <p className="text-gray-600">{record.monthlyTitle}</p>
+                        {record.status === '已安排' ? <p className="mt-1 text-emerald-800">補課：{record.makeupDate} {record.makeupTime} · {record.makeupTitle} · {record.makeupLocation}</p> : <p className="mt-1 text-amber-800">待教練安排補課時間</p>}
+                    </div>)}
+                </div>
+            </section>
+        );
+
+        const MonthlyLeaveModal = ({ bookings, slots, onClose, onSuccess }) => {
+            const [records, setRecords] = useState([]);
+            const [ready, setReady] = useState(false);
+            const [error, setError] = useState('');
+            const [busy, setBusy] = useState(false);
+            const busyRef = React.useRef(false);
+            const [bookingId, setBookingId] = useState('');
+            const [originalDate, setOriginalDate] = useState('');
+            const [reason, setReason] = useState('');
+            const [targets, setTargets] = useState({});
+            const [message, setMessage] = useState('');
+            const monthlyBookings = bookings.filter(b => b.bookingId && b.status === '預約成功' && slots.some(s => s.id === b.slotId && /^\[月繳/.test(s.title)));
+            const selectedSlot = slots.find(s => s.id === (bookings.find(b => b.bookingId === bookingId) || {}).slotId);
+            const request = async (payload) => {
+                const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                if (!accessToken) throw new Error('請重新登入 LINE 後再操作。');
+                const result = await fetchAPI({ ...payload, accessToken });
+                if (!result || result.status !== 'success') throw new Error((result && result.message) || '後端尚未支援請假補課，請更新 Apps Script 部署後再試。');
+                return result;
+            };
+            const reload = async () => {
+                const result = await request({ action: 'getMonthlyLeaves' });
+                if (!Array.isArray(result.leaves)) throw new Error('讀取請假紀錄失敗。');
+                setRecords(result.leaves);
+                setReady(true);
+            };
+            useEffect(() => { let active = true;
+                request({ action: 'getMonthlyLeaves' }).then(result => {
+                    if (!Array.isArray(result.leaves)) throw new Error('讀取請假紀錄失敗。');
+                    if (active) { setRecords(result.leaves); setReady(true); }
+                }).catch(err => { if (active) setError(err.message); });
+                return () => { active = false; };
+            }, []);
+            const mutate = async (payload, success) => {
+                if (busyRef.current) return;
+                busyRef.current = true; setBusy(true); setError(''); setMessage('');
+                let saved = false;
+                try {
+                    await request(payload); saved = true;
+                    if (payload.action === 'registerMonthlyLeave') { setOriginalDate(''); setReason(''); }
+                    await reload();
+                    await onSuccess();
+                    setMessage(success);
+                } catch (err) {
+                    if (saved) setReady(false);
+                    setError(saved ? '資料已儲存，但重新讀取失敗。請關閉後重新開啟核對，勿重複送出。' : err.message);
+                } finally { busyRef.current = false; setBusy(false); }
+            };
+            const register = (event) => {
+                event.preventDefault();
+                mutate({ action: 'registerMonthlyLeave', bookingId, originalDate, reason }, '請假已登記，可在下方安排補課。');
+            };
+            const singleStart = (slot) => {
+                const date = String(slot.date || '').match(/^(\d{4}-\d{2}-\d{2})/);
+                const time = String(slot.time || '').match(/^(\d{1,2}:\d{2})/);
+                return date && time ? Date.parse(`${date[1]}T${time[1].padStart(5, '0')}:00+08:00`) : NaN;
+            };
+            return (
+                <div className="fixed inset-0 z-50 bg-slate-900 bg-opacity-60 p-3 md:p-4 flex items-center justify-center overflow-y-auto">
+                    <div role="dialog" aria-modal="true" aria-label="月繳請假與補課" className="w-full min-w-0 max-w-4xl max-h-[90dvh] bg-gray-50 rounded-2xl shadow-xl flex flex-col overflow-hidden my-auto">
+                        <div className="p-4 bg-slate-800 text-white flex gap-3 justify-between items-center shrink-0">
+                            <h2 className="font-bold text-lg">月繳請假與補課</h2>
+                            <button onClick={onClose} disabled={busy} aria-label="關閉請假補課" className="px-3 text-2xl shrink-0 disabled:opacity-50">×</button>
+                        </div>
+                        <div className="p-4 md:p-6 overflow-y-auto min-w-0">
+                            <p className="text-sm text-slate-600 mb-4">每次請假需在該堂課開始前至少 14 天登記（台北時間）。保留原月繳訂單，補課不重複收費。</p>
+                            {error && <p role="alert" className="bg-red-50 border border-red-200 text-red-800 p-3 rounded-lg mb-4">{error}</p>}
+                            {message && <p role="status" className="bg-emerald-50 text-emerald-800 p-3 rounded-lg mb-4">{message}</p>}
+                            {!ready && !error && <p role="status" className="mb-4 text-gray-500">讀取請假紀錄中...</p>}
+                            <form onSubmit={register} className="bg-white border rounded-xl p-4 space-y-4 mb-6">
+                                <h3 className="font-bold">登記月繳請假</h3>
+                                <label className="block text-sm font-bold">月繳學生與訂單
+                                    <select aria-label="月繳學生與訂單" required disabled={busy || !ready} value={bookingId} onChange={e => { setBookingId(e.target.value); setOriginalDate(''); }} className="block w-full min-w-0 border rounded-lg p-3 mt-2 bg-white">
+                                        <option value="">請選擇月繳學生</option>
+                                        {monthlyBookings.map(b => <option key={b.bookingId} value={b.bookingId}>{b.name} · {(slots.find(s => s.id === b.slotId) || {}).title} · {(slots.find(s => s.id === b.slotId) || {}).date}</option>)}
+                                    </select>
+                                </label>
+                                {!monthlyBookings.length && <p className="text-sm text-gray-500">目前沒有已確認的月繳預約。</p>}
+                                {selectedSlot && <p className="text-sm bg-amber-50 p-3 rounded-lg">原課程：{selectedSlot.date} · {selectedSlot.time}。請確認下方請假日期的年份正確。</p>}
+                                <label className="block text-sm font-bold">請假上課日期
+                                    <input aria-label="請假上課日期" type="date" required disabled={busy || !ready} value={originalDate} onChange={e => setOriginalDate(e.target.value)} className="block w-full min-w-0 border p-3 rounded-lg mt-2" />
+                                </label>
+                                <label className="block text-sm font-bold">請假原因
+                                    <textarea aria-label="請假原因" required maxLength={500} disabled={busy || !ready} value={reason} onChange={e => setReason(e.target.value)} className="block w-full border p-3 rounded-lg mt-2" rows="2" />
+                                </label>
+                                <button type="submit" disabled={busy || !ready || !bookingId} className="w-full bg-amber-600 text-white rounded-lg px-4 py-3 font-bold disabled:opacity-50">{busy ? '處理中...' : '登記請假'}</button>
+                            </form>
+                            <h3 className="font-bold mb-3">請假與補課紀錄</h3>
+                            {ready && !records.length && <p className="text-gray-500 text-sm">目前沒有請假紀錄。</p>}
+                            <div className="space-y-4">
+                                {records.slice().reverse().map(record => {
+                                    const available = slots.filter(s => !/^\[(月繳|專屬教練課)/.test(s.title) && Number(s.remaining) > 0 && singleStart(s) > Date.now() && !String(s.date).startsWith(record.originalDate));
+                                    return <article key={record.id} className="bg-white border rounded-xl p-4 min-w-0">
+                                        <div className="flex flex-wrap gap-2 justify-between"><h4 className="font-bold">{record.name}</h4><span className="text-sm text-amber-800">{record.status}</span></div>
+                                        <p className="text-sm text-gray-700 mt-2">請假：{record.originalDate} {record.originalTime} · {record.monthlyTitle}</p>
+                                        <p className="text-sm text-gray-500 mt-1 whitespace-pre-wrap">原因：{record.reason}</p>
+                                        {record.status === '待補課' ? <div className="mt-3 space-y-3">
+                                            <select aria-label={`安排${record.name} ${record.originalDate}補課時段`} disabled={busy || !ready} value={targets[record.id] || ''} onChange={e => setTargets(prev => ({ ...prev, [record.id]: e.target.value }))} className="w-full min-w-0 border rounded-lg p-3 bg-white">
+                                                <option value="">請選擇有名額的單堂團課</option>
+                                                {available.map(s => <option key={s.id} value={s.id}>{s.date} {s.time} · {s.title} · {s.location}（剩 {s.remaining} 名）</option>)}
+                                            </select>
+                                            {!available.length && <p className="text-sm text-gray-500">沒有可用時段，請先在後台新增單堂團課。</p>}
+                                            <button type="button" disabled={busy || !ready || !available.some(s => s.id === targets[record.id])} onClick={() => {
+                                                const target = available.find(s => s.id === targets[record.id]);
+                                                if (target && confirm(`確認為 ${record.name} 安排補課？\n${target.date} ${target.time}\n${target.title} · ${target.location}\n將占用一個名額，不重複收費。`)) mutate({ action: 'arrangeMonthlyMakeup', leaveId: record.id, slotId: target.id }, '補課已安排，學生預約紀錄已更新。');
+                                            }} className="w-full bg-emerald-600 text-white rounded-lg px-4 py-3 font-bold disabled:opacity-50">安排補課</button>
+                                        </div> : <p className="mt-3 text-sm text-emerald-800">補課：{record.makeupDate} {record.makeupTime} · {record.makeupTitle} · {record.makeupLocation}</p>}
+                                    </article>;
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const StudentRecordsView = ({ lineId, userRecord, initialStudentId }) => {
+            const [studentId, setStudentId] = useState(initialStudentId !== undefined ? initialStudentId : (userRecord?.students?.[0]?.id || ''));
+            const [data, setData] = useState(null);
+            const recordsRequest = React.useRef(0);
+
+            const fetchRecords = () => {
+                if(lineId) {
+                    const requestId = ++recordsRequest.current;
+                    fetchAPI({ action: 'getStudentStats', lineId, studentId }).then(res => { if (requestId !== recordsRequest.current) return; if (res.status === 'success') setData(res); else { setData(null); alert(res.message || '紀錄讀取失敗'); } });
+                }
+            };
+
+            useEffect(() => { 
+                fetchRecords(); 
+            }, [lineId, studentId]);
+
+            if (!data) return <div className="p-10 text-center text-gray-400 font-bold animate-pulse">讀取資料中...</div>;
+
+            return (
+                <div className="records-view p-4 md:p-8 pb-10">
+                    {userRecord?.students?.length > 1 && <label className="block font-bold mb-6">查看學生訓練紀錄<select aria-label="查看學生訓練紀錄" className="block w-full border p-3 rounded-lg mt-2" value={studentId} onChange={e => { recordsRequest.current++; setData(null); setStudentId(e.target.value); }}>{userRecord.students.map((student, index) => <option key={student.id} value={student.id}>{studentNickname(student, index)}</option>)}</select></label>}
+                    <MonthlyLeaveSummary records={data.monthlyLeaves || []} />
+                    <div className="records-total bg-white rounded-2xl shadow-sm border p-6 md:p-8 text-center border-t-4 border-t-emerald-500 mb-6">
+                        <div className="text-sm md:text-base text-gray-500 font-bold mb-2">累積完成課程 (已完課)</div>
+                        <div className="text-5xl md:text-6xl font-extrabold text-slate-800">{data.totalClasses || 0} <span className="text-lg text-gray-500 font-normal">堂</span></div>
+                    </div>
+
+                    <div className="records-detail-grid grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6 h-fit">
+                            <h3 className="font-bold text-slate-800 mb-4 ml-1 flex items-center text-base md:text-lg">
+                                <span className="w-1.5 h-5 bg-emerald-500 rounded mr-2"></span>能力時數雷達
+                            </h3>
+                            <p className="text-xs text-slate-500 mb-3">訓練次數依每 5 分鐘約 40 次估算。</p>
+                            <div data-layout="skill-radar" className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {SKILL_KEYS.map(skill => (
+                                    <CircleProgress key={skill.key} label={skill.label} value={data.stats ? data.stats[skill.key] : 0} />
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6">
+                            <h3 className="font-bold text-slate-800 mb-4 ml-1 flex items-center text-base md:text-lg">
+                                <span className="w-1.5 h-5 bg-blue-500 rounded mr-2"></span>近期訓練日誌
+                            </h3>
+                            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                                {!data.logs || data.logs.length === 0 ? (
+                                    <div className="text-center text-gray-400 text-sm py-6">教練尚未填寫您的日誌</div>
+                                ) : (
+                                    data.logs.map((log, i) => (
+                                        <div key={i} className="border-b border-dashed border-gray-200 pb-4 last:border-0 last:pb-0">
+                                            <div className="text-sm font-bold text-emerald-600 mb-1.5">{formatTrainingDate(log.date)}</div>
+                                            <p className="text-sm md:text-base text-gray-700 whitespace-pre-wrap leading-relaxed">{log.note || '本次無特別備註'}</p>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const VenueAddresses = () => (
+            <section aria-labelledby="venue-addresses-title" className="m-4 md:mx-8 mb-8 bg-white rounded-2xl shadow-sm border p-5 md:p-6">
+                <h3 id="venue-addresses-title" className="font-bold text-slate-800 text-base md:text-lg mb-4">場地地址</h3>
+                <dl data-i18n-ignore="true" className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {[
+                        ['關聖里活動中心', '701臺南市東區關聖里裕孝路118號'],
+                        ['中愛羽球館', '臺南市東區裕豐街214巷'],
+                        ['仁德羽潮', '台南市仁德區勝利路380號'],
+                        ['華中羽球館', '臺南市仁德區仁德里文善街116號'],
+                        ['永康嘉世', '臺南市永康區建國里高速一街二段378巷2號'],
+                        ['永康騰耀', '臺南市永康區大灣路942巷371弄178號之8'],
+                        ['南區羽潮', '臺南市南區喜東里萬年路658號']
+                    ].map(([name, address]) => <div key={name} className="rounded-xl border border-slate-100 bg-slate-50 p-4 min-w-0">
+                        <dt className="font-bold text-slate-800 mb-1">{name}</dt>
+                        <dd><address className="not-italic text-sm md:text-base text-slate-600 leading-relaxed break-words">{address}</address></dd>
+                    </div>)}
+                </dl>
+            </section>
+        );
+
+        const STUDENT_ROUTES = { booking: '#/booking', records: '#/training-logs' };
+        const studentTabFromHash = hash => hash === STUDENT_ROUTES.records ? 'records' : 'booking';
+        const rememberStudentRoute = () => {
+            try {
+                if (Object.values(STUDENT_ROUTES).includes(window.location.hash)) sessionStorage.setItem('badminton.studentRoute', window.location.hash);
+            } catch (_) {}
+        };
+        const restoreStudentRoute = () => {
+            try {
+                const pending = sessionStorage.getItem('badminton.studentRoute');
+                if (!Object.values(STUDENT_ROUTES).includes(window.location.hash) && Object.values(STUDENT_ROUTES).includes(pending)) window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search + pending);
+                sessionStorage.removeItem('badminton.studentRoute');
+            } catch (_) {}
+        };
+
+        const StudentDashboard = ({ profile, userRecord, onCompleteRegistration, initialStudentId, coachView = false }) => {
+            const [activeTab, setActiveTab] = useState(() => studentTabFromHash(window.location.hash));
+            useEffect(() => {
+                const syncRoute = () => setActiveTab(studentTabFromHash(window.location.hash));
+                if (!Object.values(STUDENT_ROUTES).includes(window.location.hash)) window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search + STUDENT_ROUTES.booking);
+                syncRoute();
+                window.addEventListener('hashchange', syncRoute);
+                return () => window.removeEventListener('hashchange', syncRoute);
+            }, []);
+            const [bookingRevision, setBookingRevision] = useState(0);
+            const currentStudentIndex = Math.max(0, userRecord.students.findIndex(student => student.id === initialStudentId));
+            const currentStudent = userRecord.students[currentStudentIndex];
+            const userLevel = userRecord ? (userRecord.level || 1) : 1;
+
+            return (
+                <div className="student-shell max-w-md md:max-w-5xl mx-auto bg-gray-50 min-h-screen md:min-h-[85vh] md:my-8 flex flex-col shadow-lg md:rounded-2xl overflow-hidden relative">
+                    <header className="dashboard-header bg-amber-50 text-slate-900 shadow-md relative z-10">
+                        <BrandBanner />
+                        <div className="dashboard-heading px-5 md:px-8 pt-4">
+                            <p className="text-sm md:text-base text-slate-700">{studentNickname(currentStudent, currentStudentIndex)}，歡迎！</p>
+                            <div className="language-switch-row mt-2 mb-4">
+                                <div className="inline-block bg-amber-500 text-slate-900 text-xs md:text-sm font-bold px-2.5 py-1 rounded shadow-sm">{LEVEL_NAMES[userLevel]} 會員</div>
+                                <LanguageSwitch />
+                            </div>
+                            <h2 className="py-3 text-lg font-bold border-t border-amber-200">{activeTab === 'booking' ? '課程預約' : '我的訓練日誌'}</h2>
+                            {coachView && <nav aria-label="學員畫面切換" className="flex gap-2 border-t border-amber-200 pt-3 pb-4">
+                                <a href={STUDENT_ROUTES.booking} aria-current={activeTab === 'booking' ? 'page' : undefined} className={`flex-1 min-w-0 min-h-[44px] inline-flex items-center justify-center text-center px-3 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'booking' ? 'bg-emerald-700 text-white' : 'bg-white border border-amber-200 text-slate-700 hover:bg-amber-100'}`}>課程預約</a>
+                                <a href={STUDENT_ROUTES.records} aria-current={activeTab === 'records' ? 'page' : undefined} className={`flex-1 min-w-0 min-h-[44px] inline-flex items-center justify-center text-center px-3 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'records' ? 'bg-emerald-700 text-white' : 'bg-white border border-amber-200 text-slate-700 hover:bg-amber-100'}`}>我的訓練日誌</a>
+                            </nav>}
+                        </div>
+                    </header>
+
+                    <div className="student-content flex-1 min-w-0 overflow-y-auto">
+                        {userRecord.registrationComplete === false && <div className="m-4 p-4 border rounded-xl bg-amber-50"><p>目前帳號只有舊版單人資料；若先前選擇多人但未儲存，請補登全部學生資料。</p>{onCompleteRegistration ? <button onClick={onCompleteRegistration} className="mt-3 bg-amber-700 text-white p-3 rounded-lg font-bold">補登同帳號學生資料</button> : <p className="mt-2 text-sm">請由學員登入自己的帳號補登資料。</p>}</div>}
+                        {activeTab === 'booking' ? <><StudentBookingView profile={profile} userRecord={userRecord} onBooked={() => setBookingRevision(value => value + 1)} /><StudentBookingTracking lineId={profile ? profile.userId : ''} students={userRecord.students} revision={bookingRevision} /><VenueAddresses /></> : <StudentRecordsView lineId={profile ? profile.userId : ''} userRecord={userRecord} initialStudentId={initialStudentId} />}
+                    </div>
+                </div>
+            )
+        };
+
+        // ==========================================
+        // 🔹 教練端主頁面與子視圖
+        // ==========================================
+
+        const TeachingCoachSelect = ({ coaches, value, onChange, disabled = false, allowUnassigned = false, label = '授課教練' }) => (
+            <label className="block text-sm font-bold text-gray-700">{label}
+                <select aria-label={label} required={!allowUnassigned} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} className="block w-full min-w-0 border border-gray-300 rounded-lg p-3 mt-1.5 bg-white font-normal text-base disabled:bg-gray-100">
+                    <option value="" disabled={!allowUnassigned}>{allowUnassigned ? '未指定（舊課程）' : '請選擇授課教練'}</option>
+                    {value && !coaches.some(coach => coach.id === value) && <option value={value} disabled>原教練資料待核對，請重新選擇</option>}
+                    {coaches.map(coach => <option key={coach.id} value={coach.id}>{coach.name}</option>)}
+                </select>
+            </label>
+        );
+
+        const TeachingCoachesManager = ({ coaches, enabled, onSuccess }) => {
+            const [editingId, setEditingId] = useState('');
+            const [name, setName] = useState('');
+            const [busy, setBusy] = useState(false);
+            const [error, setError] = useState('');
+            const [message, setMessage] = useState('');
+            const busyRef = React.useRef(false);
+            const save = async event => {
+                event.preventDefault();
+                if (!enabled || busyRef.current || !name.trim()) return;
+                busyRef.current = true; setBusy(true); setError(''); setMessage('');
+                let saved = false;
+                try {
+                    const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                    if (!accessToken) throw new Error('請重新登入 LINE。');
+                    const result = await fetchAPI({ action: editingId ? 'updateTeachingCoach' : 'addTeachingCoach', teachingCoachId: editingId, name: name.trim(), accessToken });
+                    if (!result || result.status !== 'success' || !result.coach?.id) throw new Error(result?.message || '儲存教練資料失敗，請稍後再試。');
+                    saved = true;
+                    await onSuccess();
+                    setName(''); setEditingId(''); setMessage('授課教練資料已儲存。');
+                } catch (err) { setError(saved ? '教練資料已儲存，但重新讀取失敗，請重新整理後確認。' : err.message); }
+                finally { busyRef.current = false; setBusy(false); }
+            };
+            return <section aria-labelledby="teaching-coaches-title" className="bg-white rounded-2xl shadow-sm border p-4 md:p-6 min-w-0">
+                <h2 id="teaching-coaches-title" className="font-bold text-lg text-slate-800">授課教練管理</h2>
+                <p className="text-sm text-slate-500 mt-2">新增教練姓名供排課選擇，不會新增後台登入權限。修改姓名會同步顯示於相關課程。</p>
+                {!enabled && <p role="status" className="text-sm text-amber-900 mt-3">授課教練功能尚未啟用，請聯絡管理員更新系統。</p>}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-4 min-w-0">
+                    <form aria-label="授課教練資料" onSubmit={save} className="min-w-0 space-y-3">
+                        <label className="block text-sm font-bold">教練姓名<input aria-label="教練姓名" required maxLength={60} disabled={busy || !enabled} value={name} onChange={event => setName(event.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1 font-normal" /></label>
+                        <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy || !enabled || !name.trim()} className="bg-slate-800 text-white rounded-lg px-4 py-3 font-bold disabled:opacity-50">{busy ? '儲存中...' : editingId ? '儲存教練姓名' : '新增教練'}</button>{editingId && <button type="button" disabled={busy} onClick={() => { setEditingId(''); setName(''); setError(''); setMessage(''); }} className="border rounded-lg px-4 py-3">取消編輯</button>}</div>
+                        {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+                        {message && <p role="status" className="text-sm text-emerald-700">{message}</p>}
+                    </form>
+                    <div className="min-w-0">{!coaches.length ? <p className="text-sm text-slate-500">尚無授課教練，請先新增。</p> : <ul aria-label="授課教練名單" className="space-y-2 max-h-64 overflow-y-auto">{coaches.map(coach => <li key={coach.id} className="flex items-center justify-between gap-3 border rounded-lg p-3 min-w-0"><span className="text-sm break-all">{coach.name}</span><button type="button" aria-label={`編輯教練：${coach.name}`} disabled={busy || !enabled} onClick={() => { setEditingId(coach.id); setName(coach.name); setError(''); setMessage(''); }} className="shrink-0 text-sm text-blue-700 border rounded-lg px-3 py-2">編輯</button></li>)}</ul>}</div>
+                </div>
+            </section>;
+        };
+
+        const EditSlotModal = ({ slot, onClose, onSuccess, teachingCoaches = [], supportsTeachingCoaches = false }) => {
+            const [form, setForm] = useState({ title: slot.title, date: slot.date, time: slot.time, location: slot.location || '', capacity: slot.capacity, prices: { ...slot.prices }, teachingCoachId: slot.teachingCoachId || '' });
+            const [busy, setBusy] = useState(false);
+            const busyRef = React.useRef(false);
+            const [error, setError] = useState('');
+            const save = async event => {
+                event.preventDefault();
+                if (busyRef.current) return;
+                busyRef.current = true; setBusy(true); setError('');
+                let saved = false;
+                try {
+                    const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                    if (!accessToken) throw new Error('請重新登入 LINE。');
+                    const { teachingCoachId, ...fields } = form;
+                    const result = await fetchAPI({ action: 'updateSlot', slotId: slot.id, ...fields, ...(supportsTeachingCoaches ? { teachingCoachId } : {}), accessToken });
+                    if (!result || result.status !== 'success') throw new Error((result && result.message) || '請先更新 Apps Script 部署，支援課程修改。');
+                    saved = true; await onSuccess(); onClose();
+                } catch (err) { setError(saved ? '已儲存，但重新讀取失敗，請關閉後重新整理確認。' : err.message); }
+                finally { busyRef.current = false; setBusy(false); }
+            };
+            return <div className="fixed inset-0 z-50 bg-slate-900 bg-opacity-60 p-3 flex items-center justify-center overflow-y-auto">
+                <div role="dialog" aria-modal="true" aria-label="編輯課程" className="bg-white rounded-2xl w-full min-w-0 max-w-xl max-h-[90dvh] overflow-y-auto p-4 md:p-6 my-auto">
+                    <h2 className="text-lg font-bold mb-3">編輯已開課程</h2>
+                    <p className="text-sm text-gray-600 mb-4">已預約 {Number(slot.capacity) - Number(slot.remaining)} 人。修改收費不會更動既有訂單金額；修改日期與時間會影響既有學生，請另行通知。月繳日期及私人課程名稱請保留原格式。</p>
+                    {error && <p role="alert" className="bg-red-50 text-red-800 p-3 rounded-lg mb-3">{error}</p>}
+                    <form onSubmit={save} className="space-y-4">
+                        {supportsTeachingCoaches && <TeachingCoachSelect coaches={teachingCoaches} value={form.teachingCoachId} onChange={teachingCoachId => setForm(prev => ({ ...prev, teachingCoachId }))} disabled={busy} allowUnassigned={!slot.teachingCoachId} label="編輯課程授課教練" />}
+                        {[['title','課程名稱'],['date','上課日期'],['time','上課時間'],['location','場地']].map(([key,label]) => <label key={key} className="block text-sm font-bold">{label}<input aria-label={label} required disabled={busy} value={form[key]} onChange={e => setForm(prev => ({...prev,[key]:e.target.value}))} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>)}
+                        <label className="block text-sm font-bold">總名額<input aria-label="總名額" type="number" required min={Math.max(1, Number(slot.capacity)-Number(slot.remaining))} step="1" disabled={busy} value={form.capacity} onChange={e => setForm(prev=>({...prev,capacity:e.target.value}))} className="block w-full border rounded-lg p-3 mt-1" /></label>
+                        <fieldset className="grid grid-cols-1 sm:grid-cols-2 gap-3"><legend className="font-bold mb-2">各等級收費</legend>{[1,2,3,4,5].map(level=><label key={level} className="block text-sm">{LEVEL_NAMES[level]}<input aria-label={`${LEVEL_NAMES[level]}收費`} type="number" min="0" step="any" required disabled={busy} value={form.prices[level] ?? ''} onChange={e=>setForm(prev=>({...prev,prices:{...prev.prices,[level]:e.target.value}}))} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>)}</fieldset>
+                        <div className="flex gap-3"><button type="button" disabled={busy} onClick={onClose} className="flex-1 min-w-0 border rounded-lg p-3">取消</button><button type="submit" disabled={busy} className="flex-1 min-w-0 bg-blue-700 text-white rounded-lg p-3 font-bold disabled:opacity-50">{busy?'儲存中...':'儲存修改'}</button></div>
+                    </form>
+                </div>
+            </div>;
+        };
+
+        const formatMoney = value => new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 2 }).format(value);
+        const studentPaymentKey = (lineId, studentId) => JSON.stringify([String(lineId), String(studentId ?? '')]);
+        const taipeiMonth = value => {
+            let text = value;
+            if (typeof text === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(text)) text += 'T00:00:00+08:00';
+            if (!(text instanceof Date) && (typeof text !== 'string' || !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(text))) return null;
+            const date = text instanceof Date ? text : new Date(text);
+            if (!Number.isFinite(date.getTime())) return null;
+            const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit' }).formatToParts(date);
+            return `${parts.find(p => p.type === 'year').value}-${parts.find(p => p.type === 'month').value}`;
+        };
+        const calculateCoachPayments = (bookings, month, roster) => {
+            const students = new Map();
+            const rosterByAccount = Array.isArray(roster) ? new Map() : null;
+            if (rosterByAccount) roster.forEach(member => {
+                if (!member.lineId) return;
+                const accountId = String(member.lineId);
+                if (!rosterByAccount.has(accountId)) rosterByAccount.set(accountId, []);
+                rosterByAccount.get(accountId).push(member);
+            });
+            let monthlyCents = 0, invalidAmounts = 0, missingDates = 0, duplicateOrders = 0, unmatchedStudents = 0;
+            const seen = new Set();
+            for (const booking of bookings) {
+                if (!['預約成功', '已完課', '成功', '已完成'].includes(booking.status) || booking.paymentCode === '現場現金' || (booking.isHistorical && booking.paymentStatus !== 'paid')) continue;
+                if (booking.bookingId && seen.has(booking.bookingId)) { duplicateOrders++; continue; }
+                if (booking.bookingId) seen.add(booking.bookingId);
+                const amount = Number(booking.paidPrice);
+                if (booking.paidPrice === '' || booking.paidPrice == null || !Number.isFinite(amount) || amount < 0) { invalidAmounts++; continue; }
+                const cents = Math.round(amount * 100);
+                let studentKey = null;
+                if (booking.lineId) {
+                    const studentId = String(booking.studentId ?? '');
+                    if (rosterByAccount) {
+                        const accountMembers = rosterByAccount.get(String(booking.lineId)) || [];
+                        const matching = accountMembers.filter(member => String(member.studentId ?? '') === studentId);
+                        if (matching.length === 1) studentKey = studentPaymentKey(booking.lineId, matching[0].studentId);
+                        // Missing IDs are safe only for an explicit legacy student or a single-student account.
+                        else if (!studentId && accountMembers.length === 1) studentKey = studentPaymentKey(booking.lineId, accountMembers[0].studentId);
+                    } else studentKey = studentPaymentKey(booking.lineId, studentId);
+                }
+                if (studentKey !== null) students.set(studentKey, (students.get(studentKey) || 0) + cents);
+                else if (cents) unmatchedStudents++;
+                const bookedMonth = taipeiMonth(booking.timestamp);
+                if (!bookedMonth && cents) missingDates++;
+                if (bookedMonth === month) monthlyCents += cents;
+            }
+            return { studentTotals: new Map([...students].map(([id, cents]) => [id, cents / 100])), monthlyTotal: monthlyCents / 100, invalidAmounts, missingDates, duplicateOrders, unmatchedStudents };
+        };
+
+        const CoachRevenue = ({ revision }) => {
+            const [data, setData] = useState(null);
+            const [error, setError] = useState('');
+            const [refresh, setRefresh] = useState(0);
+            const [loading, setLoading] = useState(true);
+            const month = taipeiMonth(new Date());
+            useEffect(() => {
+                let active = true;
+                setLoading(true); setError('');
+                fetchAPI({ action: 'getCoachData' }).then(result => {
+                    if (!result || !Array.isArray(result.bookings) || result.status === 'error') throw new Error((result && result.message) || '無法讀取收入資料');
+                    if (active) setData(calculateCoachPayments([...(result.bookings || []), ...(result.historicalBookings || [])], month, result.members));
+                }).catch(err => { if (active) { setData(null); setError(err.message); } }).finally(() => { if (active) setLoading(false); });
+                return () => { active = false; };
+            }, [revision, refresh, month]);
+            return <section aria-label="本月收入統計" className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 md:p-6 mb-5 min-w-0">
+                <div className="flex flex-wrap justify-between items-center gap-3"><h2 className="font-bold text-emerald-950">{month} 本月收入</h2><button onClick={() => setRefresh(n => n + 1)} disabled={loading} className="border border-emerald-300 rounded-lg px-3 py-2 text-sm text-emerald-900 disabled:opacity-50">重新整理金額</button></div>
+                {loading ? <p role="status" className="mt-3">讀取收入中...</p> : error ? <p role="alert" className="text-red-700 mt-3">{error}</p> : <p className="text-3xl font-extrabold text-emerald-800 mt-3 break-all">{formatMoney(data.monthlyTotal)}</p>}
+                <p className="text-xs md:text-sm text-emerald-950 mt-3">按台北時間的「預約登記月份」統計已核准及已完課訂單，非實際收款日期；審核中、已取消、尚未確認現金收款的訂單不計。補課金額為 0，不重複計費。歷史補登僅計已收款紀錄，依原預約日期月份統計。</p>
+                <p className="text-xs text-gray-600 mt-1">依目前保留的訂單計算，刪除訂單會影響統計；取消不代表已退款，此處不是完整金流帳本。</p>
+                {data && !loading && (data.invalidAmounts + data.missingDates + data.duplicateOrders + data.unmatchedStudents > 0) && <p role="status" className="text-sm text-amber-900 mt-3">資料待核對：金額異常 {data.invalidAmounts} 筆、缺少有效登記日期 {data.missingDates} 筆、重複訂單編號 {data.duplicateOrders} 筆、無法對應學員 {data.unmatchedStudents} 筆。異常金額不計；日期缺漏不計本月；重複編號只計一次。</p>}
+            </section>;
+        };
+
+        const coachCalendarDateKey = (year, month, day) => {
+            const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+            if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() + 1 !== Number(month) || date.getUTCDate() !== Number(day)) return null;
+            return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        };
+        const coachSlotDates = slot => {
+            const raw = slot?.date instanceof Date ? slot.date.toISOString() : String(slot?.date || '').trim();
+            const text = formatTrainingDate(raw);
+            const single = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s|$)/);
+            if (single) return [coachCalendarDateKey(single[1], single[2], single[3])].filter(Boolean);
+            const year = raw.match(/^(\d{4})年/);
+            if (!year) return [];
+            return [...new Set([...raw.matchAll(/(\d{1,2})\/(\d{1,2})/g)].map(match => coachCalendarDateKey(year[1], match[1], match[2])).filter(Boolean))];
+        };
+        const coachCourseStartMinutes = course => {
+            const match = String(course.slot.time || '').match(/^(\d{1,2}):(\d{2})/);
+            return match ? Number(match[1]) * 60 + Number(match[2]) : Infinity;
+        };
+        const coachCalendarMonthData = (slots, bookings, monthKey) => {
+            if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey)) throw new Error('請選擇有效月份。');
+            const [year, month] = monthKey.split('-').map(Number), byDate = new Map(), bySlot = new Map();
+            let unparsed = 0;
+            bookings.forEach(booking => {
+                if (!booking.slotId || booking.status === '已取消') return;
+                const key = String(booking.slotId);
+                if (!bySlot.has(key)) bySlot.set(key, []);
+                bySlot.get(key).push(booking);
+            });
+            slots.forEach(slot => {
+                const dates = coachSlotDates(slot);
+                if (!slot.id || !dates.length) { unparsed++; return; }
+                const orders = bySlot.get(String(slot.id)) || [];
+                const capacity = Number(slot.capacity), remaining = Number(slot.remaining);
+                const occupied = Number.isFinite(capacity) && Number.isFinite(remaining) ? Math.max(0, capacity - remaining) : 0;
+                dates.filter(date => date.startsWith(monthKey + '-')).forEach(date => {
+                    if (!byDate.has(date)) byDate.set(date, []);
+                    byDate.get(date).push({ slot, orders, occupied, reserved: orders.length > 0 || occupied > 0 });
+                });
+            });
+            const leading = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+            const days = Array.from({ length: new Date(Date.UTC(year, month, 0)).getUTCDate() }, (_, index) => {
+                const date = coachCalendarDateKey(year, month, index + 1);
+                const courses = (byDate.get(date) || []).sort((a, b) => coachCourseStartMinutes(a) - coachCourseStartMinutes(b) || String(a.slot.title).localeCompare(String(b.slot.title)));
+                return { date, day: index + 1, courses, reservedCount: courses.filter(course => course.reserved).length, teachingCoachNames: [...new Set(courses.map(course => course.slot.teachingCoachName).filter(Boolean))] };
+            });
+            return { leading, days, unparsed };
+        };
+
+        const CoachCourseCalendar = ({ slots, bookings, onEdit }) => {
+            const today = registrationToday();
+            const [month, setMonth] = useState(today.slice(0, 7));
+            const [selectedDate, setSelectedDate] = useState(today);
+            const data = React.useMemo(() => coachCalendarMonthData(slots, bookings, month), [slots, bookings, month]);
+            const selected = data.days.find(day => day.date === selectedDate);
+            const moveMonth = direction => {
+                const [year, number] = month.split('-').map(Number);
+                const date = new Date(Date.UTC(year, number - 1 + direction, 1));
+                const next = date.toISOString().slice(0, 7);
+                setMonth(next); setSelectedDate(next + '-01');
+            };
+            return <section aria-label="課程行事曆" className="bg-white rounded-2xl shadow-sm border p-4 md:p-6 min-w-0">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <h2 className="text-lg font-bold text-slate-800">課程行事曆</h2>
+                    <div className="flex flex-wrap gap-3 text-xs"><span className="text-sky-700">已開課程</span><span className="text-amber-800">已有預約（含審核中）</span></div>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 min-w-0">
+                    <div className="min-w-0">
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                            <button type="button" aria-label="上一個月" onClick={() => moveMonth(-1)} className="border rounded-lg px-3 py-2 text-slate-600">‹</button>
+                            <span className="font-bold text-slate-800">{month}</span>
+                            <div className="flex gap-2"><button type="button" onClick={() => { setMonth(today.slice(0, 7)); setSelectedDate(today); }} className="text-sm border rounded-lg px-3 py-2">今天</button><button type="button" aria-label="下一個月" onClick={() => moveMonth(1)} className="border rounded-lg px-3 py-2 text-slate-600">›</button></div>
+                        </div>
+                        <div className="grid grid-cols-7 text-center text-xs font-bold text-slate-500 mb-2">{['週日','週一','週二','週三','週四','週五','週六'].map(day => <span key={day}>{day}</span>)}</div>
+                        <div role="group" aria-label="教練課程月份" className="grid grid-cols-7 gap-1">
+                            {Array.from({ length: data.leading }, (_, index) => <div key={`blank-${index}`} />)}
+                            {data.days.map(day => <button key={day.date} type="button" aria-label={`${day.date}：已開課程 ${day.courses.length} 堂，已有預約 ${day.reservedCount} 堂`} aria-pressed={day.date === selectedDate} onClick={() => setSelectedDate(day.date)} className={`min-w-0 min-h-[76px] rounded-lg px-0.5 py-1 flex flex-col items-center gap-1 border ${day.date === selectedDate ? 'border-emerald-600 bg-emerald-50' : 'border-transparent hover:bg-slate-50'} ${day.date === today ? 'font-bold' : ''}`}>
+                                <span className="text-sm text-slate-800">{day.day}</span>
+                                {day.courses.length > 0 && <span className="text-[9px] sm:text-[10px] text-sky-700 whitespace-nowrap">開 {day.courses.length}</span>}
+                                {day.reservedCount > 0 && <span className="text-[9px] sm:text-[10px] text-amber-800 whitespace-nowrap">預約 {day.reservedCount}</span>}
+                                {day.teachingCoachNames.length > 0 && <span title={day.teachingCoachNames.join('、')} className="block w-full truncate text-[9px] sm:text-[10px] text-slate-500">{day.teachingCoachNames.join('、')}</span>}
+                            </button>)}
+                        </div>
+                        {data.unparsed > 0 && <p role="status" className="text-xs text-amber-800 mt-3">課程日期待核對：{data.unparsed} 筆。請核對已開課程資料。</p>}
+                    </div>
+                    <div aria-label="當日課程與預約" className="min-w-0">
+                        <h3 className="font-bold text-slate-800 mb-3">{selectedDate} · 當日課程</h3>
+                        {!selected?.courses.length ? <p className="text-sm text-slate-500 border border-dashed rounded-xl p-5">本日無排定課程</p> : <div className="space-y-3 max-h-[560px] overflow-y-auto pr-1">
+                            {selected.courses.map(({ slot, orders, occupied, reserved }) => <article key={slot.id} className="border rounded-xl p-4 bg-slate-50 min-w-0">
+                                <div className="flex flex-wrap items-start justify-between gap-2"><h4 className="font-bold text-sm text-slate-800 break-words">{/^\[專屬教練課\]/.test(slot.title) ? '教練開放時段' : slot.title}</h4><span className={`text-xs rounded px-2 py-1 ${reserved ? 'bg-amber-100 text-amber-900' : 'bg-sky-100 text-sky-800'}`}>{reserved ? '已有預約' : '已開課程'}</span></div>
+                                <p className="text-sm text-slate-600 mt-2">{slot.time} · {String(slot.location || '').startsWith('coach_loc:') ? '學員自選場地' : slot.location}</p>
+                                <p className="text-sm text-slate-700 mt-2 break-words">授課教練：{slot.teachingCoachName || '未指定'}</p>
+                                <p className="text-xs text-slate-500 mt-2">已佔名額 {occupied} · 剩餘名額 {slot.remaining}</p>
+                                {orders.length > 0 && <details className="text-sm mt-3"><summary className="cursor-pointer font-bold text-slate-700">預約名單（{orders.length} 人）</summary><ul className="space-y-2 mt-2">{orders.map((booking, index) => <li key={`${booking.bookingId || 'legacy'}-${index}`} className="flex flex-wrap justify-between gap-2 border-t pt-2"><span>{booking.name}</span><span className="text-xs text-slate-500">{booking.status}</span></li>)}</ul></details>}
+                                <button type="button" onClick={() => onEdit(slot)} className="text-sm text-blue-700 font-bold mt-3 px-3 py-2 bg-white border border-blue-100 rounded-lg">編輯課程</button>
+                            </article>)}
+                        </div>}
+                    </div>
+                </div>
+            </section>;
+        };
+
+        const CoachGroupRegistration = ({ members, slots, onSuccess, kind = 'monthly', enabled = true }) => {
+            const isMonthly = kind === 'monthly';
+            const title = isMonthly ? '代登記月繳團課' : '代登記單堂團課';
+            const courseLabel = isMonthly ? '月繳課程' : '單堂課程';
+            const accounts = React.useMemo(() => {
+                const grouped = new Map();
+                members.forEach(member => {
+                    if (!member.lineId) return;
+                    if (!grouped.has(member.lineId)) grouped.set(member.lineId, []);
+                    grouped.get(member.lineId).push(member);
+                });
+                return [...grouped].map(([lineId, students]) => ({ lineId, students }));
+            }, [members]);
+            const [lineId, setLineId] = useState('');
+            const [studentIds, setStudentIds] = useState([]);
+            const [slotId, setSlotId] = useState('');
+            const [busy, setBusy] = useState(false);
+            const [message, setMessage] = useState('');
+            const [error, setError] = useState('');
+            const busyRef = React.useRef(false);
+            const account = accounts.find(account => account.lineId === lineId);
+            const selected = (account?.students || []).filter(student => studentIds.includes(student.studentId || ''));
+            const courseSlots = slots.filter(slot => isMonthly ? /^\[月繳/.test(slot.title.trim()) : !/^\[(月繳|專屬教練課)/.test(slot.title.trim()));
+            const slot = courseSlots.find(slot => slot.id === slotId);
+            const price = slot ? Number(slot.prices[selected[0]?.level || 1]) : NaN;
+            const validPrice = slot && slot.prices[selected[0]?.level || 1] !== '' && slot.prices[selected[0]?.level || 1] != null && Number.isFinite(price) && price >= 0;
+            const ready = enabled && selected.length > 0 && slot && Number(slot.remaining) >= selected.length && validPrice;
+            const submit = async event => {
+                event.preventDefault();
+                if (busyRef.current || !ready) return;
+                if (!confirm(`${isMonthly ? '確認代登記月繳團課？' : '確認代登記單堂團課？'}\n${selected.map(student => student.name).join('、')}\n${slot.title} · ${slot.date} ${slot.time}\n共 ${selected.length} 人，合計 NT$ ${price * selected.length}\n登記後為審核中，收款後請再核准預約。`)) return;
+                busyRef.current = true; setBusy(true); setMessage(''); setError('');
+                try {
+                    const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                    if (!accessToken) throw new Error('請重新登入 LINE。');
+                    const result = await fetchAPI({ action: isMonthly ? 'coachRegisterMonthly' : 'coachRegisterSingle', lineId, studentIds, slotId, accessToken });
+                    if (result.status !== 'success') throw new Error(result.message || '登記失敗，請稍後再試。');
+                    if (result.registeredCount !== selected.length) throw new Error('登記結果人數不一致，請重新整理預約名單確認。');
+                    setMessage(`已登記 ${result.registeredCount} 位學生，合計 NT$ ${result.totalPrice}，狀態為審核中。`);
+                    setStudentIds([]); setSlotId('');
+                    await onSuccess();
+                } catch (error) { setError(error.message); }
+                finally { busyRef.current = false; setBusy(false); }
+            };
+            return <section aria-labelledby={`coach-${kind}-registration-title`} className="bg-sky-50 border border-sky-200 rounded-2xl p-4 md:p-6">
+                <h2 id={`coach-${kind}-registration-title`} className="font-bold text-lg text-sky-950 mb-2">{title}</h2>
+                <p className="text-sm text-sky-900 mb-4">選擇已註冊的學員帳號及參加學生。每人佔一個名額，依會員等級計費；登記後為審核中，確認收款後再核准。</p>
+                {!enabled && <p role="status" className="text-sm text-amber-800 mb-4">單堂代登記尚未啟用，請聯絡管理員更新系統。</p>}
+                <form onSubmit={submit} className="coach-monthly-form space-y-4">
+                    <label className="block font-bold">學員帳號<select aria-label={isMonthly ? '代登記學員帳號' : '單堂代登記學員帳號'} disabled={busy} required value={lineId} onChange={e => { const next = accounts.find(account => account.lineId === e.target.value); setLineId(e.target.value); setStudentIds((next?.students || []).map(student => student.studentId || '')); setMessage(''); setError(''); }} className="block w-full border p-3 rounded-lg mt-1 bg-white"><option value="">請選擇學員帳號</option>{accounts.map(account => <option key={account.lineId} value={account.lineId}>{account.students.map(student => student.name + (student.nickname ? `（${student.nickname}）` : '')).join('、')}</option>)}</select></label>
+                    {account && <fieldset disabled={busy} className="border rounded-lg p-3 bg-white"><legend className="font-bold">參加學生</legend>{account.students.map((student, index) => <label key={student.studentId || index} className="flex gap-2 items-center p-2"><input type="checkbox" checked={studentIds.includes(student.studentId || '')} onChange={e => setStudentIds(previous => e.target.checked ? [...previous, student.studentId || ''] : previous.filter(id => id !== (student.studentId || '')))} />{student.name}{student.nickname ? `（${student.nickname}）` : ''}</label>)}</fieldset>}
+                    <label className="block font-bold">{courseLabel}<select aria-label={isMonthly ? '代登記月繳課程' : '代登記單堂課程'} disabled={busy} required value={slotId} onChange={e => { setSlotId(e.target.value); setMessage(''); setError(''); }} className="block w-full border p-3 rounded-lg mt-1 bg-white"><option value="">{isMonthly ? '請選擇月繳課程' : '請選擇單堂課程'}</option>{courseSlots.map(slot => <option key={slot.id} value={slot.id} disabled={Number(slot.remaining) < Math.max(1, selected.length)}>{slot.title} · {slot.date} {slot.time} · {slot.location}（剩 {slot.remaining} 名）</option>)}</select></label>
+                    {courseSlots.length === 0 && <p className="text-sm">{isMonthly ? '目前沒有月繳課程，請先新增課程。' : '目前沒有單堂團課，請先新增課程。'}</p>}
+                    <p className="font-bold">登記 {selected.length} 人{validPrice ? ` · 每人 NT$ ${price} · 合計 NT$ ${price * selected.length}` : ''}</p>
+                    {message && <p role="status" className="text-emerald-800">{message}</p>}{error && <p role="alert" className="text-red-700">{error}</p>}
+                    <button type="submit" disabled={busy || !ready} className="bg-sky-700 text-white rounded-lg px-4 py-3 font-bold disabled:opacity-50">{busy ? '登記中...' : '確認代登記'}</button>
+                </form>
+            </section>;
+        };
+
+        const CoachSlotsView = ({ onPaymentsChanged = () => {} }) => {
+          const [form, setForm] = useState({ 
+            mode: 'single', title: '新手團課', location: '關聖里活動中心', teachingCoachId: '',
+            date: '', startTime: '21:00', endTime: '22:00', capacity: '1', 
+            prices: { 1: 280, 2: 275, 3: 265, 4: 250, 5: 150 },
+            coachBase1v1: '1000', coachBase1v2: '1400'
+          });
+          const [allowedLocations, setAllowedLocations] = useState([...LOCATIONS_LIST]);
+          const [bookings, setBookings] = useState([]);
+          const [members, setMembers] = useState([]);
+          const [slots, setSlots] = useState([]);
+          const [supportsSingleRegistration, setSupportsSingleRegistration] = useState(false);
+          const [teachingCoaches, setTeachingCoaches] = useState([]);
+          const [supportsTeachingCoaches, setSupportsTeachingCoaches] = useState(false);
+          const [dataError, setDataError] = useState('');
+          const [loading, setLoading] = useState(false);
+          const [logModalTarget, setLogModalTarget] = useState(null); 
+          const [showMonthlyLeave, setShowMonthlyLeave] = useState(false);
+          const [editingSlot, setEditingSlot] = useState(null);
+          const cancellingRef = React.useRef(false);
+
+          const addingSlotsRef = React.useRef(false);
+          let coachHours = [], coachHoursError = '';
+          if (form.mode === 'coach') {
+            try { coachHours = splitCoachHours(form.startTime, form.endTime); }
+            catch (error) { coachHoursError = error.message; }
+          }
+          const monthlyInfo = getMonthlyDatesInfo(form.date);
+          const tariff = groupTariff(form.mode, form.startTime, form.endTime, monthlyInfo.count);
+          useEffect(() => {
+            if (form.mode === 'coach') return;
+            const next = groupTariff(form.mode, form.startTime, form.endTime, getMonthlyDatesInfo(form.date).count);
+            setForm(prev => ({ ...prev, prices: Object.fromEntries([1,2,3,4,5].map(level => [level, next ? Math.round(next.price * getVIPDiscount(level)) : ''])) }));
+          }, [form.mode, form.startTime, form.endTime, form.date]);
+
+          const fetchData = () => {
+            return Promise.all([fetchAPI({ action: 'getCoachData' }), fetchAPI({ action: 'getSlots' })]).then(([bRes, sRes]) => {
+                if (bRes.status !== 'success' || sRes.status !== 'success') throw new Error(bRes.message || sRes.message || '讀取排課資料失敗，請稍後再試。');
+                setDataError('');
+                setTeachingCoaches(sRes.teachingCoaches || []);
+                setSupportsTeachingCoaches(sRes.teachingCoachesVersion === 1);
+                setBookings(bRes.bookings || []);
+                setMembers(bRes.members || []);
+                setSlots((sRes.slots || []).filter(s => s.id && s.title && s.date));
+                setSupportsSingleRegistration(sRes.coachSingleRegistrationVersion === 1);
+                onPaymentsChanged();
+            }).catch(error => { setDataError(error.message); throw error; });
+          };
+
+          useEffect(() => { fetchData().catch(() => {}); }, []);
+
+          const toggleLocation = (loc) => {
+              setAllowedLocations(prev => prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc]);
+          };
+
+          const handleAddSlot = async (e) => {
+            e.preventDefault();
+            if (addingSlotsRef.current) return;
+            if (!supportsTeachingCoaches || !teachingCoaches.some(coach => coach.id === form.teachingCoachId)) { alert('請先新增並選擇授課教練。'); return; }
+            const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+            if (!accessToken) { alert('請重新登入 LINE。'); return; }
+            let times = [`${form.startTime} - ${form.endTime}`];
+            let finalTitle = form.title, finalCapacity = form.capacity, finalLocation = form.location;
+            try {
+                if (form.mode === 'monthly') finalTitle = `[月繳${monthlyInfo.count}堂] ${form.title}`;
+                else if (form.mode === 'coach') {
+                    if (!allowedLocations.length) throw new Error('請至少選擇一個允許學生預約的場地！');
+                    times = splitCoachHours(form.startTime, form.endTime);
+                    if (slots.some(slot => /^\[專屬教練課\]/.test(slot.title) && doesSlotMatchDate(slot, form.date) && times.includes(slot.time) && slot.teachingCoachId === form.teachingCoachId)) throw new Error('此日期已有相同的教練時段，請先核對已開課程，避免重複上架。');
+                    finalTitle = `[專屬教練課] 1v1:${form.coachBase1v1}|1v2:${form.coachBase1v2}`;
+                    finalCapacity = 1;
+                    finalLocation = `coach_loc:${allowedLocations.join(',')}`;
+                }
+            } catch (error) { alert(error.message); return; }
+            addingSlotsRef.current = true; setLoading(true);
+            const created = [];
+            const finalDate = form.mode === 'monthly' ? `${form.date.slice(0, 4)}年 ${monthlyInfo.text}` : `${form.date} (${getDayOfWeek(form.date)})`;
+            try {
+                for (const time of times) {
+                    const result = await fetchAPI({ action: 'addSlot', ...form, capacity: finalCapacity, location: finalLocation, title: finalTitle, date: finalDate, time, accessToken });
+                    if (!result || result.status !== 'success') throw new Error((result && result.message) || '後端未確認成功，請先核對課程清單。');
+                    created.push(time);
+                }
+                setForm(prev => ({ ...prev, date: '' }));
+                await fetchData();
+                alert(form.mode === 'coach' ? `已上架 ${created.length} 個獨立的一小時教練時段。` : '課程上架成功！');
+            } catch (error) {
+                setForm(prev => ({ ...prev, date: '' }));
+                await fetchData().catch(() => {});
+                alert(`上架未全部確認成功。已確認 ${created.length}/${times.length} 個時段${created.length ? '：' + created.join('、') : ''}。\n${error.message}\n請先核對已開課程，再設定尚未建立的時段，勿直接重複上架。`);
+            } finally { addingSlotsRef.current = false; setLoading(false); }
+          };
+
+          const updatePrice = (level, value) => {
+            const val = parseInt(value, 10) || 0;
+            if (Number(level) === 1) {
+              setForm(prev => ({...prev, prices: { 1: val, 2: Math.round(val*getVIPDiscount(2)), 3: Math.round(val*getVIPDiscount(3)), 4: Math.round(val*getVIPDiscount(4)), 5: Math.round(val*getVIPDiscount(5)) }}));
+            } else setForm(prev => ({ ...prev, prices: { ...prev.prices, [level]: val }}));
+          };
+
+          const handleCancelBooking = async booking => {
+            if (loading || cancellingRef.current || !booking.bookingId) return;
+            if (!confirm(`確認取消 ${booking.name || '學生'} 的預約？\n訂單：${booking.bookingId}\n將保留取消紀錄並回補名額，不會自動退款。`)) return;
+            cancellingRef.current = true; setLoading(true);
+            let saved = false;
+            try {
+                const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                if (!accessToken) throw new Error('請重新登入 LINE。');
+                const result = await fetchAPI({ action: 'cancelBooking', bookingId: booking.bookingId, accessToken });
+                if (!result || result.status !== 'success') throw new Error((result && result.message) || '請先更新 Apps Script 部署，支援取消預約。');
+                saved = true; await fetchData(); alert('預約已取消，紀錄保留。若需退款請另行處理。');
+            } catch (err) { alert(saved ? '取消已送出，但重新讀取失敗，請重新整理確認，勿重複取消。' : err.message); }
+            finally { cancellingRef.current = false; setLoading(false); }
+          };
+
+          const handleDeleteSlot = async (slotId, title, dateStr) => {
+            if (!confirm(`確定要刪除這堂課嗎？\n\n${title} (${dateStr})\n\n⚠️ 此操作無法復原。`)) return;
+            setLoading(true);
+            await fetchAPI({ action: 'deleteSlot', slotId: slotId });
+            fetchData().catch(() => {}); setLoading(false);
+          };
+
+          const [deletingBookingId, setDeletingBookingId] = useState(null);
+          const deletingBookingRef = React.useRef(false);
+
+          const handleDeleteBooking = async (booking) => {
+            if (loading || deletingBookingRef.current || !['審核中', '預約成功'].includes(booking.status) || !booking.bookingId) return;
+            const slot = slots.find(s => s.id === booking.slotId);
+            const details = [
+                `學生：${booking.name || '未提供'}`,
+                `課程：${booking.slotTitle || (slot && slot.title) || '課程已下架'}`,
+                `時間：${booking.slotDate || (slot && slot.date) || ''} ${booking.slotTime || (slot && slot.time) || ''}`,
+                `金額：NT$ ${booking.paidPrice || 0}`,
+                `狀態：${booking.status}`,
+                `訂單編號：${booking.bookingId}`
+            ].join('\n');
+            if (!confirm(`確定從預約名單刪除此訂單？\n\n${details}\n\n此操作無法復原，且不會自動退款。`)) return;
+            deletingBookingRef.current = true;
+            setDeletingBookingId(booking.bookingId);
+            setLoading(true);
+            try {
+                const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                if (!accessToken) throw new Error('請重新登入 LINE 後再刪除訂單。');
+                const result = await fetchAPI({ action: 'deleteBooking', bookingId: booking.bookingId, accessToken });
+                if (!result || result.status === 'error' || result.success === false ||
+                    !(result.status === 'success' || result.success === true)) {
+                    throw new Error(result && result.message ? result.message : '刪除未獲後端確認。請確認 Apps Script 已更新並重新部署，支援 deleteBooking。');
+                }
+                const [coachData, slotData] = await Promise.all([
+                    fetchAPI({ action: 'getCoachData' }),
+                    fetchAPI({ action: 'getSlots' })
+                ]);
+                if (!Array.isArray(coachData.bookings) || !Array.isArray(slotData.slots)) {
+                    throw new Error('刪除已送出，但無法重新讀取訂單與名額，請重新整理確認，勿重複刪除。');
+                }
+                setBookings(coachData.bookings);
+                setSlots(slotData.slots.filter(s => s.id && s.title && s.date));
+                if (coachData.bookings.some(b => b.bookingId === booking.bookingId)) {
+                    throw new Error('訂單仍在清單中，尚未確認刪除，請確認後端處理結果。');
+                }
+                alert('訂單已刪除，課程名額資料已重新讀取。如需退款，請另外處理。');
+            } catch (error) {
+                alert(error.message || '刪除失敗，請重新整理確認訂單狀態。');
+            } finally {
+                deletingBookingRef.current = false;
+                setDeletingBookingId(null);
+                setLoading(false);
+            }
+          };
+
+          const handleCashReceived = async booking => {
+            if (loading || !confirm(`確認已收到 ${booking.name} 的現金教練費 NT$${booking.paidPrice}？`)) return;
+            setLoading(true);
+            try {
+                const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
+                if (!accessToken) throw new Error('請重新登入 LINE。');
+                const result = await fetchAPI({ action: 'confirmCashPayment', bookingId: booking.bookingId, accessToken });
+                if (!result || result.status !== 'success') throw new Error((result && result.message) || '請更新 Apps Script 部署，支援確認現金收款。');
+                await fetchData();
+            } catch (err) { alert(err.message); }
+            finally { setLoading(false); }
+          };
+
+          const handleApprove = async (bookingId, cash = false) => {
+            if (!confirm(cash ? '確認此教練時段預約？學員將於現場付現，本次核准不代表已收款。' : "確認已收到款項並核准此預約？\n核准後可為該學員填寫訓練日誌結課。")) return;
+            setLoading(true);
+            await fetchAPI({ action: 'approveBooking', bookingId });
+            fetchData().catch(() => {});
+            setLoading(false);
+          };
+
+          return (
+            <div className="space-y-6 md:space-y-8">
+              {dataError && <div role="alert" className="bg-red-50 text-red-800 rounded-xl p-4"><p>{dataError}</p><button type="button" onClick={() => fetchData().catch(() => {})} className="border rounded-lg px-3 py-2 mt-2">重新讀取課程</button></div>}
+              <CoachCourseCalendar slots={slots} bookings={bookings} onEdit={setEditingSlot} />
+              <TeachingCoachesManager coaches={teachingCoaches} enabled={supportsTeachingCoaches} onSuccess={fetchData} />
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <CoachGroupRegistration kind="single" members={members} slots={slots} onSuccess={fetchData} enabled={supportsSingleRegistration} />
+                <CoachGroupRegistration kind="monthly" members={members} slots={slots} onSuccess={fetchData} />
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+                <div><h2 className="font-bold text-amber-950">月繳請假與補課</h2><p className="text-sm text-amber-900">提前至少 14 天登記請假，再安排其他補課日期。</p></div>
+                <button onClick={() => setShowMonthlyLeave(true)} className="bg-amber-600 text-white px-4 py-3 rounded-lg font-bold">請假登記／安排補課</button>
+              </div>
+              <div className="coach-workspace grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+                <div className="coach-editor bg-white p-5 md:p-8 rounded-2xl shadow-sm border min-w-0 col-span-1 h-fit">
+                  <h2 className="font-bold text-lg md:text-xl mb-5 border-b pb-3">新增課程 / 開放時段</h2>
+                  <form onSubmit={handleAddSlot} className="space-y-4">
+                    <TeachingCoachSelect coaches={teachingCoaches} value={form.teachingCoachId} onChange={teachingCoachId => setForm(prev => ({ ...prev, teachingCoachId }))} disabled={loading || !supportsTeachingCoaches} />
+                    {!supportsTeachingCoaches ? <p className="text-sm text-amber-900">授課教練功能尚未啟用，請聯絡管理員更新系統。</p> : !teachingCoaches.length && <p className="text-sm text-slate-500">請先在授課教練管理新增教練。</p>}
+                    <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                        <label className="block text-sm mb-3 font-bold text-emerald-800">上架類型</label>
+                        <div className="flex flex-col gap-2">
+                            <label className="flex items-center text-base md:text-sm cursor-pointer hover:bg-emerald-100 p-1 rounded transition">
+                                <input type="radio" name="mode" className="mr-3 md:mr-2 w-4 h-4" checked={form.mode === 'single'} onChange={() => setForm({...form, mode: 'single'})} /> 單堂團課
+                            </label>
+                            <label className="flex items-center text-base md:text-sm cursor-pointer hover:bg-emerald-100 p-1 rounded transition">
+                                <input type="radio" name="mode" className="mr-3 md:mr-2 w-4 h-4" checked={form.mode === 'monthly'} onChange={() => setForm({...form, mode: 'monthly'})} /> 月繳團課
+                            </label>
+                            <label className="flex items-center text-base md:text-sm cursor-pointer hover:bg-emerald-100 p-1 rounded transition">
+                                <input type="radio" name="mode" className="mr-3 md:mr-2 w-4 h-4" checked={form.mode === 'coach'} onChange={() => setForm({...form, mode: 'coach'})} /> 教練時段
+                            </label>
+                        </div>
+                    </div>
+
+                    {form.mode !== 'coach' && (
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm mb-1.5 text-gray-700 font-bold">課程名稱</label>
+                                <select className="w-full border border-gray-300 p-3 rounded-lg bg-white outline-none text-base" value={form.title} onChange={e=>setForm({...form, title: e.target.value})}>
+                                    <option value="新手團課">新手團課</option>
+                                    <option value="初階團課">初階團課</option>
+                                    <option value="初階團課">初中階團課</option>
+                                    <option value="兒童團課">兒童團課</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm mb-1.5 text-gray-700 font-bold">地點</label>
+                                <select className="w-full border border-gray-300 p-3 rounded-lg bg-white outline-none text-base" value={form.location} onChange={e=>setForm({...form, location: e.target.value})}>
+                                    <option value="關聖里活動中心">關聖里活動中心</option>
+                                    <option value="永康嘉世">永康嘉世</option>
+                                    <option value="仁德羽潮">仁德羽潮</option>
+                                    <option value="南區羽潮">南區羽潮</option>
+                                </select>
+                            </div>
+                        </div>
+                    )}
+                    
+                    <div>
+                        <label className="block text-sm mb-1.5 text-gray-700 font-bold">{form.mode === 'monthly' ? '選擇當月任一上課日' : '開放日期'}</label>
+                        <input type="date" required className="w-full border border-gray-300 p-3 rounded-lg text-base" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} />
+                        {form.mode === 'monthly' && form.date && <div className="mt-2 text-sm text-emerald-600 bg-emerald-50 p-2.5 rounded font-bold">將自動建立：{monthlyInfo.text} (共 {monthlyInfo.count} 堂)</div>}
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                        <div className="flex-1 min-w-0">
+                            <label className="block text-sm mb-1.5 text-gray-700 font-bold">開始時間</label>
+                            <select className="w-full border border-gray-300 p-3 rounded-lg bg-white text-base" value={form.startTime} onChange={e=>setForm({...form, startTime: e.target.value})}>
+                                {timeOptions.map(t => <option key={`start-${t}`} value={t}>{t}</option>)}
+                            </select>
+                        </div>
+                        <span className="pt-6 text-gray-400 font-bold">至</span>
+                        <div className="flex-1 min-w-0">
+                            <label className="block text-sm mb-1.5 text-gray-700 font-bold">結束時間</label>
+                            <select className="w-full border border-gray-300 p-3 rounded-lg bg-white text-base" value={form.endTime} onChange={e=>setForm({...form, endTime: e.target.value})}>
+                                {timeOptions.map(t => <option key={`end-${t}`} value={t}>{t}</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    {form.mode !== 'coach' ? (
+                        <div className="space-y-4">
+                            <div><label className="block text-sm mb-1.5 text-gray-700 font-bold">總名額</label><input type="number" required min="1" className="w-full border border-gray-300 p-3 rounded-lg text-base" value={form.capacity} onChange={e=>setForm({...form, capacity: e.target.value})} /></div>
+                            <div className="bg-gray-50 p-4 rounded-xl border space-y-3 mt-4">
+                              <h3 className="text-sm font-bold text-gray-700 border-b pb-2">各等級收費 (NT$)</h3>
+                              {tariff ? <p className="text-sm text-emerald-800">一般會員：{form.mode === 'monthly' ? `4 堂原價 NT$${tariff.regular}，優惠 NT$${tariff.price}` : `單堂 NT$${tariff.price}`}。已帶入價格，可手動調整。</p> : <p className="text-sm text-amber-800">公告價格適用 1／2 小時，以及月繳 4 堂。其他時長或堂數請手動填寫價格，系統不自動套用 4 堂優惠。</p>}
+                              {[1,2,3,4,5].map(lvl => (
+                                <div key={lvl} className="flex items-center text-base md:text-sm">
+                                    <span className="w-16 shrink-0 font-bold text-gray-600">{LEVEL_NAMES[lvl]}</span>
+                                    <input type="number" required min="0" className="flex-1 min-w-0 border border-gray-300 p-2 rounded-lg px-3" value={form.prices[lvl]} onChange={e=>updatePrice(lvl, e.target.value)} />
+                                </div>
+                              ))}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 space-y-4 mt-4">
+                            <h3 className="text-sm font-bold text-indigo-800 border-b border-indigo-200 pb-2">專屬教練課收費設定 (基準價)</h3>
+                            <div className="flex items-center text-base md:text-sm gap-3"><span className="w-20 shrink-0 font-bold text-indigo-900">1對1 每小時</span><input type="number" required min="0" className="flex-1 min-w-0 border border-indigo-200 p-2 rounded-lg px-3 text-base" value={form.coachBase1v1} onChange={e=>setForm({...form, coachBase1v1: e.target.value})} /></div>
+                            <div className="flex items-center text-base md:text-sm gap-3"><span className="w-20 shrink-0 font-bold text-indigo-900">1對2 每小時</span><input type="number" required min="0" className="flex-1 min-w-0 border border-indigo-200 p-2 rounded-lg px-3 text-base" value={form.coachBase1v2} onChange={e=>setForm({...form, coachBase1v2: e.target.value})} /></div>
+                            
+                            <h3 className="text-sm font-bold text-indigo-800 border-b border-indigo-200 pb-2 mt-4">開放學員可選場地</h3>
+                            <div className="flex flex-wrap gap-2 mt-2">
+                                {LOCATIONS_LIST.map(loc => (
+                                    <label key={loc} className="flex items-center gap-1.5 text-sm cursor-pointer bg-white px-2 py-1.5 rounded border border-indigo-200 shadow-sm transition hover:bg-indigo-100">
+                                        <input type="checkbox" checked={allowedLocations.includes(loc)} onChange={() => toggleLocation(loc)} className="accent-indigo-600 w-4 h-4" />
+                                        <span className="text-indigo-900 font-medium">{loc === '自理場地(需私訊確認)' ? '其他場地' : loc}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {form.mode === 'coach' && <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mt-4 text-sm">
+                        <p className="font-bold">每小時自動分割，獨立預約</p>
+                        {coachHoursError ? <p role="alert" className="text-red-700 mt-2">{coachHoursError}</p> : <><p className="mt-2">將建立 {coachHours.length} 個時段，每段 1 小時、各 1 個名額。以上價格為每小時教練費，不含場地費，學員須自行預約場地。</p><ul className="mt-2 space-y-1">{coachHours.map(time => <li key={time}>{time}</li>)}</ul></>}
+                    </div>}
+                    <button type="submit" disabled={loading || !supportsTeachingCoaches || !teachingCoaches.some(coach => coach.id === form.teachingCoachId) || (form.mode === 'coach' && !!coachHoursError)} className="w-full bg-slate-800 text-white p-4 rounded-lg font-bold text-lg mt-6 active:scale-[0.98] transition">上架時段</button>
+                  </form>
+                </div>
+
+                <div className="coach-results min-w-0 col-span-1 md:col-span-2 space-y-6 md:space-y-8">
+                    <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
+                        <div className="flex justify-between items-center mb-5 border-b pb-3">
+                            <h2 className="font-bold text-lg md:text-xl text-emerald-700">已開課程與時段</h2>
+                            <span className="text-sm font-bold text-gray-500 bg-gray-100 px-3 py-1 rounded-full">共 {slots.length} 堂</span>
+                        </div>
+                        <div className="mobile-list-wrap overflow-x-auto max-h-[400px] overflow-y-auto">
+                          <table className="mobile-card-table w-full min-w-max text-left text-sm md:text-base whitespace-nowrap">
+                            <thead className="sticky top-0 bg-white shadow-sm z-10"><tr className="text-gray-600"><th className="p-3 md:p-4">課程名稱</th><th className="p-3 md:p-4">日期/時間</th><th className="p-3 md:p-4 text-center">進度</th><th className="p-3 md:p-4 text-center">操作</th></tr></thead>
+                            <tbody>
+                              {slots.map((s, idx) => {
+                                const booked = s.capacity - s.remaining;
+                                const isFull = booked >= s.capacity;
+                                const safeLocation = s.location || '';
+                                const isCoach = s.title.startsWith('[專屬教練課]');
+                                const displayLoc = safeLocation.startsWith('coach_loc:') ? '學員自選場地' : safeLocation;
+                                return (
+                                  <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                                    <td data-label="課程名稱" className="p-3 md:p-4"><span className="font-bold text-gray-800">{isCoach ? '教練開放時段' : s.title}</span><span className="block text-xs text-slate-500 mt-1 whitespace-normal break-words">授課教練：{s.teachingCoachName || '未指定'}</span></td>
+                                    <td data-label="日期/時間" className="p-3 md:p-4 text-gray-500">{s.date} <br/><span className="text-xs md:text-sm">{s.time} • {displayLoc}</span></td>
+                                    <td data-label="進度" className="p-3 md:p-4 text-center"><span className={`px-3 py-1 rounded-full font-bold text-xs md:text-sm ${isFull ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700'}`}>{booked}/{s.capacity}</span></td>
+                                    <td data-label="操作" className="p-3 md:p-4 text-center"><div className="flex flex-wrap justify-center gap-2"><button onClick={() => setEditingSlot(s)} className="bg-blue-50 text-blue-700 font-bold px-4 py-2 rounded-lg">編輯</button><button onClick={() => handleDeleteSlot(s.id, s.title, s.date)} className="text-red-600 hover:text-red-800 font-bold text-sm bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg active:scale-95 transition">刪除</button></div></td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
+                      <h2 className="font-bold text-lg md:text-xl mb-5 border-b pb-3 text-slate-800">最新預約名單 (教練對帳與結課)</h2>
+                      <div className="mobile-list-wrap overflow-x-auto max-h-[400px] overflow-y-auto">
+                        <table className="mobile-card-table w-full min-w-max text-left text-sm md:text-base whitespace-nowrap">
+                          <thead className="sticky top-0 bg-white shadow-sm z-10"><tr className="text-gray-600">
+                              <th className="p-3 md:p-4">學生姓名</th>
+                              <th className="p-3 md:p-4">金額</th>
+                              <th className="p-3 md:p-4">狀態 / 後五碼</th>
+                              <th className="p-3 md:p-4 text-center">操作</th>
+                          </tr></thead>
+                          <tbody>
+                            {bookings.slice().reverse().map((b, idx) => {
+                               return (
+                              <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                                <td data-label="學生姓名" className="p-3 md:p-4 font-bold text-gray-800">{b.name}{b.makeupLeaveId && <span className="block text-xs font-normal text-emerald-700 mt-1">月繳補課（不重複收費）</span>}</td>
+                                <td data-label="金額" className="p-3 md:p-4 text-emerald-600 font-bold">NT$ {b.paidPrice}{['現場現金','現金已收'].includes(b.paymentCode) && <p className="text-xs text-amber-900 mt-1">{b.paymentCode === '現金已收' ? '現金已收款' : '現場付現 · 尚未確認收款'}</p>}</td>
+                                <td data-label="狀態 / 後五碼" className="p-3 md:p-4">
+                                    {b.status === "已取消" ? <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-md">已取消</span> : b.status === "已完課" ? (
+                                        <span className="text-gray-500 font-bold text-sm bg-gray-100 px-2 py-1 rounded-md">🏁 已完課結單</span>
+                                    ) : b.status === "預約成功" ? (
+                                        <span className="text-emerald-600 font-bold text-sm bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">✅ 預約成功</span>
+                                    ) : (
+                                        <div className="flex flex-col gap-1 w-fit">
+                                            <span className="text-amber-600 font-bold text-sm animate-pulse">⏳ 審核中</span>
+                                            <span className="text-xs text-gray-500 font-mono bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">
+                                              {b.paymentCode === '現場現金' ? '現場現金（尚未收款）' : b.paymentCode === '現金已收' ? '現金已收款' : `末五碼: ${b.paymentCode || '未填寫'}`}
+                                            </span>
+                                        </div>
+                                    )}
+                                </td>
+                                <td data-label="操作" className="p-3 md:p-4 text-center">
+                                    <div className="flex flex-wrap justify-center gap-2">
+                                        {b.paymentCode === '現場現金' && ['預約成功', '已完課'].includes(b.status) && b.bookingId && <button onClick={() => handleCashReceived(b)} disabled={loading} className="bg-amber-600 text-white font-bold py-2 px-3 rounded-lg disabled:opacity-50">確認現金收款</button>}
+                                        {b.status === "審核中" && b.bookingId && (
+                                            <button onClick={() => handleApprove(b.bookingId, b.paymentCode === '現場現金')} disabled={loading} className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
+                                                {b.paymentCode === '現場現金' ? '確認預約（現場付現）' : '對帳核准'}
+                                            </button>
+                                        )}
+                                        {b.status === "預約成功" && b.bookingId && (
+                                            <button onClick={() => setLogModalTarget({ lineId: b.lineId, studentId: b.studentId, name: b.name, bookingId: b.bookingId })} disabled={loading} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
+                                                結課 / 日誌
+                                            </button>
+                                        )}
+                                        {["審核中", "預約成功"].includes(b.status) && <button onClick={() => handleCancelBooking(b)} disabled={loading || !b.bookingId} className="bg-orange-50 text-orange-800 border border-orange-200 font-bold py-2 px-3 rounded-lg disabled:opacity-50">取消預約</button>}
+                                        {["審核中", "預約成功"].includes(b.status) && (
+                                            <button onClick={() => handleDeleteBooking(b)} disabled={loading || !b.bookingId} title={!b.bookingId ? '此舊訂單缺少訂單編號，請先補上預約名單第 H 欄的唯一編號。' : undefined} aria-label={`刪除${b.name || '學員'}的預約`} className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
+                                                {deletingBookingId === b.bookingId ? '刪除中...' : '刪除訂單'}
+                                            </button>
+                                        )}
+                                        {b.status === "已取消" && <span className="text-xs text-gray-500">取消紀錄保留</span>}
+                                        {b.status === "已完課" && <span className="text-xs text-gray-400 font-bold">已完課紀錄保留</span>}
+                                    </div>
+                                    {["審核中", "預約成功"].includes(b.status) && !b.bookingId && (
+                                        <p className="mt-2 text-xs text-red-600">缺少訂單編號，請先補上唯一編號</p>
+                                    )}
+                                </td>
+                              </tr>
+                            )})}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                </div>
+              </div>
+              {editingSlot && <EditSlotModal slot={editingSlot} teachingCoaches={teachingCoaches} supportsTeachingCoaches={supportsTeachingCoaches} onClose={() => setEditingSlot(null)} onSuccess={fetchData} />}
+              {showMonthlyLeave && <MonthlyLeaveModal bookings={bookings} slots={slots} onClose={() => setShowMonthlyLeave(false)} onSuccess={fetchData} />}
+              {/* 共用寫日誌彈窗 (傳入 targetData={lineId, name, bookingId}) */}
+              {logModalTarget && <LogFormModal targetData={logModalTarget} onClose={() => setLogModalTarget(null)} onSuccess={() => fetchData().catch(() => {})} />}
+            </div>
+          );
+        };
+
+        const CoachMembersView = ({ onOpenStudent, onPaymentsChanged = () => {} }) => {
+            const [members, setMembers] = useState([]);
+            const [paymentTotals, setPaymentTotals] = useState(null);
+            const [paymentError, setPaymentError] = useState('');
+            const [historicalStudent, setHistoricalStudent] = useState(null);
+            const [viewModal, setViewModal] = useState({ isOpen: false, student: null });
+            const [logModalTarget, setLogModalTarget] = useState(null); 
+
+            const fetchMembers = () => {
+                return fetchAPI({ action: 'getCoachData' }).then(res => {
+                    setMembers(res.members || []);
+                    if (res.status !== 'error' && Array.isArray(res.bookings)) {
+                        const totals = calculateCoachPayments([...(res.bookings || []), ...(res.historicalBookings || [])], taipeiMonth(new Date()), res.members || []);
+                        setPaymentTotals(totals.studentTotals);
+                        setPaymentError([
+                            totals.invalidAmounts || totals.duplicateOrders ? '付款資料存在異常或缺漏，請參閱收入統計並核對原訂單。' : '',
+                            totals.unmatchedStudents ? '部分訂單無法對應個別學員，未列入個人累積金額；請核對原訂單的學員編號。' : ''
+                        ].filter(Boolean).join(' '));
+                    } else { setPaymentTotals(null); setPaymentError('無法讀取付款資料，累積金額暫不顯示。'); }
+                    return res;
+                });
+            };
+
+            useEffect(() => { fetchMembers(); }, []);
+
+            return (
+                <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
+                    <h2 className="font-bold text-lg md:text-xl mb-5 border-b pb-3 text-slate-800">學員名單總覽</h2>
+                    <p className="text-sm text-gray-600 mb-4">累積付款金額依帳號及學員編號分別加總已核准及已完課的現存訂單；同帳號學員不合併，未核准、已取消、尚未確認現金收款不計。</p>
+                    {paymentError && <p role="status" className="text-sm text-amber-800 mb-4">{paymentError}</p>}
+                    <div className="mobile-list-wrap overflow-x-auto">
+                        <table className="mobile-card-table w-full min-w-max text-left text-sm md:text-base whitespace-nowrap">
+                            <thead className="bg-gray-50 text-gray-600 border-b border-gray-200">
+                                <tr>
+                                    <th className="p-3 md:p-4">學員姓名</th>
+                                    <th className="p-3 md:p-4">會員等級</th>
+                                    <th className="p-3 md:p-4 text-center">累計完成堂數</th>
+                                    <th className="p-3 md:p-4">累積付款金額</th>
+                                    <th className="p-3 md:p-4 text-center">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {!members || members.length === 0 ? (
+                                    <tr><td colSpan="5" className="p-8 text-center text-gray-400">目前尚無會員資料</td></tr>
+                                ) : (
+                                    members.map((m, i) => (
+                                        <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition">
+                                            <td data-label="學員姓名" className="p-3 md:p-4 font-bold text-base md:text-lg text-slate-800">{m.name}</td>
+                                            <td data-label="會員等級" className="p-3 md:p-4">
+                                                <span className="bg-amber-100 text-amber-800 text-xs md:text-sm font-bold px-3 py-1.5 rounded-md">{LEVEL_NAMES[m.level]}</span>
+                                            </td>
+                                            <td data-label="累計完成堂數" className="p-3 md:p-4 text-center font-extrabold text-slate-600 text-xl md:text-2xl">{m.totalClasses || 0}</td>
+                                            <td data-label="累積付款金額" className="p-3 md:p-4 font-bold text-emerald-700">{paymentTotals ? (m.lineId ? formatMoney(paymentTotals.get(studentPaymentKey(m.lineId, m.studentId)) || 0) : '缺少帳號 ID') : '暫無資料'}</td>
+                                            <td data-label="操作" className="p-3 md:p-4 text-center">
+                                                <div className="flex flex-wrap justify-center gap-2">
+                                                    <button onClick={() => onOpenStudent(m)} disabled={!m.lineId} className="bg-slate-700 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-2.5 px-4 md:px-5 rounded-lg shadow-sm text-xs md:text-sm active:scale-95 transition">
+                                                        開啟學生畫面
+                                                    </button>
+                                                    <button onClick={()=>setViewModal({isOpen: true, student: m})} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 md:px-5 rounded-lg shadow-sm text-xs md:text-sm active:scale-95 transition">
+                                                        檢視資料
+                                                    </button>
+                                                    <button onClick={() => setHistoricalStudent(m)} disabled={!m.lineId} className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold py-2.5 px-4 rounded-lg text-xs md:text-sm">補登歷史預約</button>
+                                                    <button onClick={()=>setLogModalTarget({ lineId: m.lineId, studentId: m.studentId, name: m.name })} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 md:px-5 rounded-lg shadow-sm text-xs md:text-sm active:scale-95 transition">
+                                                        補登日誌
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                    {historicalStudent && <HistoricalBookingModal student={historicalStudent} onClose={() => setHistoricalStudent(null)} onSuccess={async () => { const result = await fetchMembers(); if (result.status !== 'success') throw new Error('付款統計讀取失敗'); onPaymentsChanged(); }} />}
+                    {viewModal.isOpen && <StudentDetailsModal student={viewModal.student} onClose={()=>setViewModal({isOpen: false, student: null})} />}
+                    {logModalTarget && <LogFormModal targetData={logModalTarget} onClose={() => setLogModalTarget(null)} onSuccess={fetchMembers} />}
+                </div>
+            );
+        };
+
+        const loadStudentAccountForCoach = async member => {
+            if (!member?.lineId) throw new Error('此學員缺少帳號資料，請重新整理名單。');
+            const result = await fetchAPI({ action: 'checkUser', lineId: member.lineId });
+            if (!result || result.status !== 'success') throw new Error(result?.message || '學生資料讀取失敗，請重試。');
+            if (!result.isRegistered || !result.user) throw new Error('此學員帳號尚未完成註冊，請返回後台確認。');
+            const userRecord = validateAccountRecord(result.user);
+            const studentId = member.studentId ?? userRecord.students[0].id;
+            if (!userRecord.students.some(student => student.id === studentId)) throw new Error('此學生已不在帳號內，請返回後台重新整理學員名單。');
+            return { userRecord, studentId };
+        };
+
+        const CoachDashboard = () => {
+            const [activeTab, setActiveTab] = useState('slots');
+            const [selectedStudent, setSelectedStudent] = useState(null);
+            const [paymentRevision, setPaymentRevision] = useState(0);
+            const paymentsChanged = React.useCallback(() => setPaymentRevision(n => n + 1), []);
+
+            const studentRequestRef = React.useRef(0);
+            const returnHashRef = React.useRef('');
+            const openStudent = async member => {
+                if (!selectedStudent) returnHashRef.current = window.location.hash;
+                const requestId = ++studentRequestRef.current;
+                setSelectedStudent({ ...member, userRecord: null, loading: true, error: '' });
+                try {
+                    const account = await loadStudentAccountForCoach(member);
+                    if (requestId === studentRequestRef.current) setSelectedStudent({ ...member, ...account, loading: false, error: '' });
+                } catch (error) {
+                    if (requestId === studentRequestRef.current) setSelectedStudent({ ...member, userRecord: null, loading: false, error: error.message });
+                }
+            };
+            const closeStudent = () => {
+                studentRequestRef.current++;
+                setSelectedStudent(null);
+                window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search + returnHashRef.current);
+            };
+
+            if (selectedStudent) {
+                return (
+                    <div>
+                        <div className="student-context sticky top-0 z-40 bg-amber-100 border-b border-amber-300 p-4 flex flex-wrap items-center justify-between gap-3" role="region" aria-label="教練學生畫面">
+                            <div>
+                                <p className="font-bold text-amber-950">目前操作學生：{selectedStudent.userRecord ? studentNickname(selectedStudent.userRecord.students.find(student => student.id === selectedStudent.studentId)) : studentNickname(selectedStudent)}</p>
+                                <p className="text-sm text-amber-900">教練檢視模式；預約依此帳號全部學生人數與課程規則登記。</p>
+                            </div>
+                            <button onClick={closeStudent} className="bg-slate-800 text-white font-bold px-4 py-2 rounded-lg">返回教練後台</button>
+                        </div>
+                        {selectedStudent.loading ? <p role="status" className="p-8 text-center text-slate-600">讀取學生資料中...</p> : selectedStudent.error ? <div role="alert" className="p-6"><p className="text-red-700">{selectedStudent.error}</p><button onClick={() => openStudent(selectedStudent)} className="mt-4 border rounded-lg px-4 py-3">重新讀取學生資料</button></div> : <StudentDashboard
+                            key={`${selectedStudent.lineId}:${selectedStudent.studentId}`}
+                            profile={{ userId: selectedStudent.lineId }}
+                            userRecord={selectedStudent.userRecord}
+                            initialStudentId={selectedStudent.studentId}
+                            coachView
+                        />}
+
+                    </div>
+                );
+            }
+
+            return (
+                <div className="coach-shell max-w-6xl mx-auto min-h-screen flex flex-col bg-gray-50 md:shadow-lg md:rounded-b-2xl">
+                    <header className="dashboard-header bg-amber-50 text-slate-900 shadow-md relative z-10">
+                        <BrandBanner />
+                        <div className="dashboard-heading px-4 md:px-8 pt-4">
+                            <div className="language-switch-row mb-4">
+                                <h1 className="text-xl md:text-3xl font-bold tracking-wider">教練管理後台</h1>
+                                <LanguageSwitch />
+                            </div>
+                            <div className="flex w-full mt-2 border-b border-amber-200">
+                                <button onClick={()=>setActiveTab('slots')} className={`flex-1 min-w-0 md:flex-none md:w-48 px-1 py-3 text-sm md:text-base font-bold border-b-4 text-center transition-colors ${activeTab === 'slots' ? 'border-emerald-700 text-emerald-800' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>排課與預約管理</button>
+                                <button onClick={()=>setActiveTab('members')} className={`flex-1 min-w-0 md:flex-none md:w-48 px-1 py-3 text-sm md:text-base font-bold border-b-4 text-center transition-colors ${activeTab === 'members' ? 'border-emerald-700 text-emerald-800' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>學員名單與資料</button>
+                            </div>
+                        </div>
+                    </header>
+                    <div className="flex-1 min-w-0 p-3 md:p-8">
+                        {activeTab === 'members' && <CoachRevenue revision={`${activeTab}-${paymentRevision}`} />}
+                        {activeTab === 'slots' ? <CoachSlotsView onPaymentsChanged={paymentsChanged} /> : <CoachMembersView onOpenStudent={openStudent} onPaymentsChanged={paymentsChanged} />}
+                    </div>
+                </div>
+            );
+        };
+
+        // ==========================================
+        // 🔹 應用程式掛載入口
+        // ==========================================
+        const App = () => {
+          const [liffState, setLiffState] = useState({ init: false, profile: null });
+          const [userRecord, setUserRecord] = useState(null);
+          const [view, setView] = useState('loading');
+          const [loginError, setLoginError] = useState('');
+          const loginBusy = React.useRef(false);
+          const login = async () => {
+            if (loginBusy.current) return;
+            loginBusy.current = true; setView('loading'); setLoginError('');
+            try {
+              if (typeof liff === 'undefined') throw new Error('LINE 登入元件未載入，請確認網路後重試。');
+              rememberStudentRoute();
+              await liff.init({ liffId: LIFF_ID });
+              if (!liff.isLoggedIn()) { liff.login({ redirectUri: window.location.href.split('#')[0] }); return; }
+              restoreStudentRoute();
+              const profile = await liff.getProfile();
+              if (window.BadmintonI18n) window.BadmintonI18n.remember(profile);
+              if (!profile || !profile.userId) throw new Error('無法取得 LINE 身分，請確認 LIFF 的 profile 權限。');
+              setLiffState({ init: true, profile });
+              const res = await fetchAPI({ action: 'checkUser', lineId: profile.userId });
+              if (!res || res.status !== 'success') throw new Error((res && res.message) || '無法確認帳號權限，請確認 Apps Script 部署及網路連線。');
+              if (res.isAdmin === true) setView('coach');
+              else if (res.isRegistered === true && res.user) { setUserRecord(validateAccountRecord(res.user)); setView('student'); }
+              else if (res.isRegistered === false && res.isAdmin === false) setView('register');
+              else throw new Error('帳號權限回應不完整，請更新 Apps Script 部署。');
+            } catch (err) { setLoginError(err.message || '登入失敗，請重試。'); setView('login-error'); }
+            finally { loginBusy.current = false; }
+          };
+          useEffect(() => { login(); }, []);
+          if (view === 'loading') return <div className="p-10 text-center text-gray-500 font-bold animate-pulse">正在確認 LINE 身分與帳號權限...</div>;
+          if (view === 'login-error') return <div className="login-panel max-w-lg mx-auto p-5 bg-white min-h-screen">
+            <div className="language-switch-row mb-4">
+              <h1 className="text-xl font-bold">無法完成登入</h1>
+              <LanguageSwitch />
+            </div>
+            <p role="alert" className="bg-red-50 text-red-800 p-4 rounded-lg mb-4">{loginError}</p>
+            <button onClick={login} className="w-full bg-emerald-700 text-white p-3 rounded-lg font-bold">重新嘗試登入</button>
+            {liffState.profile && <div className="mt-5 text-sm text-gray-600"><p>若教練身分未被辨識，請確認此 LINE 帳號的 user ID 已列入後端 ADMIN_LINE_IDS，且 LIFF 使用相同 LINE Provider。</p><details className="mt-3"><summary>查看目前登入帳號 ID</summary><p className="mt-2 break-all select-all">{liffState.profile.userId}</p></details></div>}
+          </div>;
+          if (view === 'register') return <RegisterView profile={liffState.profile} onRegistered={(u) => { setUserRecord(u); setView('student'); }} />;
+          if (view === 'complete-registration') return <RegisterView profile={liffState.profile} existingUser={userRecord} onCancel={() => setView('student')} onRegistered={u => { setUserRecord(u); setView('student'); }} />;
+          if (view === 'student') return <StudentDashboard profile={liffState.profile} userRecord={userRecord} onCompleteRegistration={() => setView('complete-registration')} />;
+          if (view === 'coach') return <CoachDashboard />;
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);

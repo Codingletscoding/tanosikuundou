@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+const html=fs.readFileSync(path.join(__dirname,'../script.js'),'utf8');
 const code=html.slice(html.indexOf('const TRAINING_STEP_MINUTES ='),html.indexOf('const LOCATIONS_LIST ='))+'\nthis.metrics={normalizeTrainingMinutes,estimateTrainingRepetitions};';
 const context={};vm.createContext(context);vm.runInContext(code,context);const {normalizeTrainingMinutes:normalize,estimateTrainingRepetitions:reps}=context.metrics;
 test('training sliders select 5-minute increments within the existing two-hour limit',()=>{

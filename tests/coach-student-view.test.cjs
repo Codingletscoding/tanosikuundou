@@ -1,7 +1,7 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+const html=fs.readFileSync(path.join(__dirname,'../script.js'),'utf8');
 const validation=html.slice(html.indexOf('const validateAccountRecord ='),html.indexOf('const RegisterView ='));
 const loader=html.slice(html.indexOf('const loadStudentAccountForCoach ='),html.indexOf('const CoachDashboard ='));
 function setup(response){const calls=[];const ctx={fetchAPI:async payload=>{calls.push(payload);return response;}};vm.createContext(ctx);vm.runInContext(validation+'\n'+loader+'\nthis.load=loadStudentAccountForCoach;',ctx);return {...ctx,calls};}

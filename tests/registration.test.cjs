@@ -1,7 +1,7 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const source=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+const source=fs.readFileSync(path.join(__dirname,'../script.js'),'utf8');
 const start=source.indexOf('const validateAccountRecord =');
 const end=source.indexOf('const RegisterView =',start);
 const ctx={};vm.createContext(ctx);vm.runInContext(source.slice(start,end)+'\nthis.validate = validateAccountRecord;',ctx);

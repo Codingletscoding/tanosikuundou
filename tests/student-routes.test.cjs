@@ -1,7 +1,7 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+const html=fs.readFileSync(path.join(__dirname,'../script.js'),'utf8');
 const source=html.slice(html.indexOf('const STUDENT_ROUTES ='),html.indexOf('const StudentDashboard ='));
 function setup(hash=''){
  const storage=new Map(),replacements=[];

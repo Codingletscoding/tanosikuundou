@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const source=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+const source=fs.readFileSync(path.join(__dirname,'../script.js'),'utf8');
 const code=source.slice(source.indexOf('const formatTrainingDate ='),source.indexOf('const getDayOfWeek ='))+source.slice(source.indexOf('const coachCalendarDateKey ='),source.indexOf('const CoachCourseCalendar ='))+'\nthis.calendar={coachSlotDates,coachCalendarMonthData};';
 const context={Date,Intl};vm.createContext(context);vm.runInContext(code,context);const {coachSlotDates:dates,coachCalendarMonthData:month}=context.calendar;
 const slot=(extra={})=>({id:'one',title:'團課',date:'2026-11-04 (週三)',time:'9:00 - 10:00',capacity:5,remaining:5,...extra});

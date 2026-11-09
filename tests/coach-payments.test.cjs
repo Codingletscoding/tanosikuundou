@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const source=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+const source=fs.readFileSync(path.join(__dirname,'../script.js'),'utf8');
 const code=source.slice(source.indexOf('        const formatMoney ='),source.indexOf('        const CoachRevenue ='))+'\nglobalThis.payments={calculateCoachPayments,taipeiMonth,studentPaymentKey};';
 const ctx={Intl,Date};vm.createContext(ctx);vm.runInContext(code,ctx);
 const {calculateCoachPayments:sum,taipeiMonth:month,studentPaymentKey:key}=ctx.payments;
