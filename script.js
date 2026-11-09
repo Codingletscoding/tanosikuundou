@@ -902,6 +902,17 @@
             </section>
         );
 
+        const GroupQuotePrices = ({ quote }) => {
+            if (!quote?.studentPrices?.length) return null;
+            return <div className="group-price-breakdown w-full space-y-2 mt-3 text-sm">
+                {quote.studentPrices.map((item, index) => <div key={item.studentId || index} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg bg-slate-50 px-3 py-2">
+                    <span className="font-semibold text-slate-700 break-words">{item.label}</span>
+                    {item.price < item.regularPrice ? <del className="text-gray-500">&#x539f;&#x50f9; NT$ {item.regularPrice}</del> : <span className="text-gray-500">&#x539f;&#x50f9; NT$ {item.regularPrice}</span>}
+                    <span className="font-bold text-emerald-700">{item.price < item.regularPrice ? '\u512a\u60e0\u50f9' : '\u60a8\u7684\u50f9\u683c'} NT$ {item.price}</span>
+                </div>)}
+            </div>;
+        };
+
         const StudentBookingView = ({ profile, userRecord, onBooked }) => {
           const [slots, setSlots] = useState([]);
           const [supportsSharedCoach, setSupportsSharedCoach] = useState(false);
@@ -918,6 +929,7 @@
           useEffect(() => {
             fetchAPI({ action: 'getSlots', lineId: profile ? profile.userId : '' }).then(res => {
                 if (res.status !== 'success') { alert(res.message || '\u8ab2\u7a0b\u8b80\u53d6\u5931\u6557'); return; }
+                if (res.studentGroupPricingVersion !== 1) { alert('\u500b\u4eba\u5718\u8ab2\u50f9\u683c\u5c1a\u672a\u555f\u7528\uff0c\u8acb\u806f\u7d61\u7ba1\u7406\u54e1\u66f4\u65b0\u5f8c\u7aef\u3002'); return; }
                 const validSlots = (res.slots || []).filter(s => s.id && s.title && s.date);
                 setSlots(validSlots);
                 setSupportsSharedCoach(res.coachAccountPricingVersion === 1);
@@ -934,7 +946,7 @@
                 const quote = result.quote;
                 const titleDisplay = type ? `\u5c08\u5c6c\u6559\u7df4\u8ab2 (${type} \u65bc ${selectedLoc})` : slot.title;
                 setAgreementAccepted(false);
-                setBookingTarget({ slot, titleDisplay, myPrice: quote.totalPrice, type, selectedLoc });
+                setBookingTarget({ slot, titleDisplay, myPrice: quote.totalPrice, quote, type, selectedLoc });
                 setPaymentCode('');
             } catch (error) { alert(error.message); }
             finally { quotingRef.current = false; setStatus('idle'); }
@@ -948,6 +960,7 @@
                 slotId: bookingTarget.slot.id, 
                 lineId: profile ? profile.userId : '', 
                 expectedTotalPrice: bookingTarget.myPrice,
+                expectedStudentPrices: bookingTarget.quote.studentPrices,
                 coachType: bookingTarget.type, location: bookingTarget.selectedLoc,
                 paymentCode: bookingTarget.slot.title.startsWith('[\u5c08\u5c6c\u6559\u7df4\u8ab2]') ? '\u73fe\u5834\u73fe\u91d1' : (paymentCode || '')
             });
@@ -1114,12 +1127,13 @@
                               </div>
                               <div className={`mt-4 pt-4 border-t flex items-center justify-between w-full ${isFull ? 'border-gray-200 opacity-60' : 'border-gray-100'}`}>
                                 <div className="flex flex-wrap items-baseline gap-2">
-                                  {isDiscounted && <del className="text-gray-500 text-xs">NT$ {originalPrice}</del>}
+                                  {isDiscounted && <del className="text-gray-500 text-xs">&#x539f;&#x50f9; NT$ {originalPrice}</del>}
                                   <span className={`${isFull ? 'text-gray-500' : 'text-emerald-600'} font-bold text-xl`}>NT$ {myPrice}&#xff08;{studentCount} &#x4eba;&#x5408;&#x8a08;&#xff09;</span>
                                   {isDiscounted && <span className="bg-red-50 text-red-600 border border-red-200 text-[10px] md:text-xs px-2 py-0.5 rounded font-bold">&#x7279;&#x50f9;</span>}
                                 </div>
-                                <span className={`text-xs md:text-sm font-medium px-3 py-1 rounded-full ${isFull ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600'}`}>{isFull ? '\u5df2\u6eff\u73ed' : `\u5269 ${slot.remaining} \u540d`}</span>
+                                <span className={`shrink-0 whitespace-nowrap text-xs md:text-sm font-medium px-3 py-1 rounded-full ${isFull ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600'}`}>{isFull ? '\u5df2\u6eff\u73ed' : `\u5269 ${slot.remaining} \u540d`}</span>
                               </div>
+                              <GroupQuotePrices quote={slot.priceQuote} />
                             </div>
                           );
                         })}
@@ -1146,6 +1160,7 @@
                                 <div className="font-black text-2xl text-emerald-600">NT$ {bookingTarget.myPrice}&#xff08;&#x5171; {studentCount} &#x4eba;&#xff09;</div>
                             </div>
                             
+                            <GroupQuotePrices quote={bookingTarget.quote} />
                             {bookingTarget.slot.title.startsWith('[\u5c08\u5c6c\u6559\u7df4\u8ab2]') && <p className="text-sm text-red-800 bg-red-50 border border-red-200 p-3 rounded-lg">&#x6b64;&#x91d1;&#x984d;&#x70ba;&#x6559;&#x7df4;&#x8cbb;&#xff0c;&#x4e0d;&#x542b;&#x5834;&#x5730;&#x8cbb;&#x3002;&#x5b78;&#x54e1;&#x9808;&#x81ea;&#x884c;&#x9810;&#x7d04;&#x4e0a;&#x8ab2;&#x5834;&#x5730;&#x4e26;&#x652f;&#x4ed8;&#x5834;&#x5730;&#x8cbb;&#xff0c;&#x672c;&#x7cfb;&#x7d71;&#x4e0d;&#x4ee3;&#x8a02;&#x5834;&#x5730;&#x3002;</p>}
                             {bookingTarget.slot.title.startsWith('[\u5c08\u5c6c\u6559\u7df4\u8ab2]') ? <div className="bg-amber-50 border border-amber-200 rounded-lg p-4"><h4 className="font-bold text-amber-950">&#x4ed8;&#x6b3e;&#x65b9;&#x5f0f;&#xff1a;&#x73fe;&#x5834;&#x73fe;&#x91d1;&#x4ed8;&#x6b3e;</h4><p className="text-sm text-amber-900 mt-2">&#x8acb;&#x65bc;&#x4e0a;&#x8ab2;&#x7576;&#x5929;&#x73fe;&#x5834;&#x652f;&#x4ed8;&#x6559;&#x7df4;&#x8cbb;&#xff0c;&#x4e0d;&#x9700;&#x4e8b;&#x5148;&#x532f;&#x6b3e;&#x6216;&#x586b;&#x5beb;&#x532f;&#x6b3e;&#x5f8c;&#x4e94;&#x78bc;&#x3002;&#x9810;&#x7d04;&#x4ecd;&#x9700;&#x6559;&#x7df4;&#x78ba;&#x8a8d;&#x3002;</p></div> : <>
                             <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
@@ -1531,6 +1546,7 @@
                         {supportsTeachingCoaches && <TeachingCoachSelect coaches={teachingCoaches} value={form.teachingCoachId} onChange={teachingCoachId => setForm(prev => ({ ...prev, teachingCoachId }))} disabled={busy} allowUnassigned={!slot.teachingCoachId} label="&#x7de8;&#x8f2f;&#x8ab2;&#x7a0b;&#x6388;&#x8ab2;&#x6559;&#x7df4;" />}
                         {[['title','\u8ab2\u7a0b\u540d\u7a31'],['date','\u4e0a\u8ab2\u65e5\u671f'],['time','\u4e0a\u8ab2\u6642\u9593'],['location','\u5834\u5730']].map(([key,label]) => <label key={key} className="block text-sm font-bold">{label}<input aria-label={label} required disabled={busy} value={form[key]} onChange={e => setForm(prev => ({...prev,[key]:e.target.value}))} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>)}
                         <label className="block text-sm font-bold">&#x7e3d;&#x540d;&#x984d;<input aria-label="&#x7e3d;&#x540d;&#x984d;" type="number" required min={Math.max(1, Number(slot.capacity)-Number(slot.remaining))} step="1" disabled={busy} value={form.capacity} onChange={e => setForm(prev=>({...prev,capacity:e.target.value}))} className="block w-full border rounded-lg p-3 mt-1" /></label>
+                        <p className="text-sm text-blue-900 bg-blue-50 rounded-lg p-3">&#x55ae;&#x5802;&#x4e00;&#xff0f;&#x4e8c;&#x5c0f;&#x6642;&#x5718;&#x8ab2;&#x4f9d;&#x5b78;&#x54e1;&#x500b;&#x4eba;&#x50f9;&#x683c;&#x6536;&#x8cbb;&#xff1b;&#x8acb;&#x81f3;&#x300c;&#x5b78;&#x54e1;&#x540d;&#x55ae;&#x8207;&#x8cc7;&#x6599; &#x2192; &#x5718;&#x8ab2;&#x50f9;&#x683c;&#x300d;&#x8abf;&#x6574;&#xff0c;&#x672a;&#x8a2d;&#x5b9a;&#x4f7f;&#x7528;&#x539f;&#x50f9;&#x3002;</p>
                         <fieldset className="grid grid-cols-1 sm:grid-cols-2 gap-3"><legend className="font-bold mb-2">&#x5404;&#x7b49;&#x7d1a;&#x6536;&#x8cbb;</legend>{[1,2,3,4,5].map(level=><label key={level} className="block text-sm">{LEVEL_NAMES[level]}<input aria-label={`${LEVEL_NAMES[level]}\u6536\u8cbb`} type="number" min="0" step="any" required disabled={busy} value={form.prices[level] ?? ''} onChange={e=>setForm(prev=>({...prev,prices:{...prev.prices,[level]:e.target.value}}))} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>)}</fieldset>
                         <div className="flex gap-3"><button type="button" disabled={busy} onClick={onClose} className="flex-1 min-w-0 border rounded-lg p-3">&#x53d6;&#x6d88;</button><button type="submit" disabled={busy} className="flex-1 min-w-0 bg-blue-700 text-white rounded-lg p-3 font-bold disabled:opacity-50">{busy?'\u5132\u5b58\u4e2d...':'\u5132\u5b58\u4fee\u6539'}</button></div>
                     </form>
@@ -1712,7 +1728,6 @@
                 });
                 return () => { quoteRequest.current++; };
             }, [enabled, lineId, slotId, selectedKey, isMonthly, slots, members]);
-            const price = quote?.unitPrice;
             const validPrice = !!quote;
             const ready = enabled && selected.length > 0 && slot && quote?.eligible;
             const submit = async event => {
@@ -1723,7 +1738,7 @@
                 try {
                     const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
                     if (!accessToken) throw new Error('\u8acb\u91cd\u65b0\u767b\u5165 LINE\u3002');
-                    const result = await fetchAPI({ action: isMonthly ? 'coachRegisterMonthly' : 'coachRegisterSingle', lineId, studentIds, slotId, expectedTotalPrice: quote.totalPrice, accessToken });
+                    const result = await fetchAPI({ action: isMonthly ? 'coachRegisterMonthly' : 'coachRegisterSingle', lineId, studentIds, slotId, expectedTotalPrice: quote.totalPrice, expectedStudentPrices: quote.studentPrices, accessToken });
                     if (result.status !== 'success') throw new Error(result.message || '\u767b\u8a18\u5931\u6557\uff0c\u8acb\u7a0d\u5f8c\u518d\u8a66\u3002');
                     if (result.registeredCount !== selected.length) throw new Error('\u767b\u8a18\u7d50\u679c\u4eba\u6578\u4e0d\u4e00\u81f4\uff0c\u8acb\u91cd\u65b0\u6574\u7406\u9810\u7d04\u540d\u55ae\u78ba\u8a8d\u3002');
                     setMessage(`\u5df2\u767b\u8a18 ${result.registeredCount} \u4f4d\u5b78\u751f\uff0c\u5408\u8a08 NT$ ${result.totalPrice}\uff0c\u72c0\u614b\u70ba\u5be9\u6838\u4e2d\u3002`);
@@ -1734,14 +1749,15 @@
             };
             return <section aria-labelledby={`coach-${kind}-registration-title`} className="bg-sky-50 border border-sky-200 rounded-2xl p-4 md:p-6">
                 <h2 id={`coach-${kind}-registration-title`} className="font-bold text-lg text-sky-950 mb-2">{title}</h2>
-                <p className="text-sm text-sky-900 mb-4">&#x9078;&#x64c7;&#x5df2;&#x8a3b;&#x518a;&#x7684;&#x5b78;&#x54e1;&#x5e33;&#x865f;&#x53ca;&#x53c3;&#x52a0;&#x5b78;&#x751f;&#x3002;&#x6bcf;&#x4eba;&#x4f54;&#x4e00;&#x500b;&#x540d;&#x984d;&#xff0c;&#x4f9d;&#x6703;&#x54e1;&#x7b49;&#x7d1a;&#x8a08;&#x8cbb;&#xff1b;&#x767b;&#x8a18;&#x5f8c;&#x70ba;&#x5be9;&#x6838;&#x4e2d;&#xff0c;&#x78ba;&#x8a8d;&#x6536;&#x6b3e;&#x5f8c;&#x518d;&#x6838;&#x51c6;&#x3002;</p>
+                <p className="text-sm text-sky-900 mb-4">{isMonthly ? '\u9078\u64c7\u5df2\u8a3b\u518a\u5b78\u54e1\uff0c\u4f9d\u6708\u7e73\u65b9\u6848\u8a08\u8cbb\uff1b\u767b\u8a18\u5f8c\u70ba\u5be9\u6838\u4e2d\uff0c\u78ba\u8a8d\u6536\u6b3e\u5f8c\u518d\u6838\u51c6\u3002' : '\u9078\u64c7\u5df2\u8a3b\u518a\u5b78\u54e1\uff0c\u4f9d\u5404\u5b78\u54e1\u7684\u500b\u4eba\u5718\u8ab2\u50f9\u683c\u8a08\u8cbb\uff1b\u672a\u8a2d\u5b9a\u4f7f\u7528\u539f\u50f9\u3002\u767b\u8a18\u5f8c\u70ba\u5be9\u6838\u4e2d\uff0c\u78ba\u8a8d\u6536\u6b3e\u5f8c\u518d\u6838\u51c6\u3002'}</p>
                 {!enabled && <p role="status" className="text-sm text-amber-800 mb-4">&#x55ae;&#x5802;&#x4ee3;&#x767b;&#x8a18;&#x5c1a;&#x672a;&#x555f;&#x7528;&#xff0c;&#x8acb;&#x806f;&#x7d61;&#x7ba1;&#x7406;&#x54e1;&#x66f4;&#x65b0;&#x7cfb;&#x7d71;&#x3002;</p>}
                 <form onSubmit={submit} className="coach-monthly-form space-y-4">
                     <label className="block font-bold">&#x5b78;&#x54e1;&#x5e33;&#x865f;<select aria-label={isMonthly ? '\u4ee3\u767b\u8a18\u5b78\u54e1\u5e33\u865f' : '\u55ae\u5802\u4ee3\u767b\u8a18\u5b78\u54e1\u5e33\u865f'} disabled={busy} required value={lineId} onChange={e => { const next = accounts.find(account => account.lineId === e.target.value); setLineId(e.target.value); setStudentIds((next?.students || []).map(student => student.studentId || '')); setMessage(''); setError(''); }} className="block w-full border p-3 rounded-lg mt-1 bg-white"><option value="">&#x8acb;&#x9078;&#x64c7;&#x5b78;&#x54e1;&#x5e33;&#x865f;</option>{accounts.map(account => <option key={account.lineId} value={account.lineId}>{account.students.map(student => student.name + (student.nickname ? `\uff08${student.nickname}\uff09` : '')).join('\u3001')}</option>)}</select></label>
                     {account && <fieldset disabled={busy} className="border rounded-lg p-3 bg-white"><legend className="font-bold">&#x53c3;&#x52a0;&#x5b78;&#x751f;</legend>{account.students.map((student, index) => <label key={student.studentId || index} className="flex gap-2 items-center p-2"><input type="checkbox" checked={studentIds.includes(student.studentId || '')} onChange={e => setStudentIds(previous => e.target.checked ? [...previous, student.studentId || ''] : previous.filter(id => id !== (student.studentId || '')))} />{student.name}{student.nickname ? `\uff08${student.nickname}\uff09` : ''}</label>)}</fieldset>}
                     <label className="block font-bold">{courseLabel}<select aria-label={isMonthly ? '\u4ee3\u767b\u8a18\u6708\u7e73\u8ab2\u7a0b' : '\u4ee3\u767b\u8a18\u55ae\u5802\u8ab2\u7a0b'} disabled={busy} required value={slotId} onChange={e => { setSlotId(e.target.value); setMessage(''); setError(''); }} className="block w-full border p-3 rounded-lg mt-1 bg-white"><option value="">{isMonthly ? '\u8acb\u9078\u64c7\u6708\u7e73\u8ab2\u7a0b' : '\u8acb\u9078\u64c7\u55ae\u5802\u8ab2\u7a0b'}</option>{courseSlots.map(slot => <option key={slot.id} value={slot.id} disabled={Number(slot.remaining) < Math.max(1, selected.length)}>{slot.title} &#xb7; {slot.date} {slot.time} &#xb7; {slot.location}&#xff08;&#x5269; {slot.remaining} &#x540d;&#xff09;</option>)}</select></label>
                     {courseSlots.length === 0 && <p className="text-sm">{isMonthly ? '\u76ee\u524d\u6c92\u6709\u6708\u7e73\u8ab2\u7a0b\uff0c\u8acb\u5148\u65b0\u589e\u8ab2\u7a0b\u3002' : '\u76ee\u524d\u6c92\u6709\u55ae\u5802\u5718\u8ab2\uff0c\u8acb\u5148\u65b0\u589e\u8ab2\u7a0b\u3002'}</p>}
-                    <p className="font-bold">&#x767b;&#x8a18; {selected.length} &#x4eba;{validPrice ? ` \u00b7 \u6bcf\u4eba NT$ ${price} \u00b7 \u5408\u8a08 NT$ ${quote.totalPrice}` : ''}</p>
+                    <p className="font-bold">&#x767b;&#x8a18; {selected.length} &#x4eba;{validPrice ? ` \u00b7 \u5408\u8a08 NT$ ${quote.totalPrice}` : ''}</p>
+                    <GroupQuotePrices quote={quote} />
                     {message && <p role="status" className="text-emerald-800">{message}</p>}{error && <p role="alert" className="text-red-700">{error}</p>}
                     <button type="submit" disabled={busy || !ready} className="bg-sky-700 text-white rounded-lg px-4 py-3 font-bold disabled:opacity-50">{busy ? '\u767b\u8a18\u4e2d...' : '\u78ba\u8a8d\u4ee3\u767b\u8a18'}</button>
                 </form>
@@ -2038,6 +2054,7 @@
                     {form.mode !== 'coach' ? (
                         <div className="space-y-4">
                             <div><label className="block text-sm mb-1.5 text-gray-700 font-bold">&#x7e3d;&#x540d;&#x984d;</label><input type="number" required min="1" className="w-full border border-gray-300 p-3 rounded-lg text-base" value={form.capacity} onChange={e=>setForm({...form, capacity: e.target.value})} /></div>
+                            {form.mode === 'single' && tariff ? <p className="text-sm bg-blue-50 text-blue-900 rounded-lg p-3">&#x55ae;&#x5802;&#x5718;&#x8ab2;&#x539f;&#x50f9; NT$ {tariff.price}&#x3002;&#x5b78;&#x54e1;&#x512a;&#x60e0;&#x50f9;&#x8acb;&#x81f3;&#x300c;&#x5b78;&#x54e1;&#x540d;&#x55ae;&#x8207;&#x8cc7;&#x6599; &#x2192; &#x5718;&#x8ab2;&#x50f9;&#x683c;&#x300d;&#x8a2d;&#x5b9a;&#xff1b;&#x672a;&#x8a2d;&#x5b9a;&#x4f7f;&#x7528;&#x539f;&#x50f9;&#x3002;</p> : (
                             <div className="bg-gray-50 p-4 rounded-xl border space-y-3 mt-4">
                               <h3 className="text-sm font-bold text-gray-700 border-b pb-2">&#x5404;&#x7b49;&#x7d1a;&#x6536;&#x8cbb; (NT$)</h3>
                               {tariff ? <p className="text-sm text-emerald-800">&#x4e00;&#x822c;&#x6703;&#x54e1;&#xff1a;{form.mode === 'monthly' ? `4 \u5802\u539f\u50f9 NT$${tariff.regular}\uff0c\u512a\u60e0 NT$${tariff.price}` : `\u55ae\u5802 NT$${tariff.price}`}&#x3002;&#x5df2;&#x5e36;&#x5165;&#x50f9;&#x683c;&#xff0c;&#x53ef;&#x624b;&#x52d5;&#x8abf;&#x6574;&#x3002;</p> : <p className="text-sm text-amber-800">&#x516c;&#x544a;&#x50f9;&#x683c;&#x9069;&#x7528; 1&#xff0f;2 &#x5c0f;&#x6642;&#xff0c;&#x4ee5;&#x53ca;&#x6708;&#x7e73; 4 &#x5802;&#x3002;&#x5176;&#x4ed6;&#x6642;&#x9577;&#x6216;&#x5802;&#x6578;&#x8acb;&#x624b;&#x52d5;&#x586b;&#x5beb;&#x50f9;&#x683c;&#xff0c;&#x7cfb;&#x7d71;&#x4e0d;&#x81ea;&#x52d5;&#x5957;&#x7528; 4 &#x5802;&#x512a;&#x60e0;&#x3002;</p>}
@@ -2048,6 +2065,7 @@
                                 </div>
                               ))}
                             </div>
+                            )}
                         </div>
                     ) : (
                         <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 space-y-4 mt-4">
@@ -2176,17 +2194,49 @@
           );
         };
 
+        const StudentGroupPriceModal = ({ student, originals, onClose, onSaved }) => {
+            const [prices, setPrices] = useState({ hour1: student.groupPrices?.hour1 ?? '', hour2: student.groupPrices?.hour2 ?? '' });
+            const [busy, setBusy] = useState(false);
+            const [error, setError] = useState('');
+            const busyRef = React.useRef(false);
+            const submit = async event => {
+                event.preventDefault();
+                if (busyRef.current) return;
+                busyRef.current = true; setBusy(true); setError('');
+                try {
+                    const result = await fetchAPI({ action: 'setStudentGroupPrices', lineId: student.lineId, studentId: student.studentId || '', groupPrices: prices });
+                    if (result.status !== 'success' || result.studentGroupPricingVersion !== 1) throw new Error(result.message || '\u5b78\u54e1\u5718\u8ab2\u50f9\u683c\u5132\u5b58\u5931\u6557\uff0c\u8acb\u7a0d\u5f8c\u518d\u8a66\u3002');
+                    await onSaved(); onClose();
+                } catch (error) { setError(error.message); }
+                finally { busyRef.current = false; setBusy(false); }
+            };
+            return <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-3 md:p-6 overflow-y-auto">
+                <section role="dialog" aria-modal="true" aria-labelledby="student-group-prices-title" className="bg-white rounded-2xl p-5 md:p-7 shadow-xl w-full max-w-lg max-h-[90dvh] overflow-y-auto min-w-0">
+                    <h2 id="student-group-prices-title" className="font-bold text-lg text-slate-800">&#x5718;&#x8ab2;&#x50f9;&#x683c;&#x8a2d;&#x5b9a;&#xff1a;{student.name}</h2>
+                    <p className="text-sm text-gray-600 mt-3">&#x50c5;&#x5957;&#x7528;&#x6b64;&#x5b78;&#x54e1;&#x7684;&#x55ae;&#x5802;&#x5718;&#x8ab2;&#x3002;&#x7559;&#x7a7a;&#x4f7f;&#x7528;&#x539f;&#x50f9;&#xff0c;&#x586b;&#x5beb; 0 &#x8868;&#x793a;&#x514d;&#x8cbb;&#xff1b;&#x6708;&#x7e73;&#x8207;&#x5c08;&#x5c6c;&#x6559;&#x7df4;&#x8ab2;&#x7dad;&#x6301;&#x539f;&#x65b9;&#x6848;&#xff0c;&#x5df2;&#x6210;&#x7acb;&#x8a02;&#x55ae;&#x4e0d;&#x8b8a;&#x3002;</p>
+                    <form onSubmit={submit} className="space-y-5 mt-5">
+                        {[['hour1', '\u4e00\u5c0f\u6642\u5718\u8ab2\u512a\u60e0\u50f9'], ['hour2', '\u4e8c\u5c0f\u6642\u5718\u8ab2\u512a\u60e0\u50f9']].map(([key, label]) => <label key={key} className="block font-bold text-slate-700">{label}<span className="block font-normal text-sm text-gray-500 mt-1">&#x539f;&#x50f9; NT$ {originals[key]}</span><input aria-label={label} type="number" min="0" step="0.01" value={prices[key]} disabled={busy} onChange={event => setPrices(previous => ({ ...previous, [key]: event.target.value }))} className="block border rounded-lg p-3 mt-2 w-full min-w-0" placeholder="&#x7559;&#x7a7a;&#x4f7f;&#x7528;&#x539f;&#x50f9;" /></label>)}
+                        {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+                        <div className="flex flex-wrap justify-end gap-3"><button type="button" disabled={busy} onClick={onClose} className="border rounded-lg px-4 py-3">&#x53d6;&#x6d88;</button><button type="submit" disabled={busy} className="bg-blue-700 text-white font-bold rounded-lg px-4 py-3 disabled:opacity-50">{busy ? '\u5132\u5b58\u4e2d...' : '\u5132\u5b58\u5718\u8ab2\u50f9\u683c'}</button></div>
+                    </form>
+                </section>
+            </div>;
+        };
+
         const CoachMembersView = ({ onOpenStudent, onPaymentsChanged = () => {} }) => {
             const [members, setMembers] = useState([]);
             const [paymentTotals, setPaymentTotals] = useState(null);
             const [paymentError, setPaymentError] = useState('');
             const [historicalStudent, setHistoricalStudent] = useState(null);
+            const [pricingStudent, setPricingStudent] = useState(null);
+            const [pricingDefaults, setPricingDefaults] = useState(null);
             const [viewModal, setViewModal] = useState({ isOpen: false, student: null });
             const [logModalTarget, setLogModalTarget] = useState(null); 
 
             const fetchMembers = () => {
                 return fetchAPI({ action: 'getCoachData' }).then(res => {
                     setMembers(res.members || []);
+                    setPricingDefaults(res.studentGroupPricingVersion === 1 ? res.groupPriceDefaults : null);
                     if (res.status !== 'error' && Array.isArray(res.bookings)) {
                         const totals = res.paymentSummary;
                         if (!totals || !Array.isArray(totals.studentTotals)) { setPaymentTotals(null); setPaymentError('\u7121\u6cd5\u8b80\u53d6\u4ed8\u6b3e\u8cc7\u6599\uff0c\u7d2f\u7a4d\u91d1\u984d\u66ab\u4e0d\u986f\u793a\u3002'); return res; }
@@ -2238,6 +2288,7 @@
                                                     <button onClick={()=>setViewModal({isOpen: true, student: m})} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 md:px-5 rounded-lg shadow-sm text-xs md:text-sm active:scale-95 transition">
                                                         &#x6aa2;&#x8996;&#x8cc7;&#x6599;
                                                     </button>
+                                                    <button onClick={() => setPricingStudent(m)} disabled={!m.lineId || !pricingDefaults} className="bg-indigo-700 hover:bg-indigo-800 disabled:opacity-50 text-white font-bold py-2.5 px-4 rounded-lg text-xs md:text-sm">&#x5718;&#x8ab2;&#x50f9;&#x683c;</button>
                                                     <button onClick={() => setHistoricalStudent(m)} disabled={!m.lineId} className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold py-2.5 px-4 rounded-lg text-xs md:text-sm">&#x88dc;&#x767b;&#x6b77;&#x53f2;&#x9810;&#x7d04;</button>
                                                     <button onClick={()=>setLogModalTarget({ lineId: m.lineId, studentId: m.studentId, name: m.name })} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 md:px-5 rounded-lg shadow-sm text-xs md:text-sm active:scale-95 transition">
                                                         &#x88dc;&#x767b;&#x65e5;&#x8a8c;
@@ -2250,6 +2301,7 @@
                             </tbody>
                         </table>
                     </div>
+                    {pricingStudent && <StudentGroupPriceModal student={pricingStudent} originals={pricingDefaults} onClose={() => setPricingStudent(null)} onSaved={async () => { const result = await fetchMembers(); if (result.status !== 'success') throw new Error('\u50f9\u683c\u5df2\u5132\u5b58\uff0c\u4f46\u5b78\u54e1\u540d\u55ae\u91cd\u65b0\u8b80\u53d6\u5931\u6557\uff0c\u8acb\u91cd\u65b0\u6574\u7406\u3002'); }} />}
                     {historicalStudent && <HistoricalBookingModal student={historicalStudent} onClose={() => setHistoricalStudent(null)} onSuccess={async () => { const result = await fetchMembers(); if (result.status !== 'success') throw new Error('\u4ed8\u6b3e\u7d71\u8a08\u8b80\u53d6\u5931\u6557'); onPaymentsChanged(); }} />}
                     {viewModal.isOpen && <StudentDetailsModal student={viewModal.student} onClose={()=>setViewModal({isOpen: false, student: null})} />}
                     {logModalTarget && <LogFormModal targetData={logModalTarget} onClose={() => setLogModalTarget(null)} onSuccess={fetchMembers} />}

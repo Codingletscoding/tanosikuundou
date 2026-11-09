@@ -84,7 +84,7 @@ test('repair upgrades a legacy account to three students and preserves level and
  assert.equal(f.run({action:'getStudentStats',studentId:''}).totalClasses,1);
  assert.equal(f.run({action:'getStudentStats',studentId:result.user.students[1].id}).totalClasses,0);
  assert.equal(f.run({action:'bookClass',slotId:'slot'}).status,'success');assert.equal(f.rows['可用時段'][1][6],2);
- assert.equal(f.rows['預約名單'].slice(2).reduce((sum,row)=>sum+row[4],0),855);
+ assert.equal(f.rows['預約名單'].slice(2).reduce((sum,row)=>sum+row[4],0),900);
  assert.equal(f.run({action:'completeAccountRegistration',accessToken:'mock',students,phone:'0912345678',idNumber:'A123456789'}).status,'error');
 });
 test('repair rejects another LINE user and leaves existing profile untouched',()=>{
@@ -271,10 +271,10 @@ function singleCoach(options={}) {
  const f=monthlyCoach(options);f.rows['可用時段'][1][1]='單堂團課';f.rows['可用時段'][1][8]=294;
  const enrollSingle=(extra={})=>f.enroll({action:'coachRegisterSingle',...extra});return {...f,enrollSingle};
 }
-test('coach single registration uses stored membership prices and selected students under the shared lock',()=>{
+test('coach single registration uses the standard fallback prices and selected students under the shared lock',()=>{
  const f=singleCoach();assert.equal(f.run({action:'getSlots'}).coachSingleRegistrationVersion,1);
- const result=f.enrollSingle({paidPrice:1,level:1,status:'預約成功',paymentCode:'現金已收'});assert.equal(result.status,'success',result.message);assert.equal(result.registeredCount,2);assert.equal(result.totalPrice,588);
- const orders=f.rows['預約名單'].slice(1);assert.deepEqual(orders.map(row=>row[9]),[f.students[0].id,f.students[2].id]);assert(orders.every(row=>row[4]===294&&row[5]==='審核中'&&row[6]===''));assert.equal(f.rows['可用時段'][1][6],3);
+ const result=f.enrollSingle({paidPrice:1,level:1,status:'預約成功',paymentCode:'現金已收'});assert.equal(result.status,'success',result.message);assert.equal(result.registeredCount,2);assert.equal(result.totalPrice,600);
+ const orders=f.rows['預約名單'].slice(1);assert.deepEqual(orders.map(row=>row[9]),[f.students[0].id,f.students[2].id]);assert(orders.every(row=>row[4]===300&&row[5]==='審核中'&&row[6]===''));assert.equal(f.rows['可用時段'][1][6],3);
 });
 test('single registration rejects missing coach authentication and ordinary students without writes',()=>{
  for(const mode of ['missing','student','expired','channel']){

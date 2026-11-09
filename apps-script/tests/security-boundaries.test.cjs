@@ -22,19 +22,19 @@ test('verified coach can inspect an account, while own-account login remains the
 });
 test('student listings contain server prices without full tier tables or private base tariffs',()=>{
  const f=fixture();const result=f.run({action:'getSlots'});assert.equal(result.status,'success');assert.equal(result.slots[0].prices,undefined);
- assert.equal(result.slots[0].priceQuote.totalPrice,588);assert.equal(result.slots[0].priceQuote.regularTotalPrice,600);
+ assert.equal(result.slots[0].priceQuote.totalPrice,600);assert.equal(result.slots[0].priceQuote.regularTotalPrice,600);
  const privateSlot=result.slots.find(s=>s.id==='private');assert.equal(privateSlot.title,'[專屬教練課]');assert.equal(privateSlot.priceQuote.coachPlans['1對2'],1470);assert.deepEqual(privateSlot.availableLocations,['場地A','場地B']);
  assert.ok(f.run({action:'getSlots'},'coach').slots[0].prices);
 });
 test('forged paidPrice, membership level, names and seat counts never change the stored charge',()=>{
  const f=fixture(),result=f.run({action:'bookClass',slotId:'group',lineId:'account',paidPrice:1,level:5,name:'spoof',studentCount:0,seats:0});
- assert.equal(result.status,'success');assert.equal(result.totalPrice,588);assert.equal(f.rows['預約名單'].length,3);assert.equal(f.rows['可用時段'][1][6],3);
- assert.deepEqual(f.rows['預約名單'].slice(1).map(row=>row[4]),[294,294]);assert.deepEqual(f.rows['預約名單'].slice(1).map(row=>row[3]),['王小明','王小美']);
+ assert.equal(result.status,'success');assert.equal(result.totalPrice,600);assert.equal(f.rows['預約名單'].length,3);assert.equal(f.rows['可用時段'][1][6],3);
+ assert.deepEqual(f.rows['預約名單'].slice(1).map(row=>row[4]),[300,300]);assert.deepEqual(f.rows['預約名單'].slice(1).map(row=>row[3]),['王小明','王小美']);
  assert.equal(f.run({action:'bookClass',slotId:'group'}).status,'error');
  assert(f.network.every(call=>call.locked===false),'LINE verification completes before holding the write lock');
 });
 test('a stale quote is rejected without changing seats or orders',()=>{
- const f=fixture(),quote=f.run({action:'getBookingQuote',slotId:'group'}).quote;f.rows['可用時段'][1][8]=299;
+ const f=fixture(),quote=f.run({action:'getBookingQuote',slotId:'group'}).quote;f.run({action:'setStudentGroupPrices',lineId:'account',studentId:'a',groupPrices:{hour1:299,hour2:''}},'coach');
  const before=JSON.stringify(f.rows);const result=f.run({action:'bookClass',slotId:'group',expectedTotalPrice:quote.totalPrice});assert.equal(result.status,'error');assert.match(result.message,/價格已有變更/);assert.equal(JSON.stringify(f.rows),before);
 });
 test('private plans, allowed venue, shared seats and student charge allocation are server-owned',()=>{
@@ -85,7 +85,7 @@ test('pricing suggestions and payment summaries are authenticated coach-only com
  const f=fixture();assert.equal(f.run({action:'getPricingPreview',mode:'single',startTime:'19:00',endTime:'20:00'}).status,'error');
  const preview=f.run({action:'getPricingPreview',mode:'single',startTime:'19:00',endTime:'20:00',basePrice:100,level:99},'coach');assert.deepEqual(preview.prices,{'1':100,'2':98,'3':95,'4':90,'5':53});
  f.run({action:'bookClass',slotId:'group'});const id=f.rows['預約名單'][1][7];f.run({action:'approveBooking',bookingId:id},'coach');
- const summary=f.run({action:'getPaymentSummary',month:'2026-11'},'coach').paymentSummary;assert.equal(summary.monthlyTotal,294);assert.deepEqual(summary.studentTotals,[[JSON.stringify(['account','a']),294]]);
+ const summary=f.run({action:'getPaymentSummary',month:'2026-11'},'coach').paymentSummary;assert.equal(summary.monthlyTotal,300);assert.deepEqual(summary.studentTotals,[[JSON.stringify(['account','a']),300]]);
  assert.equal(f.run({action:'getPaymentSummary',month:'2026-11'}).status,'error');
 });
 test('failed multi-student booking restores every order and the server seat counter',()=>{
