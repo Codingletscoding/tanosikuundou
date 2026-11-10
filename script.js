@@ -423,7 +423,7 @@
                 <div role="dialog" aria-modal="true" aria-labelledby="historical-booking-title" className="bg-gray-50 rounded-2xl shadow-xl w-full max-w-4xl max-h-[90dvh] overflow-y-auto min-w-0">
                     <div className="sticky top-0 z-10 bg-slate-800 text-white p-4 flex flex-wrap items-center justify-between gap-3"><h2 id="historical-booking-title" className="font-bold">&#x88dc;&#x767b;&#x6b77;&#x53f2;&#x9810;&#x7d04;&#xff1a;{student.name}</h2><button type="button" disabled={busy} onClick={onClose} className="border border-slate-500 rounded-lg px-3 py-2">&#x95dc;&#x9589;</button></div>
                     <div className="p-4 md:p-6 space-y-5">
-                        <p className="text-sm text-slate-600 leading-relaxed">&#x50c5;&#x88dc;&#x767b;&#x6b64;&#x5b78;&#x54e1;&#x5df2;&#x7d50;&#x675f;&#x7684;&#x8ab2;&#x7a0b;&#xff0c;&#x4e0d;&#x4f54;&#x7528;&#x76ee;&#x524d;&#x540d;&#x984d;&#x3002;&#x5df2;&#x6536;&#x6b3e;&#x4e14;&#x672a;&#x53d6;&#x6d88;&#x7684;&#x7d00;&#x9304;&#x6703;&#x8a08;&#x5165;&#x7d2f;&#x7a4d;&#x4ed8;&#x6b3e;&#xff0c;&#x6708;&#x4efd;&#x4f9d;&#x539f;&#x9810;&#x7d04;&#x65e5;&#x671f;&#x7d71;&#x8a08;&#xff1b;&#x4e0d;&#x6703;&#x81ea;&#x52d5;&#x7522;&#x751f;&#x65e5;&#x8a8c;&#x6216;&#x589e;&#x52a0;&#x8a13;&#x7df4;&#x6642;&#x6578;&#xff0c;&#x5b8c;&#x6210;&#x5802;&#x6578;&#x4ecd;&#x4f9d;&#x8a13;&#x7df4;&#x65e5;&#x8a8c;&#x8a08;&#x7b97;&#x3002;</p>
+                        <p className="text-sm text-slate-600 leading-relaxed">&#x50c5;&#x88dc;&#x767b;&#x6b64;&#x5b78;&#x54e1;&#x5df2;&#x7d50;&#x675f;&#x7684;&#x8ab2;&#x7a0b;&#xff0c;&#x4e0d;&#x4f54;&#x7528;&#x76ee;&#x524d;&#x540d;&#x984d;&#x3002;&#x5df2;&#x6536;&#x6b3e;&#x4e14;&#x672a;&#x53d6;&#x6d88;&#x7684;&#x7d00;&#x9304;&#x6703;&#x8a08;&#x5165;&#x7d2f;&#x7a4d;&#x4ed8;&#x6b3e;&#xff0c;&#x6708;&#x4efd;&#x4f9d;&#x4e0a;&#x8ab2;&#x65e5;&#x671f;&#x7d71;&#x8a08;&#xff1b;&#x4e0d;&#x6703;&#x81ea;&#x52d5;&#x7522;&#x751f;&#x65e5;&#x8a8c;&#x6216;&#x589e;&#x52a0;&#x8a13;&#x7df4;&#x6642;&#x6578;&#xff0c;&#x5b8c;&#x6210;&#x5802;&#x6578;&#x4ecd;&#x4f9d;&#x8a13;&#x7df4;&#x65e5;&#x8a8c;&#x8a08;&#x7b97;&#x3002;</p>
                         {loading && <p role="status" className="text-sm text-slate-500">&#x8b80;&#x53d6;&#x6b77;&#x53f2;&#x9810;&#x7d04;&#x4e2d;...</p>}
                         {error && <div role="alert" className="text-sm text-red-700 bg-red-50 rounded-lg p-3"><p>{error}</p>{!ready && !loading && <button type="button" onClick={() => setRefresh(n => n + 1)} className="border rounded-lg px-3 py-2 mt-2">&#x91cd;&#x65b0;&#x8b80;&#x53d6;&#x6b77;&#x53f2;&#x9810;&#x7d04;</button>}</div>}
                         {message && <p role="status" className="text-sm text-emerald-800 bg-emerald-50 rounded-lg p-3">{message}</p>}
@@ -1575,27 +1575,94 @@
             const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit' }).formatToParts(date);
             return `${parts.find(p => p.type === 'year').value}-${parts.find(p => p.type === 'month').value}`;
         };
+        const VenueExpenseForm = ({ expense, onSaved, onCancel }) => {
+            const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+            const [form, setForm] = useState({ date: expense?.date || today, location: expense?.location || '', amount: expense?.amount ?? '', note: expense?.note || '' });
+            const [busy, setBusy] = useState(false);
+            const [error, setError] = useState('');
+            const busyRef = React.useRef(false), requestRef = React.useRef(null);
+            const formRef = React.useRef(null);
+            useEffect(() => { if (expense) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [expense?.id]);
+            const update = (key, value) => { setForm(previous => ({ ...previous, [key]: value })); requestRef.current = null; };
+            const submit = async event => {
+                event.preventDefault();
+                if (busyRef.current) return;
+                busyRef.current = true; setBusy(true); setError('');
+                try {
+                    if (!expense && !requestRef.current) requestRef.current = window.crypto?.randomUUID ? window.crypto.randomUUID() : 'venue-' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+                    const result = await fetchAPI({ action: expense ? 'updateVenueExpense' : 'addVenueExpense', ...form, ...(expense ? { expenseId: expense.id, expectedRevision: expense.revision } : { requestId: requestRef.current }) });
+                    if (result.status !== 'success' || result.monthlyAccountingVersion !== 1) throw new Error(result.message || '\u5834\u5730\u8cbb\u5132\u5b58\u5931\u6557\uff0c\u8acb\u7a0d\u5f8c\u518d\u8a66\u3002');
+                    onSaved(result.expense);
+                } catch (error) { setError(error.message); }
+                finally { busyRef.current = false; setBusy(false); }
+            };
+            return <form ref={formRef} onSubmit={submit} className="venue-expense-form rounded-xl border border-emerald-200 bg-white p-4 space-y-4 mt-4">
+                <h3 className="font-bold text-slate-800">{expense ? '\u7de8\u8f2f\u5834\u5730\u8cbb' : '\u88dc\u767b\u5834\u5730\u8cbb'}</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <label className="block text-sm font-bold">&#x5834;&#x5730;&#x4f7f;&#x7528;&#x65e5;&#x671f;<input aria-label="&#x5834;&#x5730;&#x4f7f;&#x7528;&#x65e5;&#x671f;" type="date" required disabled={busy} value={form.date} onChange={event => update('date', event.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>
+                    <label className="block text-sm font-bold">&#x5834;&#x5730;&#x8cbb;&#x91d1;&#x984d;<input aria-label="&#x5834;&#x5730;&#x8cbb;&#x91d1;&#x984d;" type="number" required min="0" step="0.01" disabled={busy} value={form.amount} onChange={event => update('amount', event.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>
+                </div>
+                <label className="block text-sm font-bold">&#x5834;&#x5730;&#x540d;&#x7a31;<input aria-label="&#x5834;&#x5730;&#x540d;&#x7a31;" required maxLength={120} disabled={busy} value={form.location} onChange={event => update('location', event.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>
+                <label className="block text-sm font-bold">&#x5834;&#x5730;&#x8cbb;&#x5099;&#x8a3b;&#xff08;&#x9078;&#x586b;&#xff09;<input aria-label="&#x5834;&#x5730;&#x8cbb;&#x5099;&#x8a3b;&#xff08;&#x9078;&#x586b;&#xff09;" maxLength={1000} disabled={busy} value={form.note} onChange={event => update('note', event.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>
+                <p className="text-xs text-gray-600">&#x8cbb;&#x7528;&#x4f9d;&#x5834;&#x5730;&#x4f7f;&#x7528;&#x65e5;&#x671f;&#x6b78;&#x5c6c;&#x6708;&#x4efd;&#xff0c;&#x5176;&#x4ed6;&#x6708;&#x4efd;&#x7684;&#x8cbb;&#x7528;&#x4e0d;&#x6703;&#x6263;&#x5165;&#x672c;&#x6708;&#x3002;</p>
+                {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+                <div className="flex flex-wrap gap-3 justify-end">{expense && <button type="button" disabled={busy} onClick={onCancel} className="border rounded-lg px-4 py-3">&#x53d6;&#x6d88;&#x7de8;&#x8f2f;</button>}<button type="submit" disabled={busy} className="rounded-lg bg-emerald-700 text-white font-bold px-4 py-3 disabled:opacity-50">{busy ? '\u5132\u5b58\u4e2d...' : '\u5132\u5b58\u5834\u5730\u8cbb'}</button></div>
+            </form>;
+        };
+
         const CoachRevenue = ({ revision }) => {
             const [data, setData] = useState(null);
             const [error, setError] = useState('');
             const [refresh, setRefresh] = useState(0);
             const [loading, setLoading] = useState(true);
+            const [editingExpense, setEditingExpense] = useState(null);
+            const [formRevision, setFormRevision] = useState(0);
+            const [costBusy, setCostBusy] = useState('');
+            const [costError, setCostError] = useState('');
+            const [message, setMessage] = useState('');
+            const costBusyRef = React.useRef(false);
             const month = taipeiMonth(new Date());
             useEffect(() => {
                 let active = true;
                 setLoading(true); setError('');
                 fetchAPI({ action: 'getPaymentSummary', month }).then(result => {
-                    if (!result || !result.paymentSummary || result.status !== 'success') throw new Error(result?.message || '\u7121\u6cd5\u8b80\u53d6\u6536\u5165\u8cc7\u6599');
+                    if (!result || !result.paymentSummary || result.status !== 'success') throw new Error(result?.message || '\u7121\u6cd5\u8b80\u53d6\u6536\u652f\u8cc7\u6599');
+                    if (result.paymentSummary.monthlyAccountingVersion !== 1) throw new Error('\u6708\u4efd\u6536\u652f\u529f\u80fd\u5c1a\u672a\u555f\u7528\uff0c\u8acb\u5148\u66f4\u65b0\u5f8c\u7aef\u3002');
                     if (active) setData(result.paymentSummary);
-                }).catch(err => { if (active) { setData(null); setError(err.message); } }).finally(() => { if (active) setLoading(false); });
+                }).catch(error => { if (active) { setData(null); setError(error.message); } }).finally(() => { if (active) setLoading(false); });
                 return () => { active = false; };
             }, [revision, refresh, month]);
-            return <section aria-label="&#x672c;&#x6708;&#x6536;&#x5165;&#x7d71;&#x8a08;" className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 md:p-6 mb-5 min-w-0">
-                <div className="flex flex-wrap justify-between items-center gap-3"><h2 className="font-bold text-emerald-950">{month} &#x672c;&#x6708;&#x6536;&#x5165;</h2><button onClick={() => setRefresh(n => n + 1)} disabled={loading} className="border border-emerald-300 rounded-lg px-3 py-2 text-sm text-emerald-900 disabled:opacity-50">&#x91cd;&#x65b0;&#x6574;&#x7406;&#x91d1;&#x984d;</button></div>
-                {loading ? <p role="status" className="mt-3">&#x8b80;&#x53d6;&#x6536;&#x5165;&#x4e2d;...</p> : error ? <p role="alert" className="text-red-700 mt-3">{error}</p> : <p className="text-3xl font-extrabold text-emerald-800 mt-3 break-all">{formatMoney(data.monthlyTotal)}</p>}
-                <p className="text-xs md:text-sm text-emerald-950 mt-3">&#x6309;&#x53f0;&#x5317;&#x6642;&#x9593;&#x7684;&#x300c;&#x9810;&#x7d04;&#x767b;&#x8a18;&#x6708;&#x4efd;&#x300d;&#x7d71;&#x8a08;&#x5df2;&#x6838;&#x51c6;&#x53ca;&#x5df2;&#x5b8c;&#x8ab2;&#x8a02;&#x55ae;&#xff0c;&#x975e;&#x5be6;&#x969b;&#x6536;&#x6b3e;&#x65e5;&#x671f;&#xff1b;&#x5be9;&#x6838;&#x4e2d;&#x3001;&#x5df2;&#x53d6;&#x6d88;&#x3001;&#x5c1a;&#x672a;&#x78ba;&#x8a8d;&#x73fe;&#x91d1;&#x6536;&#x6b3e;&#x7684;&#x8a02;&#x55ae;&#x4e0d;&#x8a08;&#x3002;&#x88dc;&#x8ab2;&#x91d1;&#x984d;&#x70ba; 0&#xff0c;&#x4e0d;&#x91cd;&#x8907;&#x8a08;&#x8cbb;&#x3002;&#x6b77;&#x53f2;&#x88dc;&#x767b;&#x50c5;&#x8a08;&#x5df2;&#x6536;&#x6b3e;&#x7d00;&#x9304;&#xff0c;&#x4f9d;&#x539f;&#x9810;&#x7d04;&#x65e5;&#x671f;&#x6708;&#x4efd;&#x7d71;&#x8a08;&#x3002;</p>
-                <p className="text-xs text-gray-600 mt-1">&#x4f9d;&#x76ee;&#x524d;&#x4fdd;&#x7559;&#x7684;&#x8a02;&#x55ae;&#x8a08;&#x7b97;&#xff0c;&#x522a;&#x9664;&#x8a02;&#x55ae;&#x6703;&#x5f71;&#x97ff;&#x7d71;&#x8a08;&#xff1b;&#x53d6;&#x6d88;&#x4e0d;&#x4ee3;&#x8868;&#x5df2;&#x9000;&#x6b3e;&#xff0c;&#x6b64;&#x8655;&#x4e0d;&#x662f;&#x5b8c;&#x6574;&#x91d1;&#x6d41;&#x5e33;&#x672c;&#x3002;</p>
-                {data && !loading && (data.invalidAmounts + data.missingDates + data.duplicateOrders + data.unmatchedStudents > 0) && <p role="status" className="text-sm text-amber-900 mt-3">&#x8cc7;&#x6599;&#x5f85;&#x6838;&#x5c0d;&#xff1a;&#x91d1;&#x984d;&#x7570;&#x5e38; {data.invalidAmounts} &#x7b46;&#x3001;&#x7f3a;&#x5c11;&#x6709;&#x6548;&#x767b;&#x8a18;&#x65e5;&#x671f; {data.missingDates} &#x7b46;&#x3001;&#x91cd;&#x8907;&#x8a02;&#x55ae;&#x7de8;&#x865f; {data.duplicateOrders} &#x7b46;&#x3001;&#x7121;&#x6cd5;&#x5c0d;&#x61c9;&#x5b78;&#x54e1; {data.unmatchedStudents} &#x7b46;&#x3002;&#x7570;&#x5e38;&#x91d1;&#x984d;&#x4e0d;&#x8a08;&#xff1b;&#x65e5;&#x671f;&#x7f3a;&#x6f0f;&#x4e0d;&#x8a08;&#x672c;&#x6708;&#xff1b;&#x91cd;&#x8907;&#x7de8;&#x865f;&#x53ea;&#x8a08;&#x4e00;&#x6b21;&#x3002;</p>}
+            const saved = expense => {
+                setEditingExpense(null); setFormRevision(n => n + 1); setCostError('');
+                setMessage(expense.date.slice(0, 7) === month ? '\u5834\u5730\u8cbb\u5df2\u5132\u5b58\uff0c\u5df2\u91cd\u65b0\u8a08\u7b97\u672c\u6708\u6536\u652f\u3002' : '\u5834\u5730\u8cbb\u5df2\u5132\u5b58\uff1b\u5176\u4ed6\u6708\u4efd\u7684\u8cbb\u7528\u4e0d\u5f71\u97ff\u672c\u6708\u3002');
+                setRefresh(n => n + 1);
+            };
+            const cancelExpense = async expense => {
+                if (costBusyRef.current || !confirm(`\u78ba\u5b9a\u4f5c\u5ee2\u9019\u7b46\u5834\u5730\u8cbb\uff1f\n${expense.date} \u00b7 ${expense.location} \u00b7 ${formatMoney(expense.amount)}\n\u4f5c\u5ee2\u5f8c\u4e0d\u518d\u6263\u5165\u6708\u7d2f\u7a4d\u91d1\u984d\uff0c\u539f\u7d00\u9304\u4ecd\u4fdd\u7559\u3002`)) return;
+                costBusyRef.current = true; setCostBusy(expense.id); setCostError(''); setMessage('');
+                try {
+                    const result = await fetchAPI({ action: 'cancelVenueExpense', expenseId: expense.id, expectedRevision: expense.revision });
+                    if (result.status !== 'success' || result.monthlyAccountingVersion !== 1) throw new Error(result.message || '\u5834\u5730\u8cbb\u4f5c\u5ee2\u5931\u6557\uff0c\u8acb\u7a0d\u5f8c\u518d\u8a66\u3002');
+                    setEditingExpense(null); setMessage('\u5834\u5730\u8cbb\u5df2\u4f5c\u5ee2\uff0c\u5df2\u91cd\u65b0\u8a08\u7b97\u672c\u6708\u6536\u652f\u3002'); setRefresh(n => n + 1);
+                } catch (error) { setCostError(error.message); }
+                finally { costBusyRef.current = false; setCostBusy(''); }
+            };
+            return <section aria-label="&#x672c;&#x6708;&#x6536;&#x652f;&#x7d71;&#x8a08;" className="coach-revenue bg-emerald-50 border border-emerald-200 rounded-2xl p-4 md:p-6 mb-5 min-w-0">
+                <div className="flex flex-wrap justify-between items-center gap-3"><h2 className="font-bold text-emerald-950">{month} &#x672c;&#x6708;&#x7d2f;&#x7a4d;&#x91d1;&#x984d;</h2><button onClick={() => { setEditingExpense(null); setRefresh(n => n + 1); }} disabled={loading || !!costBusy} className="border border-emerald-300 rounded-lg px-3 py-2 text-sm text-emerald-900 disabled:opacity-50">&#x91cd;&#x65b0;&#x6574;&#x7406;&#x6536;&#x652f;</button></div>
+                {loading ? <p role="status" className="mt-3">&#x8b80;&#x53d6;&#x6536;&#x652f;&#x4e2d;...</p> : error ? <p role="alert" className="text-red-700 mt-3">{error}</p> : data && <>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
+                        <div aria-label="&#x672c;&#x6708;&#x5b78;&#x8cbb;" className="bg-white border rounded-xl p-4 min-w-0"><p className="text-sm text-slate-600">&#x672c;&#x6708;&#x8ab2;&#x7a0b;&#x5b78;&#x8cbb;</p><p className="text-2xl font-bold text-emerald-800 break-all">{formatMoney(data.monthlyTuitionTotal)}</p></div>
+                        <div aria-label="&#x672c;&#x6708;&#x5834;&#x5730;&#x8cbb;" className="bg-white border rounded-xl p-4 min-w-0"><p className="text-sm text-slate-600">&#x672c;&#x6708;&#x5834;&#x5730;&#x8cbb;</p><p className="text-2xl font-bold text-amber-800 break-all">{formatMoney(data.monthlyVenueCostTotal)}</p></div>
+                        <div aria-label="&#x672c;&#x6708;&#x7d2f;&#x7a4d;&#x91d1;&#x984d;" className="bg-white border rounded-xl p-4 min-w-0"><p className="text-sm text-slate-600">&#x672c;&#x6708;&#x7d2f;&#x7a4d;&#x91d1;&#x984d;</p><p className={`text-2xl font-extrabold break-all ${data.monthlyTotal < 0 ? 'text-red-700' : 'text-emerald-800'}`}>{formatMoney(data.monthlyTotal)}</p></div>
+                    </div>
+                    <p className="text-xs text-emerald-950 mt-3">&#x672c;&#x6708;&#x7d2f;&#x7a4d;&#x91d1;&#x984d;&#xff1d;&#x672c;&#x6708;&#x4e0a;&#x8ab2;&#x5b78;&#x8cbb;&#xff0d;&#x672c;&#x6708;&#x5834;&#x5730;&#x8cbb;&#x3002;&#x4f9d;&#x53f0;&#x5317;&#x6642;&#x9593;&#x7684;&#x4e0a;&#x8ab2;&#x6708;&#x4efd;&#x7d71;&#x8a08;&#xff0c;&#x8de8;&#x6708;&#x6708;&#x7e73;&#x6309;&#x5404;&#x6708;&#x5802;&#x6578;&#x5206;&#x6524;&#xff1b;&#x5834;&#x5730;&#x8cbb;&#x4f9d;&#x4f7f;&#x7528;&#x65e5;&#x671f;&#x6b78;&#x5c6c;&#x6708;&#x4efd;&#x3002;</p>
+                    <p className="text-xs text-gray-600 mt-2">&#x5b78;&#x8cbb;&#x8a08;&#x5165;&#x5df2;&#x6838;&#x51c6;&#x53ca;&#x5df2;&#x5b8c;&#x8ab2;&#x8a02;&#x55ae;&#xff1b;&#x5be9;&#x6838;&#x4e2d;&#x3001;&#x5df2;&#x53d6;&#x6d88;&#x3001;&#x5c1a;&#x672a;&#x78ba;&#x8a8d;&#x73fe;&#x91d1;&#x6536;&#x6b3e;&#x4e0d;&#x8a08;&#xff0c;&#x6b77;&#x53f2;&#x88dc;&#x767b;&#x9808;&#x5df2;&#x6536;&#x6b3e;&#x3002;&#x5b78;&#x54e1;&#x500b;&#x4eba;&#x7d2f;&#x7a4d;&#x4ed8;&#x6b3e;&#x4e0d;&#x6263;&#x9664;&#x5834;&#x5730;&#x8cbb;&#x3002;</p>
+                    {(data.invalidAmounts + data.missingDates + data.duplicateOrders + data.unmatchedStudents > 0) && <p role="status" className="text-sm text-amber-900 mt-3">&#x8cc7;&#x6599;&#x5f85;&#x6838;&#x5c0d;&#xff1a;&#x91d1;&#x984d;&#x7570;&#x5e38; {data.invalidAmounts} &#x7b46;&#x3001;&#x7f3a;&#x5c11;&#x6709;&#x6548;&#x4e0a;&#x8ab2;&#x65e5;&#x671f; {data.missingDates} &#x7b46;&#x3001;&#x91cd;&#x8907;&#x8a02;&#x55ae;&#x7de8;&#x865f; {data.duplicateOrders} &#x7b46;&#x3001;&#x7121;&#x6cd5;&#x5c0d;&#x61c9;&#x5b78;&#x54e1; {data.unmatchedStudents} &#x7b46;&#x3002;&#x65e5;&#x671f;&#x7f3a;&#x6f0f;&#x4e0d;&#x8a08;&#x6708;&#x4efd;&#x5b78;&#x8cbb;&#xff0c;&#x91cd;&#x8907;&#x8a02;&#x55ae;&#x53ea;&#x8a08;&#x4e00;&#x6b21;&#x3002;</p>}
+                    {message && <p role="status" className="text-sm text-emerald-800 mt-3">{message}</p>}{costError && <p role="alert" className="text-sm text-red-700 mt-3">{costError}</p>}
+                    <VenueExpenseForm key={`${editingExpense?.id || 'new'}-${formRevision}`} expense={editingExpense} onSaved={saved} onCancel={() => setEditingExpense(null)} />
+                    <div className="mt-5 min-w-0"><h3 className="font-bold text-slate-800 mb-3">&#x672c;&#x6708;&#x5834;&#x5730;&#x8cbb;&#x660e;&#x7d30;</h3>{!data.venueExpenses.length ? <p className="text-sm text-gray-600">&#x672c;&#x6708;&#x5c1a;&#x7121;&#x5834;&#x5730;&#x8cbb;&#x7d00;&#x9304;&#x3002;</p> : <div className="mobile-list-wrap overflow-x-auto"><table className="mobile-card-table w-full text-left text-sm"><thead><tr><th className="p-3">&#x4f7f;&#x7528;&#x65e5;&#x671f;</th><th className="p-3">&#x5834;&#x5730;</th><th className="p-3">&#x91d1;&#x984d;</th><th className="p-3">&#x5099;&#x8a3b;</th><th className="p-3">&#x64cd;&#x4f5c;</th></tr></thead><tbody>{data.venueExpenses.map(expense => <tr key={expense.id} className="border-t"><td data-label="&#x4f7f;&#x7528;&#x65e5;&#x671f;" className="p-3">{expense.date}</td><td data-label="&#x5834;&#x5730;" className="p-3 break-words">{expense.location}</td><td data-label="&#x91d1;&#x984d;" className="p-3 font-bold">{formatMoney(expense.amount)}</td><td data-label="&#x5099;&#x8a3b;" className="p-3 break-words">{expense.note || '\u2014'}</td><td data-label="&#x64cd;&#x4f5c;" className="p-3"><div className="flex flex-wrap gap-2"><button type="button" disabled={!!costBusy} onClick={() => { setEditingExpense(expense); setMessage(''); }} className="border rounded-lg px-3 py-2 text-blue-800">&#x7de8;&#x8f2f;&#x5834;&#x5730;&#x8cbb;</button><button type="button" disabled={!!costBusy} onClick={() => cancelExpense(expense)} className="border rounded-lg px-3 py-2 text-red-700">{costBusy === expense.id ? '\u8655\u7406\u4e2d...' : '\u4f5c\u5ee2\u5834\u5730\u8cbb'}</button></div></td></tr>)}</tbody></table></div>}</div>
+                    <details className="mt-5 border-t border-emerald-200 pt-4"><summary className="font-bold cursor-pointer text-slate-800">&#x672c;&#x6708;&#x5b78;&#x8cbb;&#x660e;&#x7d30;</summary>{!data.tuitionDetails.length ? <p className="text-sm text-gray-600 mt-3">&#x672c;&#x6708;&#x5c1a;&#x7121;&#x7b26;&#x5408;&#x6536;&#x6b3e;&#x689d;&#x4ef6;&#x7684;&#x8ab2;&#x7a0b;&#x5b78;&#x8cbb;&#x3002;</p> : <div className="mobile-list-wrap overflow-x-auto mt-3"><table className="mobile-card-table w-full text-left text-sm"><thead><tr><th className="p-3">&#x4e0a;&#x8ab2;&#x65e5;&#x671f;</th><th className="p-3">&#x5b78;&#x54e1;</th><th className="p-3">&#x8ab2;&#x7a0b;</th><th className="p-3">&#x672c;&#x6708;&#x5b78;&#x8cbb;</th></tr></thead><tbody>{data.tuitionDetails.map((detail, index) => <tr key={detail.bookingId || index} className="border-t"><td data-label="&#x4e0a;&#x8ab2;&#x65e5;&#x671f;" className="p-3 break-words">{detail.dates.join('\u3001')}</td><td data-label="&#x5b78;&#x54e1;" className="p-3">{detail.name || '\u672a\u63d0\u4f9b\u59d3\u540d'}</td><td data-label="&#x8ab2;&#x7a0b;" className="p-3 break-words">{detail.title || '\u672a\u63d0\u4f9b\u8ab2\u540d'}<span className="block text-xs text-gray-500">&#x672c;&#x6708; {detail.sessionCount}&#xff0f;&#x5171; {detail.totalSessions} &#x5802;</span></td><td data-label="&#x672c;&#x6708;&#x5b78;&#x8cbb;" className="p-3 font-bold">{formatMoney(detail.amount)}</td></tr>)}</tbody></table></div>}</details>
+                </>}
             </section>;
         };
 

@@ -2,20 +2,20 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const source=fs.readFileSync(path.join(__dirname,'../apps-script/complete/Code.gs'),'utf8');
 const ctx={Intl,Date};vm.createContext(ctx);vm.runInContext(source+'\nglobalThis.payments={calculateCoachPayments:calculateCoachPayments_,taipeiMonth:taipeiMonth_,studentPaymentKey:studentPaymentKey_};',ctx);
 const {calculateCoachPayments:sum,taipeiMonth:month,studentPaymentKey:key}=ctx.payments;
-const order=(extra={})=>({bookingId:'one',lineId:'student',paidPrice:300,status:'預約成功',timestamp:'2026-10-01T00:00:00+08:00',...extra});
+const order=(extra={})=>({bookingId:'one',lineId:'student',paidPrice:300,status:'預約成功',timestamp:'2026-10-01T00:00:00+08:00',slotDate:'2026-10-01',...extra});
 test('counts approved and completed, excludes pending and cancelled',()=>{const result=sum(['預約成功','已完課','審核中','已取消'].map((status,i)=>order({status,bookingId:String(i)})),'2026-10');assert.equal(result.monthlyTotal,600);assert.equal(result.studentTotals.get(key('student','')),600);});
 test('Taipei month boundary is UTC+8',()=>{assert.equal(month('2026-09-30T16:00:00Z'),'2026-10');assert.equal(month('2026-09-30T15:59:59Z'),'2026-09');assert.equal(month('2026-10-31T16:00:00Z'),'2026-11');});
-test('member lifetime total spans months while monthly total does not',()=>{const result=sum([order(),order({bookingId:'two',timestamp:'2026-09-01T00:00:00+08:00',paidPrice:500})],'2026-10');assert.equal(result.monthlyTotal,300);assert.equal(result.studentTotals.get(key('student','')),800);});
+test('member lifetime total spans months while monthly total does not',()=>{const result=sum([order(),order({bookingId:'two',timestamp:'2026-10-01T00:00:00+08:00',slotDate:'2026-09-01',paidPrice:500})],'2026-10');assert.equal(result.monthlyTotal,300);assert.equal(result.studentTotals.get(key('student','')),800);});
 test('same names never merge different LINE identities',()=>{const result=sum([order({name:'同名'}),order({bookingId:'two',lineId:'other',name:'同名',paidPrice:200})],'2026-10');assert.equal(result.studentTotals.get(key('student','')),300);assert.equal(result.studentTotals.get(key('other','')),200);});
 test('zero-charge makeup and duplicate IDs do not inflate totals',()=>{const result=sum([order(),order(),order({bookingId:'makeup',paidPrice:0})],'2026-10');assert.equal(result.monthlyTotal,300);assert.equal(result.duplicateOrders,1);});
-test('missing date contributes lifetime total but is flagged and excluded from month',()=>{const result=sum([order({timestamp:''})],'2026-10');assert.equal(result.monthlyTotal,0);assert.equal(result.studentTotals.get(key('student','')),300);assert.equal(result.missingDates,1);});
+test('missing date contributes lifetime total but is flagged and excluded from month',()=>{const result=sum([order({slotDate:''})],'2026-10');assert.equal(result.monthlyTotal,0);assert.equal(result.studentTotals.get(key('student','')),300);assert.equal(result.missingDates,1);});
 test('invalid amounts do not silently become valid payments',()=>{const result=sum(['',null,'wrong',-1,Infinity].map((paidPrice,i)=>order({paidPrice,bookingId:String(i)})),'2026-10');assert.equal(result.monthlyTotal,0);assert.equal(result.invalidAmounts,5);});
 test('legacy approved statuses and decimal money use cent arithmetic',()=>{const result=sum([order({paidPrice:0.1,status:'成功'}),order({bookingId:'two',paidPrice:0.2,status:'已完成'})],'2026-10');assert.equal(result.monthlyTotal,0.3);});
 
 test('cash reservations count only after coach confirms receipt',()=>{const pending=sum([order({paymentCode:'現場現金'})],'2026-10');assert.equal(pending.monthlyTotal,0);assert.equal(pending.studentTotals.size,0);const paid=sum([order({paymentCode:'現金已收'})],'2026-10');assert.equal(paid.monthlyTotal,300);});
-test('historical backfills require explicit paid status and use the original booking month for the selected student',()=>{
+test('historical backfills require paid status and use the course month for the selected student',()=>{
  const roster=[{lineId:'family',studentId:'a'},{lineId:'family',studentId:'b'}];
- const historical=extra=>order({bookingId:'hist',lineId:'family',studentId:'b',isHistorical:true,status:'已完課',paidPrice:350.5,paymentStatus:'paid',timestamp:'2026-09-30',...extra});
+ const historical=extra=>order({bookingId:'hist',lineId:'family',studentId:'b',isHistorical:true,status:'已完課',paidPrice:350.5,paymentStatus:'paid',timestamp:'2026-08-15',slotDate:'2026-09-30',...extra});
  const rows=[historical(),historical({bookingId:'unpaid',paymentStatus:'unpaid'}),historical({bookingId:'unknown',paymentStatus:undefined}),historical({bookingId:'cancelled',status:'已取消'}),order({bookingId:'normal',lineId:'family',studentId:'a',paidPrice:100})];
  const october=sum(rows,'2026-10',roster);assert.equal(october.studentTotals.get(key('family','a')),100);assert.equal(october.studentTotals.get(key('family','b')),350.5);assert.equal(october.monthlyTotal,100);
  assert.equal(sum(rows,'2026-09',roster).monthlyTotal,350.5);

@@ -85,7 +85,7 @@ test('pricing suggestions and payment summaries are authenticated coach-only com
  const f=fixture();assert.equal(f.run({action:'getPricingPreview',mode:'single',startTime:'19:00',endTime:'20:00'}).status,'error');
  const preview=f.run({action:'getPricingPreview',mode:'single',startTime:'19:00',endTime:'20:00',basePrice:100,level:99},'coach');assert.deepEqual(preview.prices,{'1':100,'2':98,'3':95,'4':90,'5':53});
  f.run({action:'bookClass',slotId:'group'});const id=f.rows['預約名單'][1][7];f.run({action:'approveBooking',bookingId:id},'coach');
- const summary=f.run({action:'getPaymentSummary',month:'2026-11'},'coach').paymentSummary;assert.equal(summary.monthlyTotal,300);assert.deepEqual(summary.studentTotals,[[JSON.stringify(['account','a']),300]]);
+ const summary=f.run({action:'getPaymentSummary',month:'2026-12'},'coach').paymentSummary;assert.equal(summary.monthlyTotal,300);assert.equal(f.run({action:'getPaymentSummary',month:'2026-11'},'coach').paymentSummary.monthlyTotal,0);assert.deepEqual(summary.studentTotals,[[JSON.stringify(['account','a']),300]]);
  assert.equal(f.run({action:'getPaymentSummary',month:'2026-11'}).status,'error');
 });
 test('failed multi-student booking restores every order and the server seat counter',()=>{

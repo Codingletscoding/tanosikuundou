@@ -15,6 +15,8 @@ const SHEET_HISTORICAL_BOOKINGS = '歷史預約紀錄';
 const SHEET_STUDENT_GROUP_PRICES = '學員團課價格';
 const STUDENT_GROUP_PRICE_HEADERS = ['LINE_ID', '學生編號', '一小時團課價格', '二小時團課價格', '更新時間', '設定教練'];
 const GROUP_PRICE_DEFAULTS = { hour1: 300, hour2: 550 };
+const SHEET_VENUE_EXPENSES = '場地費紀錄';
+const VENUE_EXPENSE_HEADERS = ['費用編號', '場地使用日期', '場地', '金額', '備註', '建立時間', '建立教練', '更新時間', '更新教練', '狀態', '請求編號', '版本'];
 const MONTHLY_GROUP_TARIFFS = {
   60: { 4: { regular: 1200, price: 1000 }, 5: { regular: 1500, price: 1250 } },
   120: { 4: { regular: 2400, price: 2000 }, 5: { regular: 3000, price: 2500 } }
@@ -26,7 +28,7 @@ const ADMIN_LINE_IDS = ["U3a76953e63578ec8607297044ac54e5a"];
 // Server-owned channel for this LIFF app; configured overrides exclude the known wrong legacy value.
 const DEFAULT_LINE_LOGIN_CHANNEL_ID = '2012115245';
 const API_SECURITY_VERSION = 2;
-const ADMIN_API_ACTIONS = ['getCoachData', 'getPaymentSummary', 'getPricingPreview', 'getStudentProfile', 'getHistoricalBookingOptions', 'coachAddHistoricalBooking', 'coachRegisterMonthly', 'coachRegisterSingle', 'addSlot', 'deleteSlot', 'approveBooking', 'addLog', 'deleteBooking', 'getMonthlyLeaves', 'registerMonthlyLeave', 'arrangeMonthlyMakeup', 'cancelBooking', 'updateSlot', 'confirmCashPayment', 'addTeachingCoach', 'updateTeachingCoach', 'setStudentGroupPrices'];
+const ADMIN_API_ACTIONS = ['getCoachData', 'getPaymentSummary', 'getPricingPreview', 'getStudentProfile', 'getHistoricalBookingOptions', 'coachAddHistoricalBooking', 'coachRegisterMonthly', 'coachRegisterSingle', 'addSlot', 'deleteSlot', 'approveBooking', 'addLog', 'deleteBooking', 'getMonthlyLeaves', 'registerMonthlyLeave', 'arrangeMonthlyMakeup', 'cancelBooking', 'updateSlot', 'confirmCashPayment', 'addTeachingCoach', 'updateTeachingCoach', 'setStudentGroupPrices', 'addVenueExpense', 'updateVenueExpense', 'cancelVenueExpense'];
 const MEMBER_API_ACTIONS = ['checkUser', 'registerUser', 'completeAccountRegistration', 'getSlots', 'getBookingQuote', 'bookClass', 'getStudentStats', 'updatePayment'];
 
 function authenticatedActor_(accessToken) {
@@ -90,7 +92,7 @@ function doPost(e) {
     // LINE 回傳的身分才是授權依據；不採信 lineId、isAdmin 或任何前端權限旗標。
     const actor = authorizeRequest_(payload);
     const writeActions = ["registerUser", "completeAccountRegistration", "bookClass", "coachRegisterMonthly", "coachRegisterSingle", "addSlot", "deleteSlot", "approveBooking", "updatePayment", "addLog", "deleteBooking", "registerMonthlyLeave", "arrangeMonthlyMakeup", "cancelBooking", "updateSlot", "confirmCashPayment", "addTeachingCoach", "updateTeachingCoach", "setStudentGroupPrices"];
-    if (writeActions.includes(action) || ['coachAddHistoricalBooking', 'getSlots', 'getCoachData'].includes(action)) {
+    if (writeActions.includes(action) || ['coachAddHistoricalBooking', 'getSlots', 'getCoachData', 'getPaymentSummary', 'addVenueExpense', 'updateVenueExpense', 'cancelVenueExpense'].includes(action)) {
       const candidate = LockService.getScriptLock();
       if (!candidate.tryLock(30000)) throw new Error("系統忙碌中，請稍後再試。");
       requestLock = candidate;
@@ -214,6 +216,10 @@ function doPost(e) {
     else if (action === 'getPaymentSummary') {
       result = { status: 'success', paymentSummary: paymentSummary_(ss, payload.month) };
     }
+
+    else if (['addVenueExpense', 'updateVenueExpense', 'cancelVenueExpense'].includes(action)) {
+      result = saveVenueExpense_(ss, payload, actor);
+    }
     
     else if (action === "bookClass" || action === "coachRegisterMonthly" || action === "coachRegisterSingle") {
       const coachMonthly = action === "coachRegisterMonthly";
@@ -318,7 +324,9 @@ function doPost(e) {
         }));
       }
       const historical = historicalBookings_(ss);
-      const summary = calculateCoachPayments_(bookings.concat(historical), taipeiMonth_(new Date()), members);
+      attachCourseSchedule_(ss, bookings);
+      const month = taipeiMonth_(new Date());
+      const summary = monthlyAccounting_(ss, calculateCoachPayments_(bookings.concat(historical), month, members), month);
       result = { status: "success", studentGroupPricingVersion: 1, groupPriceDefaults: GROUP_PRICE_DEFAULTS, bookings: bookings, members: members, historicalBookingVersion: 1, historicalBookings: historical, paymentSummary: paymentSummaryJSON_(summary) };
     }
 
@@ -685,11 +693,26 @@ function paymentSummaryJSON_(summary) {
 function paymentSummary_(ss, month) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month || ''))) throw new Error('請選擇有效的統計月份。');
   var data = coachPaymentData_(ss);
-  return paymentSummaryJSON_(calculateCoachPayments_(data.bookings.concat(historicalBookings_(ss)), month, data.members));
+  return paymentSummaryJSON_(monthlyAccounting_(ss, calculateCoachPayments_(data.bookings.concat(historicalBookings_(ss)), month, data.members), month));
+}
+
+function attachCourseSchedule_(ss, bookings) {
+  var sheet = ss.getSheetByName(SHEET_SLOTS), slots = new Map();
+  if (sheet) sheet.getDataRange().getValues().slice(1).forEach(function(row) {
+    if (!row[0]) return;
+    var id = String(row[0]);
+    slots.set(id, slots.has(id) ? null : row);
+  });
+  bookings.forEach(function(booking) {
+    var slot = slots.get(String(booking.slotId));
+    booking.slotTitle = slot ? String(slot[1] || '') : '未知或已下架課程';
+    booking.courseDates = slot ? emptyCourseDates_(slot[2]) : [];
+  });
 }
 
 function coachPaymentData_(ss) {
-  var bookings = ss.getSheetByName(SHEET_BOOKINGS).getDataRange().getValues().slice(1).map(function(row) { return { timestamp: row[0], lineId: row[2], paidPrice: row[4], status: row[5] || '預約成功', paymentCode: row[6], bookingId: row[7], studentId: row[9] || '' }; });
+  var bookings = ss.getSheetByName(SHEET_BOOKINGS).getDataRange().getValues().slice(1).map(function(row) { return { timestamp: row[0], slotId: row[1], lineId: row[2], name: row[3], paidPrice: row[4], status: row[5] || '預約成功', paymentCode: row[6], bookingId: row[7], studentId: row[9] || '' }; });
+  attachCourseSchedule_(ss, bookings);
   var members = [];
   ss.getSheetByName(SHEET_USERS).getDataRange().getValues().slice(1).forEach(function(row) { accountStudents_(row).forEach(function(student) { members.push({ lineId: row[0], studentId: student.id }); }); });
   return { bookings: bookings, members: members };
@@ -715,6 +738,7 @@ function calculateCoachPayments_(bookings, month, roster) {
         rosterByAccount.get(accountId).push(member);
     });
     let monthlyCents = 0, invalidAmounts = 0, missingDates = 0, duplicateOrders = 0, unmatchedStudents = 0;
+    const tuitionDetails = [];
     const seen = new Set();
     for (const booking of bookings) {
         if (!['預約成功', '已完課', '成功', '已完成'].includes(booking.status) || booking.paymentCode === '現場現金' || (booking.isHistorical && booking.paymentStatus !== 'paid')) continue;
@@ -736,12 +760,112 @@ function calculateCoachPayments_(bookings, month, roster) {
         }
         if (studentKey !== null) students.set(studentKey, (students.get(studentKey) || 0) + cents);
         else if (cents) unmatchedStudents++;
-        const bookedMonth = taipeiMonth_(booking.timestamp);
-        if (!bookedMonth && cents) missingDates++;
-        if (bookedMonth === month) monthlyCents += cents;
+        const dates = coursePaymentDates_(booking);
+        if (!dates.length && cents) missingDates++;
+        const selectedDates = [];
+        let share = 0;
+        dates.forEach((date, index) => {
+            if (date.slice(0, 7) !== month) return;
+            // Distribute indivisible cents in chronological order; all months sum to the original order.
+            share += Math.floor(cents / dates.length) + (index < cents % dates.length ? 1 : 0);
+            selectedDates.push(date);
+        });
+        monthlyCents += share;
+        if (selectedDates.length) tuitionDetails.push({ bookingId: booking.bookingId || '', lineId: booking.lineId || '', studentId: booking.studentId || '', name: booking.name || '', title: booking.slotTitle || '', dates: selectedDates, sessionCount: selectedDates.length, totalSessions: dates.length, amount: share / 100, isHistorical: !!booking.isHistorical });
     }
-    return { studentTotals: new Map([...students].map(([id, cents]) => [id, cents / 100])), monthlyTotal: monthlyCents / 100, invalidAmounts, missingDates, duplicateOrders, unmatchedStudents };
+    return { studentTotals: new Map([...students].map(([id, cents]) => [id, cents / 100])), monthlyTotal: monthlyCents / 100, tuitionDetails: tuitionDetails, invalidAmounts, missingDates, duplicateOrders, unmatchedStudents };
 };
+
+function coursePaymentDates_(booking) {
+  var dates = booking.courseDates != null ? booking.courseDates : emptyCourseDates_(booking.slotDate);
+  if (!Array.isArray(dates) || !dates.length || new Set(dates).size !== dates.length || dates.some(function(date) { return typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || emptyCourseDateKey_(date.slice(0, 4), date.slice(5, 7), date.slice(8, 10)) !== date; })) return [];
+  return dates.slice().sort();
+}
+
+function venueExpenseRows_(ss) {
+  var sheet = ss.getSheetByName(SHEET_VENUE_EXPENSES), rows = sheet ? sheet.getDataRange().getValues() : [];
+  if (sheet && (!rows.length || VENUE_EXPENSE_HEADERS.some(function(title, i) { return rows[0][i] !== title; }))) throw new Error('場地費紀錄欄位不符，請聯絡管理員。');
+  var seen = new Set(), requests = new Set();
+  rows.slice(1).forEach(function(row) {
+    if (!row[0]) return;
+    if (seen.has(String(row[0]))) throw new Error('場地費編號重複，請聯絡管理員。');
+    seen.add(String(row[0]));
+    if (!row[10] || requests.has(String(row[10]))) throw new Error('場地費請求編號重複或缺漏，請聯絡管理員。');
+    requests.add(String(row[10]));
+    if (['有效', '已作廢'].indexOf(row[9]) < 0 || !row[11]) throw new Error('場地費狀態或版本異常，請聯絡管理員。');
+  });
+  return { sheet: sheet, rows: rows };
+}
+
+function venueExpenseJSON_(row) {
+  var date = monthlyDate_(row[1]);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('場地費日期異常，請聯絡管理員。');
+  monthlyStart_(date, '00:00');
+  return { id: String(row[0]), date: date, location: String(row[2] || ''), amount: money_(row[3]), note: String(row[4] || ''), status: row[9], revision: String(row[11]) };
+}
+
+function monthlyAccounting_(ss, summary, month) {
+  var expenses = venueExpenseRows_(ss).rows.slice(1).filter(function(row) { return row[0] && row[9] === '有效'; }).map(venueExpenseJSON_).filter(function(item) { return item.date.slice(0, 7) === month; });
+  var costs = expenses.reduce(function(sum, expense) { return sum + Math.round(expense.amount * 100); }, 0);
+  var tuition = Math.round(summary.monthlyTotal * 100);
+  return { ...summary, month: month, monthlyAccountingVersion: 1, monthlyTuitionTotal: tuition / 100, monthlyVenueCostTotal: costs / 100, monthlyTotal: (tuition - costs) / 100, venueExpenses: expenses.sort(function(a, b) { return b.date.localeCompare(a.date) || a.id.localeCompare(b.id); }) };
+}
+
+function saveVenueExpense_(ss, payload, actor) {
+  var data = venueExpenseRows_(ss), rows = data.rows, sheet = data.sheet;
+  var adding = payload.action === 'addVenueExpense', cancelling = payload.action === 'cancelVenueExpense';
+  var existing = null, rowIndex = -1;
+  if (!adding) {
+    if (typeof payload.expenseId !== 'string' || !payload.expenseId) throw new Error('請選擇場地費紀錄。');
+    rowIndex = rows.findIndex(function(row, i) { return i > 0 && String(row[0]) === payload.expenseId; });
+    if (rowIndex < 1) throw new Error('找不到場地費紀錄。');
+    existing = rows[rowIndex];
+    if (payload.expectedRevision !== String(existing[11])) throw new Error('場地費已被更新，請重新讀取後再修改。');
+    if (existing[9] !== '有效') throw new Error('此場地費已作廢，不能再修改。');
+  }
+  var date, location, amount, note;
+  if (!cancelling) {
+    date = payload.date;
+    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('請填寫有效的場地使用日期。');
+    monthlyStart_(date, '00:00');
+    var text = function(value, required, max) {
+      if (typeof value !== 'string') throw new Error('請填寫有效的場地及備註。');
+      var result = value.trim();
+      if ((required && !result) || result.length > max || /^[=+@-]/.test(result) || /[\u0000-\u001f\u007f]/.test(result)) throw new Error('請填寫有效的場地及備註。');
+      return result;
+    };
+    location = text(payload.location, true, 120); note = text(payload.note == null ? '' : payload.note, false, 1000); amount = money_(payload.amount);
+  }
+  if (adding) {
+    if (typeof payload.requestId !== 'string' || !/^[a-zA-Z0-9-]{8,100}$/.test(payload.requestId)) throw new Error('請重新開啟場地費表單後再送出。');
+    var matches = rows.slice(1).filter(function(row) { return row[10] === payload.requestId; });
+    if (matches.length > 1) throw new Error('場地費請求編號重複，請聯絡管理員。');
+    if (matches.length) {
+      var previous = venueExpenseJSON_(matches[0]);
+      if (previous.date !== date || previous.location !== location || previous.amount !== amount || previous.note !== note) throw new Error('場地費請求內容已變更，請重新開啟表單。');
+      return { status: 'success', monthlyAccountingVersion: 1, expense: previous };
+    }
+    if (!sheet) { sheet = ss.insertSheet(SHEET_VENUE_EXPENSES); sheet.appendRow(VENUE_EXPENSE_HEADERS); }
+  }
+  var row = adding ? [Utilities.getUuid(), date, location, amount, note, new Date(), actor.lineId, new Date(), actor.lineId, '有效', payload.requestId, Utilities.getUuid()] : existing.slice(0, 12);
+  if (!adding) {
+    if (cancelling) row[9] = '已作廢';
+    else { row[1] = date; row[2] = location; row[3] = amount; row[4] = note; }
+    row[7] = new Date(); row[8] = actor.lineId; row[11] = Utilities.getUuid();
+  }
+  var firstRow = sheet.getDataRange().getValues().length + 1;
+  try {
+    if (adding) sheet.appendRow(row);
+    else sheet.getRange(rowIndex + 1, 1, 1, 12).setValues([row]);
+    SpreadsheetApp.flush();
+  } catch (error) {
+    if (adding) for (var i = sheet.getDataRange().getValues().length; i >= firstRow; i--) sheet.deleteRow(i);
+    else sheet.getRange(rowIndex + 1, 1, 1, 12).setValues([existing.slice(0, 12)]);
+    SpreadsheetApp.flush();
+    throw new Error('場地費儲存失敗，請重新讀取後再試。');
+  }
+  return { status: 'success', monthlyAccountingVersion: 1, expense: venueExpenseJSON_(row) };
+}
 
 
 // ===== 教練補登歷史預約：獨立紀錄，不建立可預約時段、不改名額或訓練日誌 =====
