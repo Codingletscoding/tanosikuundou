@@ -1828,7 +1828,7 @@
             };
             return <section aria-labelledby={`coach-${kind}-registration-title`} className="bg-sky-50 border border-sky-200 rounded-2xl p-4 md:p-6">
                 <h2 id={`coach-${kind}-registration-title`} className="font-bold text-lg text-sky-950 mb-2">{title}</h2>
-                <p className="text-sm text-sky-900 mb-4">{isMonthly ? '\u9078\u64c7\u5df2\u8a3b\u518a\u5b78\u54e1\uff0c\u4f9d\u6708\u7e73\u65b9\u6848\u7d71\u4e00\u8a08\u8cbb\uff0c\u4e0d\u5206\u6703\u54e1\u7b49\u7d1a\uff1b\u767b\u8a18\u5f8c\u70ba\u5be9\u6838\u4e2d\uff0c\u78ba\u8a8d\u6536\u6b3e\u5f8c\u518d\u6838\u51c6\u3002' : '\u9078\u64c7\u5df2\u8a3b\u518a\u5b78\u54e1\uff0c\u4f9d\u5404\u5b78\u54e1\u7684\u500b\u4eba\u5718\u8ab2\u50f9\u683c\u8a08\u8cbb\uff1b\u672a\u8a2d\u5b9a\u4f7f\u7528\u539f\u50f9\u3002\u767b\u8a18\u5f8c\u70ba\u5be9\u6838\u4e2d\uff0c\u78ba\u8a8d\u6536\u6b3e\u5f8c\u518d\u6838\u51c6\u3002'}</p>
+                <p className="text-sm text-sky-900 mb-4">{isMonthly ? '\u9078\u64c7\u5df2\u8a3b\u518a\u5b78\u54e1\uff0c\u4f9d\u5404\u5b78\u54e1\u7684\u6708\u7e73\u500b\u4eba\u50f9\u683c\u6216\u4e00\u822c\u6708\u7e73\u65b9\u6848\u8a08\u8cbb\uff0c\u4e0d\u5206\u6703\u54e1\u7b49\u7d1a\uff1b\u767b\u8a18\u5f8c\u70ba\u5be9\u6838\u4e2d\uff0c\u78ba\u8a8d\u6536\u6b3e\u5f8c\u518d\u6838\u51c6\u3002' : '\u9078\u64c7\u5df2\u8a3b\u518a\u5b78\u54e1\uff0c\u4f9d\u5404\u5b78\u54e1\u7684\u500b\u4eba\u5718\u8ab2\u50f9\u683c\u8a08\u8cbb\uff1b\u672a\u8a2d\u5b9a\u4f7f\u7528\u539f\u50f9\u3002\u767b\u8a18\u5f8c\u70ba\u5be9\u6838\u4e2d\uff0c\u78ba\u8a8d\u6536\u6b3e\u5f8c\u518d\u6838\u51c6\u3002'}</p>
                 {!enabled && <p role="status" className="text-sm text-amber-800 mb-4">{isMonthly ? '\u6708\u7e73\u7d71\u4e00\u50f9\u683c\u5c1a\u672a\u555f\u7528\uff0c\u8acb\u5148\u66f4\u65b0\u5f8c\u7aef\u3002' : '\u55ae\u5802\u4ee3\u767b\u8a18\u5c1a\u672a\u555f\u7528\uff0c\u8acb\u806f\u7d61\u7ba1\u7406\u54e1\u66f4\u65b0\u7cfb\u7d71\u3002'}</p>}
                 <form onSubmit={submit} className="coach-monthly-form space-y-4">
                     <label className="block font-bold">&#x5b78;&#x54e1;&#x5e33;&#x865f;<select aria-label={isMonthly ? '\u4ee3\u767b\u8a18\u5b78\u54e1\u5e33\u865f' : '\u55ae\u5802\u4ee3\u767b\u8a18\u5b78\u54e1\u5e33\u865f'} disabled={busy} required value={lineId} onChange={e => { const next = accounts.find(account => account.lineId === e.target.value); setLineId(e.target.value); setStudentIds((next?.students || []).map(student => student.studentId || '')); setMessage(''); setError(''); }} className="block w-full border p-3 rounded-lg mt-1 bg-white"><option value="">&#x8acb;&#x9078;&#x64c7;&#x5b78;&#x54e1;&#x5e33;&#x865f;</option>{accounts.map(account => <option key={account.lineId} value={account.lineId}>{account.students.map(student => student.name + (student.nickname ? `\uff08${student.nickname}\uff09` : '')).join('\u3001')}</option>)}</select></label>
@@ -2293,8 +2293,9 @@
           );
         };
 
-        const StudentGroupPriceModal = ({ student, originals, onClose, onSaved }) => {
+        const StudentGroupPriceModal = ({ student, originals, monthlyDefaults, onClose, onSaved }) => {
             const [prices, setPrices] = useState({ hour1: student.groupPrices?.hour1 ?? '', hour2: student.groupPrices?.hour2 ?? '' });
+            const [monthlyPrices, setMonthlyPrices] = useState({ hour1: student.monthlyGroupPrices?.hour1 ?? '', hour2: student.monthlyGroupPrices?.hour2 ?? '' });
             const [busy, setBusy] = useState(false);
             const [error, setError] = useState('');
             const busyRef = React.useRef(false);
@@ -2303,8 +2304,8 @@
                 if (busyRef.current) return;
                 busyRef.current = true; setBusy(true); setError('');
                 try {
-                    const result = await fetchAPI({ action: 'setStudentGroupPrices', lineId: student.lineId, studentId: student.studentId || '', groupPrices: prices });
-                    if (result.status !== 'success' || result.studentGroupPricingVersion !== 1) throw new Error(result.message || '\u5b78\u54e1\u5718\u8ab2\u50f9\u683c\u5132\u5b58\u5931\u6557\uff0c\u8acb\u7a0d\u5f8c\u518d\u8a66\u3002');
+                    const result = await fetchAPI({ action: 'setStudentGroupPrices', lineId: student.lineId, studentId: student.studentId || '', groupPrices: prices, ...(monthlyDefaults ? { monthlyGroupPrices: monthlyPrices } : {}) });
+                    if (result.status !== 'success' || result.studentGroupPricingVersion !== 1 || (monthlyDefaults && result.studentMonthlyPricingVersion !== 1)) throw new Error(result.message || '\u5b78\u54e1\u5718\u8ab2\u50f9\u683c\u5132\u5b58\u5931\u6557\uff0c\u8acb\u7a0d\u5f8c\u518d\u8a66\u3002');
                     await onSaved(); onClose();
                 } catch (error) { setError(error.message); }
                 finally { busyRef.current = false; setBusy(false); }
@@ -2312,9 +2313,16 @@
             return <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-3 md:p-6 overflow-y-auto">
                 <section role="dialog" aria-modal="true" aria-labelledby="student-group-prices-title" className="bg-white rounded-2xl p-5 md:p-7 shadow-xl w-full max-w-lg max-h-[90dvh] overflow-y-auto min-w-0">
                     <h2 id="student-group-prices-title" className="font-bold text-lg text-slate-800">&#x5718;&#x8ab2;&#x50f9;&#x683c;&#x8a2d;&#x5b9a;&#xff1a;{student.name}</h2>
-                    <p className="text-sm text-gray-600 mt-3">&#x50c5;&#x5957;&#x7528;&#x6b64;&#x5b78;&#x54e1;&#x7684;&#x55ae;&#x5802;&#x5718;&#x8ab2;&#x3002;&#x7559;&#x7a7a;&#x4f7f;&#x7528;&#x539f;&#x50f9;&#xff0c;&#x586b;&#x5beb; 0 &#x8868;&#x793a;&#x514d;&#x8cbb;&#xff1b;&#x6708;&#x7e73;&#x8207;&#x5c08;&#x5c6c;&#x6559;&#x7df4;&#x8ab2;&#x7dad;&#x6301;&#x539f;&#x65b9;&#x6848;&#xff0c;&#x5df2;&#x6210;&#x7acb;&#x8a02;&#x55ae;&#x4e0d;&#x8b8a;&#x3002;</p>
+                    <p className="text-sm text-gray-600 mt-3">&#x50c5;&#x5957;&#x7528;&#x6b64;&#x5b78;&#x54e1;&#xff0c;&#x586b;&#x5beb; 0 &#x8868;&#x793a;&#x514d;&#x8cbb;&#xff1b;&#x5c08;&#x5c6c;&#x6559;&#x7df4;&#x8ab2;&#x7dad;&#x6301;&#x539f;&#x65b9;&#x6848;&#xff0c;&#x5df2;&#x6210;&#x7acb;&#x8a02;&#x55ae;&#x4e0d;&#x8b8a;&#x3002;</p>
                     <form onSubmit={submit} className="space-y-5 mt-5">
-                        {[['hour1', '\u4e00\u5c0f\u6642\u5718\u8ab2\u512a\u60e0\u50f9'], ['hour2', '\u4e8c\u5c0f\u6642\u5718\u8ab2\u512a\u60e0\u50f9']].map(([key, label]) => <label key={key} className="block font-bold text-slate-700">{label}<span className="block font-normal text-sm text-gray-500 mt-1">&#x539f;&#x50f9; NT$ {originals[key]}</span><input aria-label={label} type="number" min="0" step="0.01" value={prices[key]} disabled={busy} onChange={event => setPrices(previous => ({ ...previous, [key]: event.target.value }))} className="block border rounded-lg p-3 mt-2 w-full min-w-0" placeholder="&#x7559;&#x7a7a;&#x4f7f;&#x7528;&#x539f;&#x50f9;" /></label>)}
+                        <fieldset className="space-y-4"><legend className="font-bold text-slate-800 mb-2">&#x55ae;&#x5802;&#x5718;&#x8ab2;</legend>
+                            {[['hour1', '\u4e00\u5c0f\u6642\u5718\u8ab2\u512a\u60e0\u50f9'], ['hour2', '\u4e8c\u5c0f\u6642\u5718\u8ab2\u512a\u60e0\u50f9']].map(([key, label]) => <label key={key} className="block font-bold text-slate-700">{label}<span className="block font-normal text-sm text-gray-500 mt-1">&#x539f;&#x50f9; NT$ {originals[key]}</span><input aria-label={label} type="number" min="0" step="0.01" value={prices[key]} disabled={busy} onChange={event => setPrices(previous => ({ ...previous, [key]: event.target.value }))} className="block border rounded-lg p-3 mt-2 w-full min-w-0" placeholder="&#x7559;&#x7a7a;&#x4f7f;&#x7528;&#x539f;&#x50f9;" /></label>)}
+                        </fieldset>
+                        <fieldset className="space-y-4 border-t pt-4" disabled={busy || !monthlyDefaults}><legend className="font-bold text-slate-800 px-1">&#x6708;&#x7e73;&#x5718;&#x8ab2;</legend>
+                            <p className="text-sm text-gray-600">&#x8a2d;&#x5b9a;&#x6bcf;&#x5802;&#x50f9;&#x683c;&#xff0c;&#x9810;&#x7d04;&#x7e3d;&#x50f9;&#x7531;&#x6bcf;&#x5802;&#x50f9;&#x683c;&#x4e58;&#x4ee5;&#x8a72;&#x65b9;&#x6848;&#x5802;&#x6578;&#x8a08;&#x7b97;&#xff0c;&#x4e0d;&#x518d;&#x4f9d;&#x6703;&#x54e1;&#x7b49;&#x7d1a;&#x6253;&#x6298;&#x3002;&#x7559;&#x7a7a;&#x4f7f;&#x7528;&#x4e00;&#x822c;&#x6708;&#x7e73;&#x512a;&#x60e0;&#x50f9;&#x3002;</p>
+                            {!monthlyDefaults && <p role="status" className="text-sm text-amber-800">&#x8acb;&#x5148;&#x66f4;&#x65b0; Apps Script &#x5f8c;&#x7aef;&#xff0c;&#x624d;&#x80fd;&#x8a2d;&#x5b9a;&#x6708;&#x7e73;&#x500b;&#x4eba;&#x50f9;&#x683c;&#x3002;</p>}
+                            {[['hour1', '\u4e00\u5c0f\u6642\u6708\u7e73\u6bcf\u5802\u50f9\u683c'], ['hour2', '\u4e8c\u5c0f\u6642\u6708\u7e73\u6bcf\u5802\u50f9\u683c']].map(([key, label]) => <label key={key} className="block font-bold text-slate-700">{label}{monthlyDefaults && <span className="block font-normal text-sm text-gray-500 mt-1">&#x4e00;&#x822c;&#x6708;&#x7e73;&#x512a;&#x60e0;&#x50f9;&#xff1a;&#x6bcf;&#x5802; NT$ {monthlyDefaults[key]}</span>}<input aria-label={label} type="number" min="0" step="0.01" value={monthlyPrices[key]} onChange={event => setMonthlyPrices(previous => ({ ...previous, [key]: event.target.value }))} className="block border rounded-lg p-3 mt-2 w-full min-w-0 disabled:bg-gray-100" placeholder="&#x7559;&#x7a7a;&#x4f7f;&#x7528;&#x4e00;&#x822c;&#x6708;&#x7e73;&#x512a;&#x60e0;&#x50f9;" /></label>)}
+                        </fieldset>
                         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
                         <div className="flex flex-wrap justify-end gap-3"><button type="button" disabled={busy} onClick={onClose} className="border rounded-lg px-4 py-3">&#x53d6;&#x6d88;</button><button type="submit" disabled={busy} className="bg-blue-700 text-white font-bold rounded-lg px-4 py-3 disabled:opacity-50">{busy ? '\u5132\u5b58\u4e2d...' : '\u5132\u5b58\u5718\u8ab2\u50f9\u683c'}</button></div>
                     </form>
@@ -2329,6 +2337,7 @@
             const [historicalStudent, setHistoricalStudent] = useState(null);
             const [pricingStudent, setPricingStudent] = useState(null);
             const [pricingDefaults, setPricingDefaults] = useState(null);
+            const [monthlyPricingDefaults, setMonthlyPricingDefaults] = useState(null);
             const [viewModal, setViewModal] = useState({ isOpen: false, student: null });
             const [logModalTarget, setLogModalTarget] = useState(null); 
 
@@ -2336,6 +2345,7 @@
                 return fetchAPI({ action: 'getCoachData' }).then(res => {
                     setMembers(res.members || []);
                     setPricingDefaults(res.studentGroupPricingVersion === 1 ? res.groupPriceDefaults : null);
+                    setMonthlyPricingDefaults(res.studentMonthlyPricingVersion === 1 ? res.monthlyGroupPriceDefaults : null);
                     if (res.status !== 'error' && Array.isArray(res.bookings)) {
                         const totals = res.paymentSummary;
                         if (!totals || !Array.isArray(totals.studentTotals)) { setPaymentTotals(null); setPaymentError('\u7121\u6cd5\u8b80\u53d6\u4ed8\u6b3e\u8cc7\u6599\uff0c\u7d2f\u7a4d\u91d1\u984d\u66ab\u4e0d\u986f\u793a\u3002'); return res; }
@@ -2400,7 +2410,7 @@
                             </tbody>
                         </table>
                     </div>
-                    {pricingStudent && <StudentGroupPriceModal student={pricingStudent} originals={pricingDefaults} onClose={() => setPricingStudent(null)} onSaved={async () => { const result = await fetchMembers(); if (result.status !== 'success') throw new Error('\u50f9\u683c\u5df2\u5132\u5b58\uff0c\u4f46\u5b78\u54e1\u540d\u55ae\u91cd\u65b0\u8b80\u53d6\u5931\u6557\uff0c\u8acb\u91cd\u65b0\u6574\u7406\u3002'); }} />}
+                    {pricingStudent && <StudentGroupPriceModal student={pricingStudent} originals={pricingDefaults} monthlyDefaults={monthlyPricingDefaults} onClose={() => setPricingStudent(null)} onSaved={async () => { const result = await fetchMembers(); if (result.status !== 'success') throw new Error('\u50f9\u683c\u5df2\u5132\u5b58\uff0c\u4f46\u5b78\u54e1\u540d\u55ae\u91cd\u65b0\u8b80\u53d6\u5931\u6557\uff0c\u8acb\u91cd\u65b0\u6574\u7406\u3002'); }} />}
                     {historicalStudent && <HistoricalBookingModal student={historicalStudent} onClose={() => setHistoricalStudent(null)} onSuccess={async () => { const result = await fetchMembers(); if (result.status !== 'success') throw new Error('\u4ed8\u6b3e\u7d71\u8a08\u8b80\u53d6\u5931\u6557'); onPaymentsChanged(); }} />}
                     {viewModal.isOpen && <StudentDetailsModal student={viewModal.student} onClose={()=>setViewModal({isOpen: false, student: null})} />}
                     {logModalTarget && <LogFormModal targetData={logModalTarget} onClose={() => setLogModalTarget(null)} onSuccess={fetchMembers} />}

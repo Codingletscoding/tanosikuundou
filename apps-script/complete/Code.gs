@@ -14,6 +14,8 @@ const SLOT_TEACHING_COACH_HEADER = '授課教練編號';
 const SHEET_HISTORICAL_BOOKINGS = '歷史預約紀錄';
 const SHEET_STUDENT_GROUP_PRICES = '學員團課價格';
 const STUDENT_GROUP_PRICE_HEADERS = ['LINE_ID', '學生編號', '一小時團課價格', '二小時團課價格', '更新時間', '設定教練'];
+const STUDENT_MONTHLY_PRICE_HEADERS = ['一小時月繳每堂價格', '二小時月繳每堂價格'];
+const MONTHLY_PRICE_DEFAULTS = { hour1: 250, hour2: 500 };
 const GROUP_PRICE_DEFAULTS = { hour1: 300, hour2: 550 };
 const SHEET_VENUE_EXPENSES = '場地費紀錄';
 const VENUE_EXPENSE_HEADERS = ['費用編號', '場地使用日期', '場地', '金額', '備註', '建立時間', '建立教練', '更新時間', '更新教練', '狀態', '請求編號', '版本'];
@@ -198,7 +200,7 @@ function doPost(e) {
         }
         slots.push(slot);
       }
-      result = { status: "success", slots: slots, monthlyGroupTariffs: MONTHLY_GROUP_TARIFFS, monthlyUniformPricingVersion: 1, studentGroupPricingVersion: 1, coachAccountPricingVersion: 1, coachSingleRegistrationVersion: 1, teachingCoachesVersion: 1, teachingCoaches: teachingCoaches };
+      result = { status: "success", slots: slots, monthlyGroupTariffs: MONTHLY_GROUP_TARIFFS, monthlyUniformPricingVersion: 1, studentMonthlyPricingVersion: 1, studentGroupPricingVersion: 1, coachAccountPricingVersion: 1, coachSingleRegistrationVersion: 1, teachingCoachesVersion: 1, teachingCoaches: teachingCoaches };
     }
 
     else if (action === 'addTeachingCoach' || action === 'updateTeachingCoach') {
@@ -320,6 +322,7 @@ function doPost(e) {
         accountStudents_(uData[i]).forEach(student => members.push({
           lineId: lId, studentId: student.id, name: student.name, nickname: student.nickname || '', level: uData[i][5] || 1,
           groupPrices: studentGroupPrices_(groupPriceData, lId, student.id),
+          monthlyGroupPrices: studentMonthlyGroupPrices_(groupPriceData, lId, student.id),
           totalClasses: lData.slice(1).filter(row => row[1] === lId && studentMatches_(row[14], row[2], student)).length
         }));
       }
@@ -327,7 +330,7 @@ function doPost(e) {
       attachCourseSchedule_(ss, bookings);
       const month = taipeiMonth_(new Date());
       const summary = monthlyAccounting_(ss, calculateCoachPayments_(bookings.concat(historical), month, members), month);
-      result = { status: "success", studentGroupPricingVersion: 1, groupPriceDefaults: GROUP_PRICE_DEFAULTS, bookings: bookings, members: members, historicalBookingVersion: 1, historicalBookings: historical, paymentSummary: paymentSummaryJSON_(summary) };
+      result = { status: "success", studentGroupPricingVersion: 1, studentMonthlyPricingVersion: 1, groupPriceDefaults: GROUP_PRICE_DEFAULTS, monthlyGroupPriceDefaults: MONTHLY_PRICE_DEFAULTS, bookings: bookings, members: members, historicalBookingVersion: 1, historicalBookings: historical, paymentSummary: paymentSummaryJSON_(summary) };
     }
 
     else if (["getMonthlyLeaves", "registerMonthlyLeave", "arrangeMonthlyMakeup"].includes(action)) {
@@ -555,6 +558,8 @@ function studentGroupPriceData_(ss) {
   var sheet = ss.getSheetByName(SHEET_STUDENT_GROUP_PRICES);
   var rows = sheet ? sheet.getDataRange().getValues() : [];
   if (sheet && (!rows.length || STUDENT_GROUP_PRICE_HEADERS.some(function(header, i) { return rows[0][i] !== header; }))) throw new Error('學員團課價格工作表欄位不符，請聯絡管理員。');
+  var hasMonthlyColumns = rows.some(function(row) { return row.slice(6, 8).some(function(value) { return value != null && value !== ''; }); });
+  if (hasMonthlyColumns && STUDENT_MONTHLY_PRICE_HEADERS.some(function(header, i) { return rows[0][i + 6] !== header; })) throw new Error('學員月繳價格工作表欄位不符，請聯絡管理員。');
   var index = new Map();
   rows.slice(1).forEach(function(row, i) {
     if (!row[0]) return;
@@ -565,10 +570,13 @@ function studentGroupPriceData_(ss) {
   return { sheet: sheet, index: index };
 }
 
-function studentGroupPrices_(data, lineId, studentId) {
+function studentMonthlyGroupPrices_(data, lineId, studentId) { return studentGroupPrices_(data, lineId, studentId, true); }
+
+function studentGroupPrices_(data, lineId, studentId, monthly) {
   var record = data.index.get(studentGroupPriceKey_(lineId, studentId));
   var optionalPrice = function(value) { return value === '' || value == null ? null : money_(value); };
-  return { hour1: record ? optionalPrice(record.row[2]) : null, hour2: record ? optionalPrice(record.row[3]) : null };
+  var offset = monthly ? 6 : 2;
+  return { hour1: record ? optionalPrice(record.row[offset]) : null, hour2: record ? optionalPrice(record.row[offset + 1]) : null };
 }
 
 function saveStudentGroupPrices_(ss, payload, actor) {
@@ -579,22 +587,29 @@ function saveStudentGroupPrices_(ss, payload, actor) {
   var optionalPrice = function(value) { return value === '' || value === null ? '' : money_(value); };
   var one = optionalPrice(payload.groupPrices.hour1), two = optionalPrice(payload.groupPrices.hour2);
   var data = studentGroupPriceData_(ss), record = data.index.get(studentGroupPriceKey_(payload.lineId, payload.studentId));
-  if (!data.sheet && one === '' && two === '') return { status: 'success', studentGroupPricingVersion: 1, groupPrices: { hour1: null, hour2: null } };
+  var hasMonthly = Object.prototype.hasOwnProperty.call(payload, 'monthlyGroupPrices');
+  if (hasMonthly && (!payload.monthlyGroupPrices || !Object.prototype.hasOwnProperty.call(payload.monthlyGroupPrices, 'hour1') || !Object.prototype.hasOwnProperty.call(payload.monthlyGroupPrices, 'hour2'))) throw new Error('請提供一小時及二小時月繳每堂價格，留空可清除設定。');
+  var monthlyOne = hasMonthly ? optionalPrice(payload.monthlyGroupPrices.hour1) : record && record.row[6] != null ? record.row[6] : '';
+  var monthlyTwo = hasMonthly ? optionalPrice(payload.monthlyGroupPrices.hour2) : record && record.row[7] != null ? record.row[7] : '';
+  if (!data.sheet && one === '' && two === '' && monthlyOne === '' && monthlyTwo === '') return { status: 'success', studentGroupPricingVersion: 1, studentMonthlyPricingVersion: 1, groupPrices: { hour1: null, hour2: null }, monthlyGroupPrices: { hour1: null, hour2: null } };
   var sheet = data.sheet;
   if (!sheet) { sheet = ss.insertSheet(SHEET_STUDENT_GROUP_PRICES); sheet.appendRow(STUDENT_GROUP_PRICE_HEADERS); }
+  var extended = hasMonthly || sheet.getDataRange().getValues()[0].length > 6;
+  if (extended) sheet.getRange(1, 7, 1, 2).setValues([STUDENT_MONTHLY_PRICE_HEADERS]);
   var row = [payload.lineId, payload.studentId, one, two, new Date(), actor.lineId];
+  if (extended) row.push(monthlyOne, monthlyTwo);
   var firstRow = sheet.getDataRange().getValues().length + 1;
   try {
-    if (record) sheet.getRange(record.index, 1, 1, 6).setValues([row]);
+    if (record) sheet.getRange(record.index, 1, 1, row.length).setValues([row]);
     else sheet.appendRow(row);
     SpreadsheetApp.flush();
   } catch (error) {
-    if (record) sheet.getRange(record.index, 1, 1, 6).setValues([record.row.slice(0, 6)]);
+    if (record) sheet.getRange(record.index, 1, 1, row.length).setValues([row.map(function(value, i) { return record.row[i] == null ? '' : record.row[i]; })]);
     else for (var i = sheet.getDataRange().getValues().length; i >= firstRow; i--) sheet.deleteRow(i);
     SpreadsheetApp.flush();
     throw new Error('學員團課價格儲存失敗，請重新讀取後再試。');
   }
-  return { status: 'success', studentGroupPricingVersion: 1, groupPrices: { hour1: one === '' ? null : one, hour2: two === '' ? null : two } };
+  return { status: 'success', studentGroupPricingVersion: 1, studentMonthlyPricingVersion: 1, groupPrices: { hour1: one === '' ? null : one, hour2: two === '' ? null : two }, monthlyGroupPrices: { hour1: monthlyOne === '' ? null : monthlyOne, hour2: monthlyTwo === '' ? null : monthlyTwo } };
 }
 
 function privateLocations_(row) {
@@ -651,10 +666,12 @@ function bookingQuote_(ss, payload, actor, forDisplay, suppliedSlot, suppliedAcc
       var offer = slotGroupTariff_({ title: row[1], time: row[3], prices: { 1: row[7] } });
       if (offer) regular = offer.regular;
     }
-    var groupPrices = personalRate ? (suppliedGroupPrices || studentGroupPriceData_(ss)) : null;
+    var monthlyRate = monthly && [60, 120].indexOf(duration) >= 0 && Number.isInteger(monthly.count) && monthly.count > 0;
+    var groupPrices = personalRate || monthlyRate ? (suppliedGroupPrices || studentGroupPriceData_(ss)) : null;
     var fallback = personalRate ? regular : unitPrice;
     studentPrices = students.map(function(student, i) {
-      var custom = groupPrices ? studentGroupPrices_(groupPrices, payload.lineId, student.id)[duration === 60 ? 'hour1' : 'hour2'] : null;
+      var custom = groupPrices ? studentGroupPrices_(groupPrices, payload.lineId, student.id, monthlyRate)[duration === 60 ? 'hour1' : 'hour2'] : null;
+      if (custom !== null && monthlyRate) custom = money_(Math.round(custom * 100) * monthly.count / 100);
       return { studentId: student.id, label: student.nickname && String(student.nickname).trim() || '學員 ' + (i + 1), regularPrice: regular, price: custom === null ? fallback : custom, isCustom: custom !== null };
     });
     unitPrice = studentPrices.every(function(item) { return item.price === studentPrices[0].price; }) ? studentPrices[0].price : null;
