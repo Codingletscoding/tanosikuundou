@@ -1843,6 +1843,19 @@
             </section>;
         };
 
+        const coachBookingCourseInfo = (booking, slots = []) => {
+            const matches = booking.slotId == null || booking.slotId === '' ? [] : slots.filter(slot => slot.id != null && String(slot.id) === String(booking.slotId));
+            const slot = matches.length === 1 ? matches[0] : null;
+            const format = value => formatTrainingDate(value instanceof Date ? value.toISOString() : value);
+            const title = String(slot?.title || booking.slotTitle || '').trim();
+            const date = format(slot?.date) || format(booking.slotDate) || (Array.isArray(booking.courseDates) ? booking.courseDates.map(format).filter(Boolean).join('\u3001') : '');
+            return {
+                title: /^\[\u5c08\u5c6c\u6559\u7df4\u8ab2\]/.test(title) ? '\u5c08\u5c6c\u6559\u7df4\u8ab2' : title || '\u672a\u77e5\u6216\u5df2\u4e0b\u67b6\u8ab2\u7a0b',
+                date,
+                time: String(slot?.time || booking.slotTime || '').trim()
+            };
+        };
+
         const CoachSlotsView = ({ onPaymentsChanged = () => {} }) => {
           const [form, setForm] = useState({ 
             mode: 'single', title: '\u65b0\u624b\u5718\u8ab2', location: '\u95dc\u8056\u91cc\u6d3b\u52d5\u4e2d\u5fc3', teachingCoachId: '',
@@ -2205,21 +2218,24 @@
                         </div>
                     </div>
 
-                    <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
+                    <div className="coach-booking-list bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
                       <h2 className="font-bold text-lg md:text-xl mb-5 border-b pb-3 text-slate-800">&#x6700;&#x65b0;&#x9810;&#x7d04;&#x540d;&#x55ae; (&#x6559;&#x7df4;&#x5c0d;&#x5e33;&#x8207;&#x7d50;&#x8ab2;)</h2>
                       <div className="mobile-list-wrap overflow-x-auto max-h-[400px] overflow-y-auto">
                         <table className="mobile-card-table w-full min-w-max text-left text-sm md:text-base whitespace-nowrap">
                           <thead className="sticky top-0 bg-white shadow-sm z-10"><tr className="text-gray-600">
                               <th className="p-3 md:p-4">&#x5b78;&#x751f;&#x59d3;&#x540d;</th>
+                              <th className="p-3 md:p-4">&#x9810;&#x7d04;&#x8ab2;&#x7a0b;&#xff0f;&#x65e5;&#x671f;&#x6642;&#x6bb5;</th>
                               <th className="p-3 md:p-4">&#x91d1;&#x984d;</th>
                               <th className="p-3 md:p-4">&#x72c0;&#x614b; / &#x5f8c;&#x4e94;&#x78bc;</th>
                               <th className="p-3 md:p-4 text-center">&#x64cd;&#x4f5c;</th>
                           </tr></thead>
                           <tbody>
                             {bookings.slice().reverse().map((b, idx) => {
+                               const course = coachBookingCourseInfo(b, slots);
                                return (
                               <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
                                 <td data-label="&#x5b78;&#x751f;&#x59d3;&#x540d;" className="p-3 md:p-4 font-bold text-gray-800">{b.name}{b.makeupLeaveId && <span className="block text-xs font-normal text-emerald-700 mt-1">&#x6708;&#x7e73;&#x88dc;&#x8ab2;&#xff08;&#x4e0d;&#x91cd;&#x8907;&#x6536;&#x8cbb;&#xff09;</span>}</td>
+                                <td data-label="&#x9810;&#x7d04;&#x8ab2;&#x7a0b;&#xff0f;&#x65e5;&#x671f;&#x6642;&#x6bb5;" className="p-3 md:p-4 max-w-sm whitespace-normal break-words"><p className="font-bold text-slate-800">{course.title}</p><p className="text-sm text-slate-600 mt-1">&#x4e0a;&#x8ab2;&#x65e5;&#x671f;&#xff1a;{course.date || '\u65e5\u671f\u672a\u63d0\u4f9b'}</p><p className="text-sm text-slate-600 mt-1">&#x4e0a;&#x8ab2;&#x6642;&#x6bb5;&#xff1a;{course.time || '\u6642\u6bb5\u672a\u63d0\u4f9b'}</p></td>
                                 <td data-label="&#x91d1;&#x984d;" className="p-3 md:p-4 text-emerald-600 font-bold">NT$ {b.paidPrice}{['\u73fe\u5834\u73fe\u91d1','\u73fe\u91d1\u5df2\u6536'].includes(b.paymentCode) && <p className="text-xs text-amber-900 mt-1">{b.paymentCode === '\u73fe\u91d1\u5df2\u6536' ? '\u73fe\u91d1\u5df2\u6536\u6b3e' : '\u73fe\u5834\u4ed8\u73fe \u00b7 \u5c1a\u672a\u78ba\u8a8d\u6536\u6b3e'}</p>}</td>
                                 <td data-label="&#x72c0;&#x614b; / &#x5f8c;&#x4e94;&#x78bc;" className="p-3 md:p-4">
                                     {b.status === "\u5df2\u53d6\u6d88" ? <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-md">&#x5df2;&#x53d6;&#x6d88;</span> : b.status === "\u5df2\u5b8c\u8ab2" ? (
