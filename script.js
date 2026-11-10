@@ -1575,6 +1575,8 @@
             const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit' }).formatToParts(date);
             return `${parts.find(p => p.type === 'year').value}-${parts.find(p => p.type === 'month').value}`;
         };
+        const VENUE_EXPENSE_LOCATIONS = ["\u95dc\u8056\u91cc\u6d3b\u52d5\u4e2d\u5fc3", "\u4e2d\u611b\u7fbd\u7403\u9928", "\u6c38\u5eb7\u5609\u4e16", "\u6c38\u5eb7\u9a30\u8000", "\u4ec1\u5fb7\u7fbd\u6f6e", "\u83ef\u4e2d\u7fbd\u7403\u9928", "\u5357\u5340\u7fbd\u6f6e", "\u79c1\u4eba\u7403\u9928"];
+
         const VenueExpenseForm = ({ expense, onSaved, onCancel }) => {
             const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
             const [form, setForm] = useState({ date: expense?.date || today, location: expense?.location || '', amount: expense?.amount ?? '', note: expense?.note || '' });
@@ -1602,7 +1604,7 @@
                     <label className="block text-sm font-bold">&#x5834;&#x5730;&#x4f7f;&#x7528;&#x65e5;&#x671f;<input aria-label="&#x5834;&#x5730;&#x4f7f;&#x7528;&#x65e5;&#x671f;" type="date" required disabled={busy} value={form.date} onChange={event => update('date', event.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>
                     <label className="block text-sm font-bold">&#x5834;&#x5730;&#x8cbb;&#x91d1;&#x984d;<input aria-label="&#x5834;&#x5730;&#x8cbb;&#x91d1;&#x984d;" type="number" required min="0" step="0.01" disabled={busy} value={form.amount} onChange={event => update('amount', event.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>
                 </div>
-                <label className="block text-sm font-bold">&#x5834;&#x5730;&#x540d;&#x7a31;<input aria-label="&#x5834;&#x5730;&#x540d;&#x7a31;" required maxLength={120} disabled={busy} value={form.location} onChange={event => update('location', event.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>
+                <label className="block text-sm font-bold">&#x5834;&#x5730;&#x540d;&#x7a31;<select aria-label="&#x5834;&#x5730;&#x540d;&#x7a31;" required disabled={busy} value={form.location} onChange={event => update('location', event.target.value)} className="block w-full min-w-0 border rounded-lg bg-white p-3 mt-1"><option value="">&#x8acb;&#x9078;&#x64c7;&#x5834;&#x5730;</option>{expense?.location && !VENUE_EXPENSE_LOCATIONS.includes(expense.location) && <option value={expense.location}>{expense.location}&#xff08;&#x539f;&#x7d00;&#x9304;&#xff09;</option>}{VENUE_EXPENSE_LOCATIONS.map(location => <option key={location} value={location} translate="no">{location}</option>)}</select></label>
                 <label className="block text-sm font-bold">&#x5834;&#x5730;&#x8cbb;&#x5099;&#x8a3b;&#xff08;&#x9078;&#x586b;&#xff09;<input aria-label="&#x5834;&#x5730;&#x8cbb;&#x5099;&#x8a3b;&#xff08;&#x9078;&#x586b;&#xff09;" maxLength={1000} disabled={busy} value={form.note} onChange={event => update('note', event.target.value)} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>
                 <p className="text-xs text-gray-600">&#x8cbb;&#x7528;&#x4f9d;&#x5834;&#x5730;&#x4f7f;&#x7528;&#x65e5;&#x671f;&#x6b78;&#x5c6c;&#x6708;&#x4efd;&#xff0c;&#x5176;&#x4ed6;&#x6708;&#x4efd;&#x7684;&#x8cbb;&#x7528;&#x4e0d;&#x6703;&#x6263;&#x5165;&#x672c;&#x6708;&#x3002;</p>
                 {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
