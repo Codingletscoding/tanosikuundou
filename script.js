@@ -1455,6 +1455,16 @@
         // \ud83d\udd39 \u6559\u7df4\u7aef\u4e3b\u9801\u9762\u8207\u5b50\u8996\u5716
         // ==========================================
 
+        const CoachDisclosure = ({ title, sectionId, className, children }) => (
+            <details data-section={sectionId} className={`coach-disclosure group min-w-0 h-fit ${className || ''}`}>
+                <summary className="flex items-center justify-between gap-3 cursor-pointer list-none rounded-lg min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-600">
+                    <h2 className="font-bold text-lg md:text-xl min-w-0">{title}</h2>
+                    <span aria-hidden="true" className="shrink-0 text-slate-500 transition-transform group-open:rotate-180">&#x25be;</span>
+                </summary>
+                <div className="mt-4">{children}</div>
+            </details>
+        );
+
         const TeachingCoachSelect = ({ coaches, value, onChange, disabled = false, allowUnassigned = false, label = '\u6388\u8ab2\u6559\u7df4' }) => (
             <label className="block text-sm font-bold text-gray-700">{label}
                 <select aria-label={label} required={!allowUnassigned} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} className="block w-full min-w-0 border border-gray-300 rounded-lg p-3 mt-1.5 bg-white font-normal text-base disabled:bg-gray-100">
@@ -1488,8 +1498,7 @@
                 } catch (err) { setError(saved ? '\u6559\u7df4\u8cc7\u6599\u5df2\u5132\u5b58\uff0c\u4f46\u91cd\u65b0\u8b80\u53d6\u5931\u6557\uff0c\u8acb\u91cd\u65b0\u6574\u7406\u5f8c\u78ba\u8a8d\u3002' : err.message); }
                 finally { busyRef.current = false; setBusy(false); }
             };
-            return <section aria-labelledby="teaching-coaches-title" className="bg-white rounded-2xl shadow-sm border p-4 md:p-6 min-w-0">
-                <h2 id="teaching-coaches-title" className="font-bold text-lg text-slate-800">&#x6388;&#x8ab2;&#x6559;&#x7df4;&#x7ba1;&#x7406;</h2>
+            return <CoachDisclosure title="&#x6388;&#x8ab2;&#x6559;&#x7df4;&#x7ba1;&#x7406;" sectionId="teaching-coaches" className="bg-white rounded-2xl shadow-sm border p-4 md:p-6 min-w-0">
                 <p className="text-sm text-slate-500 mt-2">&#x65b0;&#x589e;&#x6559;&#x7df4;&#x59d3;&#x540d;&#x4f9b;&#x6392;&#x8ab2;&#x9078;&#x64c7;&#xff0c;&#x4e0d;&#x6703;&#x65b0;&#x589e;&#x5f8c;&#x53f0;&#x767b;&#x5165;&#x6b0a;&#x9650;&#x3002;&#x4fee;&#x6539;&#x59d3;&#x540d;&#x6703;&#x540c;&#x6b65;&#x986f;&#x793a;&#x65bc;&#x76f8;&#x95dc;&#x8ab2;&#x7a0b;&#x3002;</p>
                 {!enabled && <p role="status" className="text-sm text-amber-900 mt-3">&#x6388;&#x8ab2;&#x6559;&#x7df4;&#x529f;&#x80fd;&#x5c1a;&#x672a;&#x555f;&#x7528;&#xff0c;&#x8acb;&#x806f;&#x7d61;&#x7ba1;&#x7406;&#x54e1;&#x66f4;&#x65b0;&#x7cfb;&#x7d71;&#x3002;</p>}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-4 min-w-0">
@@ -1501,7 +1510,7 @@
                     </form>
                     <div className="min-w-0">{!coaches.length ? <p className="text-sm text-slate-500">&#x5c1a;&#x7121;&#x6388;&#x8ab2;&#x6559;&#x7df4;&#xff0c;&#x8acb;&#x5148;&#x65b0;&#x589e;&#x3002;</p> : <ul aria-label="&#x6388;&#x8ab2;&#x6559;&#x7df4;&#x540d;&#x55ae;" className="space-y-2 max-h-64 overflow-y-auto">{coaches.map(coach => <li key={coach.id} className="flex items-center justify-between gap-3 border rounded-lg p-3 min-w-0"><span className="text-sm break-all">{coach.name}</span><button type="button" aria-label={`\u7de8\u8f2f\u6559\u7df4\uff1a${coach.name}`} disabled={busy || !enabled} onClick={() => { setEditingId(coach.id); setName(coach.name); setError(''); setMessage(''); }} className="shrink-0 text-sm text-blue-700 border rounded-lg px-3 py-2">&#x7de8;&#x8f2f;</button></li>)}</ul>}</div>
                 </div>
-            </section>;
+            </CoachDisclosure>;
         };
 
         const MonthlyTariffSummary = ({ tariffs }) => (
@@ -1832,8 +1841,7 @@
                 } catch (error) { setError(error.message); }
                 finally { busyRef.current = false; setBusy(false); }
             };
-            return <section aria-labelledby={`coach-${kind}-registration-title`} className="bg-sky-50 border border-sky-200 rounded-2xl p-4 md:p-6">
-                <h2 id={`coach-${kind}-registration-title`} className="font-bold text-lg text-sky-950 mb-2">{title}</h2>
+            return <CoachDisclosure title={title} sectionId={`${kind}-registration`} className="bg-sky-50 border border-sky-200 rounded-2xl p-4 md:p-6">
                 <p className="text-sm text-sky-900 mb-4">{isMonthly ? '\u9078\u64c7\u5df2\u8a3b\u518a\u5b78\u54e1\uff0c\u4f9d\u5404\u5b78\u54e1\u7684\u6708\u7e73\u500b\u4eba\u50f9\u683c\u6216\u4e00\u822c\u6708\u7e73\u65b9\u6848\u8a08\u8cbb\uff0c\u4e0d\u5206\u6703\u54e1\u7b49\u7d1a\uff1b\u767b\u8a18\u5f8c\u70ba\u5be9\u6838\u4e2d\uff0c\u78ba\u8a8d\u6536\u6b3e\u5f8c\u518d\u6838\u51c6\u3002' : '\u9078\u64c7\u5df2\u8a3b\u518a\u5b78\u54e1\uff0c\u4f9d\u5404\u5b78\u54e1\u7684\u500b\u4eba\u5718\u8ab2\u50f9\u683c\u8a08\u8cbb\uff1b\u672a\u8a2d\u5b9a\u4f7f\u7528\u539f\u50f9\u3002\u767b\u8a18\u5f8c\u70ba\u5be9\u6838\u4e2d\uff0c\u78ba\u8a8d\u6536\u6b3e\u5f8c\u518d\u6838\u51c6\u3002'}</p>
                 {!enabled && <p role="status" className="text-sm text-amber-800 mb-4">{isMonthly ? '\u6708\u7e73\u7d71\u4e00\u50f9\u683c\u5c1a\u672a\u555f\u7528\uff0c\u8acb\u5148\u66f4\u65b0\u5f8c\u7aef\u3002' : '\u55ae\u5802\u4ee3\u767b\u8a18\u5c1a\u672a\u555f\u7528\uff0c\u8acb\u806f\u7d61\u7ba1\u7406\u54e1\u66f4\u65b0\u7cfb\u7d71\u3002'}</p>}
                 <form onSubmit={submit} className="coach-monthly-form space-y-4">
@@ -1846,7 +1854,7 @@
                     {message && <p role="status" className="text-emerald-800">{message}</p>}{error && <p role="alert" className="text-red-700">{error}</p>}
                     <button type="submit" disabled={busy || !ready} className="bg-sky-700 text-white rounded-lg px-4 py-3 font-bold disabled:opacity-50">{busy ? '\u767b\u8a18\u4e2d...' : '\u78ba\u8a8d\u4ee3\u767b\u8a18'}</button>
                 </form>
-            </section>;
+            </CoachDisclosure>;
         };
 
         const coachBookingCourseInfo = (booking, slots = []) => {
@@ -2074,6 +2082,8 @@
             setLoading(false);
           };
 
+          const visibleBookings = bookings.filter(booking => booking.status !== '\u5df2\u53d6\u6d88');
+
           return (
             <div className="space-y-6 md:space-y-8">
               {dataError && <div role="alert" className="bg-red-50 text-red-800 rounded-xl p-4"><p>{dataError}</p><button type="button" onClick={() => fetchData().catch(() => {})} className="border rounded-lg px-3 py-2 mt-2">&#x91cd;&#x65b0;&#x8b80;&#x53d6;&#x8ab2;&#x7a0b;</button></div>}
@@ -2083,13 +2093,14 @@
                 <CoachGroupRegistration kind="single" members={members} slots={slots} onSuccess={fetchData} enabled={supportsSingleRegistration} />
                 <CoachGroupRegistration kind="monthly" members={members} slots={slots} onSuccess={fetchData} enabled={!!monthlyTariffs} />
               </div>
-              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
-                <div><h2 className="font-bold text-amber-950">&#x6708;&#x7e73;&#x8acb;&#x5047;&#x8207;&#x88dc;&#x8ab2;</h2><p className="text-sm text-amber-900">&#x63d0;&#x524d;&#x81f3;&#x5c11; 14 &#x5929;&#x767b;&#x8a18;&#x8acb;&#x5047;&#xff0c;&#x518d;&#x5b89;&#x6392;&#x5176;&#x4ed6;&#x88dc;&#x8ab2;&#x65e5;&#x671f;&#x3002;</p></div>
-                <button onClick={() => setShowMonthlyLeave(true)} className="bg-amber-600 text-white px-4 py-3 rounded-lg font-bold">&#x8acb;&#x5047;&#x767b;&#x8a18;&#xff0f;&#x5b89;&#x6392;&#x88dc;&#x8ab2;</button>
-              </div>
+              <CoachDisclosure title="&#x6708;&#x7e73;&#x8acb;&#x5047;&#x53ca;&#x88dc;&#x8ab2;" sectionId="monthly-leave" className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-amber-950">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-amber-900">&#x63d0;&#x524d;&#x81f3;&#x5c11; 14 &#x5929;&#x767b;&#x8a18;&#x8acb;&#x5047;&#xff0c;&#x518d;&#x5b89;&#x6392;&#x5176;&#x4ed6;&#x88dc;&#x8ab2;&#x65e5;&#x671f;&#x3002;</p>
+                  <button onClick={() => setShowMonthlyLeave(true)} className="bg-amber-600 text-white px-4 py-3 rounded-lg font-bold">&#x8acb;&#x5047;&#x767b;&#x8a18;&#xff0f;&#x5b89;&#x6392;&#x88dc;&#x8ab2;</button>
+                </div>
+              </CoachDisclosure>
               <div className="coach-workspace grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
-                <div className="coach-editor bg-white p-5 md:p-8 rounded-2xl shadow-sm border min-w-0 col-span-1 h-fit">
-                  <h2 className="font-bold text-lg md:text-xl mb-5 border-b pb-3">&#x65b0;&#x589e;&#x8ab2;&#x7a0b; / &#x958b;&#x653e;&#x6642;&#x6bb5;</h2>
+                <CoachDisclosure title="&#x65b0;&#x589e;&#x8ab2;&#x7a0b; / &#x958b;&#x653e;&#x6642;&#x6bb5;" sectionId="new-course" className="coach-editor bg-white p-5 md:p-8 rounded-2xl shadow-sm border min-w-0 col-span-1 h-fit">
                   <form onSubmit={handleAddSlot} className="space-y-4">
                     <TeachingCoachSelect coaches={teachingCoaches} value={form.teachingCoachId} onChange={teachingCoachId => setForm(prev => ({ ...prev, teachingCoachId }))} disabled={loading || !supportsTeachingCoaches} />
                     {!supportsTeachingCoaches ? <p className="text-sm text-amber-900">&#x6388;&#x8ab2;&#x6559;&#x7df4;&#x529f;&#x80fd;&#x5c1a;&#x672a;&#x555f;&#x7528;&#xff0c;&#x8acb;&#x806f;&#x7d61;&#x7ba1;&#x7406;&#x54e1;&#x66f4;&#x65b0;&#x7cfb;&#x7d71;&#x3002;</p> : !teachingCoaches.length && <p className="text-sm text-slate-500">&#x8acb;&#x5148;&#x5728;&#x6388;&#x8ab2;&#x6559;&#x7df4;&#x7ba1;&#x7406;&#x65b0;&#x589e;&#x6559;&#x7df4;&#x3002;</p>}
@@ -2192,14 +2203,11 @@
                     </div>}
                     <button type="submit" disabled={loading || pricingBusy || (form.mode === 'monthly' && (!monthlyTariffs || !tariff)) || !supportsTeachingCoaches || !teachingCoaches.some(coach => coach.id === form.teachingCoachId) || (form.mode === 'coach' && !!coachHoursError)} className="w-full bg-slate-800 text-white p-4 rounded-lg font-bold text-lg mt-6 active:scale-[0.98] transition">&#x4e0a;&#x67b6;&#x6642;&#x6bb5;</button>
                   </form>
-                </div>
+                </CoachDisclosure>
 
                 <div className="coach-results min-w-0 col-span-1 md:col-span-2 space-y-6 md:space-y-8">
-                    <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
-                        <div className="flex justify-between items-center mb-5 border-b pb-3">
-                            <h2 className="font-bold text-lg md:text-xl text-emerald-700">&#x5df2;&#x958b;&#x8ab2;&#x7a0b;&#x8207;&#x6642;&#x6bb5;</h2>
-                            <span className="text-sm font-bold text-gray-500 bg-gray-100 px-3 py-1 rounded-full">&#x5171; {slots.length} &#x5802;</span>
-                        </div>
+                    <CoachDisclosure title="&#x5df2;&#x958b;&#x8ab2;&#x7a0b;&#x8207;&#x6642;&#x6bb5;" sectionId="courses" className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
+                        <p className="text-sm font-bold text-gray-500 mb-3">&#x5171; {slots.length} &#x5802;</p>
                         <div className="mobile-list-wrap overflow-x-auto max-h-[400px] overflow-y-auto">
                           <table className="mobile-card-table w-full min-w-max text-left text-sm md:text-base whitespace-nowrap">
                             <thead className="sticky top-0 bg-white shadow-sm z-10"><tr className="text-gray-600"><th className="p-3 md:p-4">&#x8ab2;&#x7a0b;&#x540d;&#x7a31;</th><th className="p-3 md:p-4">&#x65e5;&#x671f;/&#x6642;&#x9593;</th><th className="p-3 md:p-4 text-center">&#x9032;&#x5ea6;</th><th className="p-3 md:p-4 text-center">&#x64cd;&#x4f5c;</th></tr></thead>
@@ -2222,10 +2230,9 @@
                             </tbody>
                           </table>
                         </div>
-                    </div>
+                    </CoachDisclosure>
 
-                    <div className="coach-booking-list bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
-                      <h2 className="font-bold text-lg md:text-xl mb-5 border-b pb-3 text-slate-800">&#x6700;&#x65b0;&#x9810;&#x7d04;&#x540d;&#x55ae; (&#x6559;&#x7df4;&#x5c0d;&#x5e33;&#x8207;&#x7d50;&#x8ab2;)</h2>
+                    <CoachDisclosure title="&#x6700;&#x65b0;&#x9810;&#x7d04;&#x540d;&#x55ae;&#xff08;&#x6559;&#x7df4;&#x5c0d;&#x5e33;&#x8207;&#x7d50;&#x8ab2;&#xff09;" sectionId="bookings" className="coach-booking-list bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
                       <div className="mobile-list-wrap overflow-x-auto max-h-[400px] overflow-y-auto">
                         <table className="mobile-card-table w-full min-w-max text-left text-sm md:text-base whitespace-nowrap">
                           <thead className="sticky top-0 bg-white shadow-sm z-10"><tr className="text-gray-600">
@@ -2236,7 +2243,8 @@
                               <th className="p-3 md:p-4 text-center">&#x64cd;&#x4f5c;</th>
                           </tr></thead>
                           <tbody>
-                            {bookings.slice().reverse().map((b, idx) => {
+                            {!visibleBookings.length && <tr><td colSpan="5" className="p-6 text-center text-gray-500">&#x76ee;&#x524d;&#x6c92;&#x6709;&#x53ef;&#x986f;&#x793a;&#x7684;&#x9810;&#x7d04;</td></tr>}
+                            {visibleBookings.slice().reverse().map((b, idx) => {
                                const course = coachBookingCourseInfo(b, slots);
                                return (
                               <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
@@ -2288,7 +2296,7 @@
                           </tbody>
                         </table>
                       </div>
-                    </div>
+                    </CoachDisclosure>
                 </div>
               </div>
               {editingSlot && <EditSlotModal slot={editingSlot} monthlyTariffs={monthlyTariffs} teachingCoaches={teachingCoaches} supportsTeachingCoaches={supportsTeachingCoaches} onClose={() => setEditingSlot(null)} onSuccess={fetchData} />}
