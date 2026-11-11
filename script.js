@@ -966,7 +966,7 @@
           const nextMonth = () => setCurrentMonth(new Date(year, month + 1, 1));
           const prevMonth = () => setCurrentMonth(new Date(year, month - 1, 1));
 
-          const dailySlots = slots.filter(s => doesSlotMatchDate(s, selectedDate));
+          const dailySlots = slots.filter(slot => doesSlotMatchDate(slot, selectedDate) && (slot.title.startsWith('[\u5c08\u5c6c\u6559\u7df4\u8ab2]') ? studentCount <= 2 && Number(slot.remaining) >= 1 : Number(slot.remaining) >= studentCount));
 
           if (status === 'success') return (
             <div className="p-8 text-center bg-white rounded-xl shadow-md m-6 md:m-10 border-t-4 border-emerald-500">
@@ -1030,7 +1030,7 @@
               <div className="booking-slots p-4 md:p-0 w-full md:w-2/3">
                 <h3 className="font-bold text-gray-800 mb-4 ml-1 text-sm md:text-lg border-b-2 border-emerald-500 w-fit pb-1">&#x53ef;&#x9810;&#x7d04;&#x6642;&#x6bb5;</h3>
                 {dailySlots.length === 0 ? (
-                    <div className="text-center text-gray-400 py-12 bg-white rounded-xl border border-dashed text-sm md:text-base">&#x672c;&#x65e5;&#x7121;&#x6392;&#x5b9a;&#x8ab2;&#x7a0b;</div>
+                    <div className="text-center text-gray-400 py-12 bg-white rounded-xl border border-dashed text-sm md:text-base">&#x672c;&#x65e5;&#x66ab;&#x7121;&#x53ef;&#x9810;&#x7d04;&#x6642;&#x6bb5;</div>
                 ) : (
                     <div className="space-y-4">
                         {dailySlots.map(slot => {
