@@ -849,37 +849,11 @@
             <article aria-label="&#x6a02;&#x52d5;&#x7fbd;&#x7403;&#x54c1;&#x724c;&#x4ecb;&#x7d39;" className="m-4 md:mx-8 mt-5 md:mt-8 p-5 md:p-8 bg-white rounded-2xl border border-amber-100 border-t-4 border-t-amber-500 shadow-sm text-slate-700">
                 <h3 className="text-lg md:text-2xl font-bold leading-relaxed text-slate-900 mb-5">&#x6211;&#x5011;&#x76f8;&#x4fe1;&#xff0c;&#x904b;&#x52d5;&#x7684;&#x50f9;&#x503c;&#x4e0d;&#x53ea;&#x5728;&#x65bc;&#x6280;&#x8853;&#x7684;&#x63d0;&#x5347;&#xff0c;&#x66f4;&#x5728;&#x65bc;&#x904e;&#x7a0b;&#x4e2d;&#x7684;&#x5feb;&#x6a02;&#x3001;&#x5065;&#x5eb7;&#x8207;&#x6210;&#x9577;&#x3002;</h3>
                 <div className="space-y-3 text-sm md:text-base leading-7">
-                    <p>&#x6a02;&#x52d5;&#x7fbd;&#x7403;&#x81f4;&#x529b;&#x65bc;&#x6253;&#x9020;&#x4e00;&#x500b;&#x80fd;&#x5920;&#x8f15;&#x9b06;&#x63a5;&#x89f8;&#x3001;&#x81ea;&#x5728;&#x5b78;&#x7fd2;&#x3001;&#x6301;&#x7e8c;&#x4eab;&#x53d7;&#x7684;&#x7fbd;&#x7403;&#x6559;&#x5b78;&#x74b0;&#x5883;&#x3002;</p>
+                    <p>&#x6a02;&#x52d5;&#x7fbd;&#x7403;&#x81f4;&#x529b;&#x65bc;&#x6253;&#x9020;&#x4e00;&#x500b;&#x8b93;&#x4eba;&#x80fd;&#x5920;&#x8f15;&#x9b06;&#x63a5;&#x89f8;&#x3001;&#x81ea;&#x5728;&#x5b78;&#x7fd2;&#x3001;&#x6301;&#x7e8c;&#x4eab;&#x53d7;&#x7684;&#x7fbd;&#x7403;&#x6559;&#x5b78;&#x74b0;&#x5883;&#x3002;</p>
                     <p>&#x6211;&#x5011;&#x4e0d;&#x8ffd;&#x6c42;&#x67af;&#x71e5;&#x4e4f;&#x5473;&#x7684;&#x82e6;&#x7df4;&#xff0c;&#x4e5f;&#x4e0d;&#x4ee5;&#x6bcf;&#x500b;&#x4eba;&#x90fd;&#x5fc5;&#x9808;&#x6210;&#x70ba;&#x7af6;&#x6280;&#x9078;&#x624b;&#x70ba;&#x76ee;&#x6a19;&#x3002;</p>
                     <p>&#x6211;&#x5011;&#x5e0c;&#x671b;&#x900f;&#x904e;&#x79d1;&#x5b78;&#x5316;&#x7684;&#x6559;&#x5b78;&#x65b9;&#x5f0f;&#xff0c;&#x8b93;&#x6bcf;&#x4f4d;&#x5b78;&#x54e1;&#x7406;&#x89e3;&#x52d5;&#x4f5c;&#x3001;&#x8a8d;&#x8b58;&#x81ea;&#x5df1;&#x7684;&#x8eab;&#x9ad4;&#xff0c;&#x5728;&#x4eab;&#x53d7;&#x904b;&#x52d5;&#x6a02;&#x8da3;&#x7684;&#x540c;&#x6642;&#xff0c;&#x9010;&#x6b65;&#x5efa;&#x7acb;&#x6b63;&#x78ba;&#x7684;&#x7fbd;&#x7403;&#x6280;&#x8853;&#x3002;</p>
+                    <p>&#x611f;&#x8b1d;&#x6bcf;&#x4e00;&#x4f4d;&#x9858;&#x610f;&#x6295;&#x5165;&#x6642;&#x9593;&#x5b78;&#x7fd2;&#x7684;&#x5b78;&#x54e1;&#xff0c;&#x73cd;&#x60dc;&#x5f7c;&#x6b64;&#x7684;&#x4fe1;&#x4efb;&#x8207;&#x966a;&#x4f34;&#x3002;&#x8b93;&#x7fbd;&#x7403;&#x4e0d;&#x53ea;&#x662f;&#x904b;&#x52d5;&#xff0c;&#x66f4;&#x6210;&#x70ba;&#x9023;&#x7d50;&#x4eba;&#x8207;&#x4eba;&#x3001;&#x8c50;&#x5bcc;&#x751f;&#x6d3b;&#x7684;&#x6a4b;&#x6881;&#x3002;</p>
                 </div>
-                <section aria-labelledby="brand-teaching-features" className="mt-7">
-                    <h4 id="brand-teaching-features" className="text-base md:text-lg font-bold text-slate-900 mb-4">&#x6211;&#x5011;&#x7684;&#x6559;&#x5b78;&#x7279;&#x8272;</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-amber-50 rounded-xl p-4 min-w-0">
-                            <h5 className="font-bold text-amber-900 mb-2">&#x56e0;&#x6750;&#x65bd;&#x6559;&#xff0c;&#x800c;&#x975e;&#x7d71;&#x4e00;&#x8ab2;&#x8868;</h5>
-                            <p className="text-sm md:text-base leading-7">&#x5c0a;&#x91cd;&#x6bcf;&#x4f4d;&#x5b78;&#x54e1;&#x7684;&#x9ad4;&#x80fd;&#x3001;&#x7a0b;&#x5ea6;&#x8207;&#x5b78;&#x7fd2;&#x901f;&#x5ea6;&#xff0c;&#x4f9d;&#x7167;&#x500b;&#x4eba;&#x9700;&#x6c42;&#x8abf;&#x6574;&#x8a13;&#x7df4;&#x5167;&#x5bb9;&#xff0c;&#x8b93;&#x6bcf;&#x500b;&#x4eba;&#x90fd;&#x80fd;&#x627e;&#x5230;&#x9069;&#x5408;&#x81ea;&#x5df1;&#x7684;&#x5b78;&#x7fd2;&#x65b9;&#x5f0f;&#x3002;</p>
-                        </div>
-                        <div className="bg-amber-50 rounded-xl p-4 min-w-0">
-                            <h5 className="font-bold text-amber-900 mb-2">&#x79d1;&#x5b78;&#x6559;&#x5b78;&#xff0c;&#x800c;&#x975e;&#x76f2;&#x76ee;&#x82e6;&#x7df4;</h5>
-                            <p className="text-sm md:text-base leading-7">&#x91cd;&#x8996;&#x4eba;&#x9ad4;&#x52d5;&#x4f5c;&#x539f;&#x7406;&#x3001;&#x8eab;&#x9ad4;&#x5354;&#x8abf;&#x8207;&#x6b63;&#x78ba;&#x767c;&#x529b;&#xff0c;&#x900f;&#x904e;&#x6709;&#x76ee;&#x7684;&#x3001;&#x6709;&#x65b9;&#x6cd5;&#x7684;&#x7df4;&#x7fd2;&#x63d0;&#x5347;&#x5b78;&#x7fd2;&#x6548;&#x7387;&#xff0c;&#x4e26;&#x91cd;&#x8996;&#x904b;&#x52d5;&#x5b89;&#x5168;&#x3002;</p>
-                        </div>
-                        <div className="bg-amber-50 rounded-xl p-4 min-w-0">
-                            <h5 className="font-bold text-amber-900 mb-2">&#x4eab;&#x53d7;&#x904e;&#x7a0b;&#xff0c;&#x800c;&#x975e;&#x53ea;&#x6709;&#x7d50;&#x679c;</h5>
-                            <p className="text-sm md:text-base leading-7">&#x6211;&#x5011;&#x76f8;&#x4fe1;&#xff0c;&#x771f;&#x6b63;&#x80fd;&#x8b93;&#x4eba;&#x6301;&#x7e8c;&#x904b;&#x52d5;&#x7684;&#x52d5;&#x529b;&#xff0c;&#x4f86;&#x81ea;&#x5feb;&#x6a02;&#x8207;&#x6210;&#x5c31;&#x611f;&#x3002;&#x6bcf;&#x4e00;&#x6b21;&#x6210;&#x529f;&#x64ca;&#x7403;&#x3001;&#x6bcf;&#x4e00;&#x500b;&#x52d5;&#x4f5c;&#x7684;&#x6539;&#x5584;&#xff0c;&#x90fd;&#x662f;&#x503c;&#x5f97;&#x4eab;&#x53d7;&#x7684;&#x9032;&#x6b65;&#x3002;</p>
-                        </div>
-                        <div className="bg-amber-50 rounded-xl p-4 min-w-0">
-                            <h5 className="font-bold text-amber-900 mb-2">&#x5fc3;&#x61f7;&#x611f;&#x6069;&#xff0c;&#x73cd;&#x60dc;&#x6bcf;&#x6b21;&#x76f8;&#x9047;</h5>
-                            <p className="text-sm md:text-base leading-7">&#x611f;&#x8b1d;&#x6bcf;&#x4e00;&#x4f4d;&#x9858;&#x610f;&#x6295;&#x5165;&#x6642;&#x9593;&#x5b78;&#x7fd2;&#x7684;&#x5b78;&#x54e1;&#xff0c;&#x73cd;&#x60dc;&#x5f7c;&#x6b64;&#x7684;&#x4fe1;&#x4efb;&#x8207;&#x966a;&#x4f34;&#x3002;&#x8b93;&#x7fbd;&#x7403;&#x4e0d;&#x53ea;&#x662f;&#x904b;&#x52d5;&#xff0c;&#x66f4;&#x6210;&#x70ba;&#x9023;&#x7d50;&#x4eba;&#x8207;&#x4eba;&#x3001;&#x8c50;&#x5bcc;&#x751f;&#x6d3b;&#x7684;&#x6a4b;&#x6881;&#x3002;</p>
-                        </div>
-                    </div>
-                </section>
-                <section aria-labelledby="brand-vision" className="mt-7 text-sm md:text-base leading-7">
-                    <h4 id="brand-vision" className="text-base md:text-lg font-bold text-slate-900 mb-3">&#x6211;&#x5011;&#x7684;&#x9858;&#x666f;</h4>
-                    <p>&#x8b93;&#x66f4;&#x591a;&#x4eba;&#x4e0d;&#x53d7;&#x5e74;&#x9f61;&#x8207;&#x7a0b;&#x5ea6;&#x9650;&#x5236;&#xff0c;&#x90fd;&#x80fd;&#x900f;&#x904e;&#x79d1;&#x5b78;&#x3001;&#x5065;&#x5eb7;&#x800c;&#x5feb;&#x6a02;&#x7684;&#x7fbd;&#x7403;&#x5b78;&#x7fd2;&#xff0c;&#x57f9;&#x990a;&#x7d42;&#x8eab;&#x904b;&#x52d5;&#x7684;&#x7fd2;&#x6163;&#x3002;</p>
-                    <p className="font-bold text-amber-900 mt-4">&#x4ee5;&#x5feb;&#x6a02;&#x70ba;&#x521d;&#x5fc3;&#xff0c;&#x4ee5;&#x5065;&#x5eb7;&#x70ba;&#x6839;&#x672c;&#xff0c;&#x4ee5;&#x79d1;&#x5b78;&#x70ba;&#x65b9;&#x6cd5;&#xff0c;&#x4ee5;&#x904b;&#x52d5;&#x70ba;&#x5be6;&#x8e10;&#xff0c;&#x4ee5;&#x611f;&#x6069;&#x70ba;&#x614b;&#x5ea6;&#x3002;</p>
-                    <p className="text-slate-800 mt-3">&#x6a02;&#x52d5;&#x7fbd;&#x7403;&#xff0c;&#x8b93;&#x6bcf;&#x4e00;&#x6b21;&#x63ee;&#x62cd;&#xff0c;&#x90fd;&#x6210;&#x70ba;&#x751f;&#x6d3b;&#x4e2d;&#x7684;&#x7f8e;&#x597d;&#x6642;&#x523b;&#x3002;</p>
-                </section>
             </article>
         );
 
