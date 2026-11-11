@@ -1128,6 +1128,8 @@ function cleanupEmptyCourses_(ss, now) {
   for (var i = rows.length - 1; i >= 1; i--) {
     var row = rows[i], id = String(row[0] || '');
     if (!id || !row[1] || ids.get(id) !== 1 || reserved.has(id)) continue;
+    // 月繳團課保留供教練補開及代登記，不受六小時或已過期清理規則影響。
+    if (/^\[月繳/.test(String(row[1]).trim())) continue;
     if (row[5] === '' || row[5] == null || row[6] === '' || row[6] == null) continue;
     var capacity = Number(row[5]), remaining = Number(row[6]);
     // 佔用名額或資料異常時保留，即使舊預約列已不在也不誤刪。

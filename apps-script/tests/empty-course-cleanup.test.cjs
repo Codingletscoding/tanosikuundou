@@ -78,12 +78,22 @@ test('supports Taiwan midnight, UTC sheet timestamps, date cells and private cou
     assert.equal(f.context.cleanupEmptyCourses().deletedSlotIds[0], 'private');
   }
 });
-test('monthly bundles use the earliest explicit session, not the next session or input order', () => {
-  const f = fixture();
-  f.rows['可用時段'][1] = course('monthly', { 1: '[月繳4堂] 團課', 2: '2026年 11/26, 11/5, 11/12, 11/19 (週四)' });
-  assert.equal(f.context.cleanupEmptyCourses().deletedSlotIds[0], 'monthly');
-  const nextYear = fixture(); nextYear.rows['可用時段'][1][2] = '2027年 11/5, 11/12 (週五)';
-  assert.equal(nextYear.context.cleanupEmptyCourses().deletedSlotIds.length, 0);
+test('monthly bundles survive the six-hour cutoff and remain after every session has ended', () => {
+  for (const now of [cutoff, Date.parse('2026-12-31T23:59:59+08:00')]) {
+    const f = fixture({ now });
+    f.rows['可用時段'][1] = course('monthly', { 1: '  [月繳4堂] 團課', 2: '2026年 11/26, 11/5, 11/12, 11/19 (週四)' });
+    const before = JSON.stringify(f.rows);
+    assert.equal(f.context.cleanupEmptyCourses().deletedSlotIds.length, 0);
+    assert.equal(JSON.stringify(f.rows), before);
+  }
+});
+test('monthly exemption leaves the existing single and private course cutoff unchanged', () => {
+  const f = fixture(); f.rows['可用時段'].push(
+    course('monthly', { 1: '[月繳4堂] 團課', 2: '2026年 10/1, 10/8, 10/15, 10/22' }),
+    course('private', { 1: '[專屬教練課] 1v1:1000|1v2:1500' })
+  );
+  assert.deepEqual(Array.from(f.context.cleanupEmptyCourses().deletedSlotIds), ['private', 'empty']);
+  assert.equal(f.rows['可用時段'][1][0], 'monthly');
 });
 test('all active, pending, completed, legacy and unknown booking statuses protect the class', () => {
   for (const status of ['審核中', '預約成功', '已完課', '成功', '已完成', '', '未知']) {
