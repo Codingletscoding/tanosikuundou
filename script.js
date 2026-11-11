@@ -111,6 +111,7 @@
 
         const doesSlotMatchDate = (slot, dateStr) => {
             if (!slot || !slot.date || !dateStr) return false;
+            if (Array.isArray(slot.monthlySessions)) return slot.monthlySessions.some(session => session.date === dateStr);
             const sDate = String(slot.date);
             if (sDate.includes(dateStr)) return true;
             if (sDate.includes('T') && sDate.includes('Z')) {
@@ -913,6 +914,11 @@
             </div>;
         };
 
+        const MonthlySessionSummary = ({ slot }) => !slot.monthlySessions?.length ? null : <details className="monthly-session-summary text-sm text-slate-600 mt-2 whitespace-normal">
+            <summary className="cursor-pointer font-semibold text-blue-800">&#x9010;&#x5802;&#x65e5;&#x671f;&#x8207;&#x6559;&#x7df4;&#xff08;{slot.monthlySessions.length} &#x5802;&#xff09;</summary>
+            <ul className="space-y-1 mt-2">{slot.monthlySessions.map(session => <li key={session.date} className="break-words">{session.date} &#xb7; {session.teachingCoachName || '\u672a\u6307\u5b9a'}</li>)}</ul>
+        </details>;
+
         const StudentBookingView = ({ profile, userRecord, onBooked }) => {
           const [slots, setSlots] = useState([]);
           const [supportsSharedCoach, setSupportsSharedCoach] = useState(false);
@@ -945,6 +951,11 @@
                 const result = await fetchAPI({ action: 'getBookingQuote', lineId: profile ? profile.userId : '', slotId: slot.id, coachType: type, location: selectedLoc });
                 if (result.status !== 'success' || !result.quote?.eligible) throw new Error(result.message || '\u7121\u6cd5\u53d6\u5f97\u8ab2\u7a0b\u5831\u50f9\uff0c\u8acb\u91cd\u65b0\u8b80\u53d6\u3002');
                 const quote = result.quote;
+                if (slot.priceQuote?.monthlyScheduleKey && quote.monthlyScheduleKey !== slot.priceQuote.monthlyScheduleKey) {
+                    const fresh = await fetchAPI({ action: 'getSlots', lineId: profile ? profile.userId : '' });
+                    if (fresh.status === 'success') setSlots((fresh.slots || []).filter(item => item.id && item.title && item.date));
+                    throw new Error('\u8ab2\u7a0b\u65e5\u671f\u6216\u6388\u8ab2\u6559\u7df4\u5df2\u6709\u8b8a\u66f4\uff0c\u8acb\u91cd\u65b0\u8b80\u53d6\u4e26\u78ba\u8a8d\u6392\u7a0b\u3002');
+                }
                 const titleDisplay = type ? `\u5c08\u5c6c\u6559\u7df4\u8ab2 (${type} \u65bc ${selectedLoc})` : slot.title;
                 setAgreementAccepted(false);
                 setBookingTarget({ slot, titleDisplay, myPrice: quote.totalPrice, quote, type, selectedLoc });
@@ -962,6 +973,7 @@
                 lineId: profile ? profile.userId : '', 
                 expectedTotalPrice: bookingTarget.myPrice,
                 expectedStudentPrices: bookingTarget.quote.studentPrices,
+                expectedMonthlyScheduleKey: bookingTarget.quote.monthlyScheduleKey,
                 coachType: bookingTarget.type, location: bookingTarget.selectedLoc,
                 paymentCode: bookingTarget.slot.title.startsWith('[\u5c08\u5c6c\u6559\u7df4\u8ab2]') ? '\u73fe\u5834\u73fe\u91d1' : (paymentCode || '')
             });
@@ -1013,7 +1025,7 @@
                       const availableSlots = slots.filter(slot => doesSlotMatchDate(slot, dateStr) && (slot.title.startsWith('[\u5c08\u5c6c\u6559\u7df4\u8ab2]') ? studentCount <= 2 && Number(slot.remaining) >= 1 : Number(slot.remaining) >= studentCount));
                       const hasAvailableGroupClass = availableSlots.some(slot => !slot.title.startsWith('[\u5c08\u5c6c\u6559\u7df4\u8ab2]'));
                       const hasAvailableCoachSlot = availableSlots.some(slot => slot.title.startsWith('[\u5c08\u5c6c\u6559\u7df4\u8ab2]'));
-                      const teachingCoachNames = [...new Set(availableSlots.map(slot => slot.teachingCoachName || '\u672a\u6307\u5b9a'))];
+                      const teachingCoachNames = [...new Set(availableSlots.map(slot => slotCoachForDate(slot, dateStr) || '\u672a\u6307\u5b9a'))];
                       
                       if (!hasAvailableGroupClass && !hasAvailableCoachSlot) return <div key={i} className="min-h-[76px]" aria-hidden="true" />;
                       const isSelected = dateStr === selectedDate;
@@ -1073,7 +1085,7 @@
                                     <p className="text-xs text-green-900 mt-1">&#x6bcf;&#x5c0f;&#x6642;&#x6559;&#x7df4;&#x8cbb;&#xff0c;&#x73fe;&#x5834;&#x73fe;&#x91d1;&#x4ed8;&#x6b3e;&#xff1b;&#x4e0d;&#x542b;&#x5834;&#x5730;&#x8cbb;&#xff0c;&#x5834;&#x5730;&#x7531;&#x5b78;&#x54e1;&#x81ea;&#x884c;&#x9810;&#x7d04;&#x3002;</p>
                                     <div className="font-semibold text-gray-800 mt-2 text-sm md:text-base">{slot.date}</div>
                                     <div className="text-sm text-gray-500 mt-1">{slot.time} &#x2022; {slotDisplayLocation}</div>
-                                    <p className="text-sm text-gray-600 mt-1 break-words">&#x6388;&#x8ab2;&#x6559;&#x7df4;&#xff1a;{slot.teachingCoachName || '\u672a\u6307\u5b9a'}</p>
+                                    <p className="text-sm text-gray-600 mt-1 break-words">&#x6388;&#x8ab2;&#x6559;&#x7df4;&#xff1a;{slotCoachForDate(slot, selectedDate) || '\u672a\u6307\u5b9a'}</p><MonthlySessionSummary slot={slot} />
                                     
                                     {studentCount === 2 && !supportsSharedCoach && <p className="mt-3 text-sm text-amber-800">&#x96d9;&#x4eba;&#x5e33;&#x865f;&#x7684;&#x5c08;&#x5c6c;&#x6559;&#x7df4;&#x8ab2;&#x9810;&#x7d04;&#x5c1a;&#x672a;&#x555f;&#x7528;&#xff0c;&#x8acb;&#x806f;&#x7d61;&#x6559;&#x7df4;&#x3002;</p>}
                                     {!isFull && (
@@ -1122,7 +1134,7 @@
                                   <div className={`font-bold text-lg md:text-xl leading-tight ${isFull ? 'text-gray-500' : 'text-blue-700'}`}>{slot.title}</div>
                                   <div className="font-semibold text-gray-800 mt-2 text-sm md:text-base">{slot.date}</div>
                                   <div className="text-sm text-gray-500 mt-1">{slot.time} &#x2022; {safeLocation}</div>
-                                  <p className="text-sm text-gray-600 mt-1 break-words">&#x6388;&#x8ab2;&#x6559;&#x7df4;&#xff1a;{slot.teachingCoachName || '\u672a\u6307\u5b9a'}</p>
+                                  <p className="text-sm text-gray-600 mt-1 break-words">&#x6388;&#x8ab2;&#x6559;&#x7df4;&#xff1a;{slotCoachForDate(slot, selectedDate) || '\u672a\u6307\u5b9a'}</p><MonthlySessionSummary slot={slot} />
                                 </div>
                                 <button onClick={() => handleBookClick(slot)} disabled={(status==='booking' || status==='quoting') || isFull} className={`font-bold py-2.5 px-6 rounded-lg shadow-sm text-sm md:text-base active:scale-95 transition-transform whitespace-nowrap ${isFull ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>{isFull ? '\u5df2\u984d\u6eff' : '\u9810\u7d04'}</button>
                               </div>
@@ -1154,7 +1166,7 @@
                             <div>
                                 <div className="text-sm text-gray-500 mb-1">&#x9810;&#x7d04;&#x9805;&#x76ee;</div>
                                 <div className="font-bold text-lg text-slate-800 leading-tight">{bookingTarget.titleDisplay}</div>
-                                <div className="text-sm text-emerald-600 font-bold mt-1.5">{bookingTarget.slot.date} {bookingTarget.slot.time}</div>
+                                <div className="text-sm text-emerald-600 font-bold mt-1.5">{bookingTarget.slot.date} {bookingTarget.slot.time}</div><MonthlySessionSummary slot={bookingTarget.slot} />
                             </div>
                             <div>
                                 <div className="text-sm text-gray-500 mb-1">&#x61c9;&#x7e73;&#x91d1;&#x984d;</div>
@@ -1520,13 +1532,16 @@
 
         const MonthlyTariffSummary = ({ tariffs }) => (
             <div className="monthly-tariff-summary bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-2 text-sm text-blue-950">
-                <p className="font-bold">&#x6708;&#x7e73;&#x7d71;&#x4e00;&#x6536;&#x8cbb;&#xff0c;&#x4e0d;&#x5206;&#x6703;&#x54e1;&#x7b49;&#x7d1a;</p>
+                <p className="font-bold">&#x6708;&#x7e73;&#x4e00;&#x822c;&#x512a;&#x60e0;&#x65b9;&#x6848;&#xff0c;&#x4e0d;&#x5206;&#x6703;&#x54e1;&#x7b49;&#x7d1a;</p>
                 {Object.entries(tariffs || {}).flatMap(([duration, plans]) => Object.entries(plans).map(([count, tariff]) => <p key={`${duration}-${count}`}>{duration === '60' ? '\u4e00\u5c0f\u6642' : '\u4e8c\u5c0f\u6642'} {count} &#x5802;&#xff1a;&#x539f;&#x50f9; NT$ {tariff.regular}&#xff0c;&#x512a;&#x60e0;&#x50f9; NT$ {tariff.price}</p>))}
             </div>
         );
 
         const EditSlotModal = ({ slot, onClose, onSuccess, teachingCoaches = [], supportsTeachingCoaches = false, monthlyTariffs = null }) => {
             const [form, setForm] = useState({ title: slot.title, date: slot.date, time: slot.time, location: slot.location || '', capacity: slot.capacity, prices: { ...slot.prices }, teachingCoachId: slot.teachingCoachId || '' });
+            const initialSessions = slot.monthlySessions || coachSlotDates(slot).map(date => ({ date, teachingCoachId: slot.teachingCoachId || '' }));
+            const [sessions, setSessions] = useState(initialSessions.map(({ date, teachingCoachId }) => ({ date, teachingCoachId })));
+            const supportsSessions = slot.monthlySessionsVersion === 1;
             const [busy, setBusy] = useState(false);
             const busyRef = React.useRef(false);
             const [error, setError] = useState('');
@@ -1535,14 +1550,15 @@
                 event.preventDefault();
                 if (busyRef.current) return;
                 if (isMonthly && !monthlyTariffs) { setError('\u6708\u7e73\u7d71\u4e00\u50f9\u683c\u5c1a\u672a\u555f\u7528\uff0c\u8acb\u5148\u66f4\u65b0\u5f8c\u7aef\u3002'); return; }
+                if (isMonthly && !supportsSessions) { setError('\u8acb\u5148\u66f4\u65b0 Apps Script \u5f8c\u7aef\uff0c\u624d\u80fd\u4fee\u6539\u6708\u7e73\u9010\u5802\u65e5\u671f\u8207\u6559\u7df4\u3002'); return; }
                 busyRef.current = true; setBusy(true); setError('');
                 let saved = false;
                 try {
                     const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
                     if (!accessToken) throw new Error('\u8acb\u91cd\u65b0\u767b\u5165 LINE\u3002');
                     const { teachingCoachId, ...fields } = form;
-                    const result = await fetchAPI({ action: 'updateSlot', slotId: slot.id, ...fields, ...(supportsTeachingCoaches ? { teachingCoachId } : {}), accessToken });
-                    if (!result || result.status !== 'success') throw new Error((result && result.message) || '\u8acb\u5148\u66f4\u65b0 Apps Script \u90e8\u7f72\uff0c\u652f\u63f4\u8ab2\u7a0b\u4fee\u6539\u3002');
+                    const result = await fetchAPI({ action: 'updateSlot', slotId: slot.id, ...fields, ...(supportsTeachingCoaches ? { teachingCoachId } : {}), ...(isMonthly ? { monthlySessions: sessions, expectedMonthlySessions: initialSessions.map(({ date, teachingCoachId }) => ({ date, teachingCoachId })) } : {}), accessToken });
+                    if (!result || result.status !== 'success' || (isMonthly && result.monthlySessionsVersion !== 1)) throw new Error((result && result.message) || '\u8acb\u5148\u66f4\u65b0 Apps Script \u90e8\u7f72\uff0c\u652f\u63f4\u8ab2\u7a0b\u4fee\u6539\u3002');
                     saved = true; await onSuccess(); onClose();
                 } catch (err) { setError(saved ? '\u5df2\u5132\u5b58\uff0c\u4f46\u91cd\u65b0\u8b80\u53d6\u5931\u6557\uff0c\u8acb\u95dc\u9589\u5f8c\u91cd\u65b0\u6574\u7406\u78ba\u8a8d\u3002' : err.message); }
                 finally { busyRef.current = false; setBusy(false); }
@@ -1550,11 +1566,22 @@
             return <div className="fixed inset-0 z-50 bg-slate-900 bg-opacity-60 p-3 flex items-center justify-center overflow-y-auto">
                 <div role="dialog" aria-modal="true" aria-label="&#x7de8;&#x8f2f;&#x8ab2;&#x7a0b;" className="bg-white rounded-2xl w-full min-w-0 max-w-xl max-h-[90dvh] overflow-y-auto p-4 md:p-6 my-auto">
                     <h2 className="text-lg font-bold mb-3">&#x7de8;&#x8f2f;&#x5df2;&#x958b;&#x8ab2;&#x7a0b;</h2>
-                    <p className="text-sm text-gray-600 mb-4">&#x5df2;&#x9810;&#x7d04; {Number(slot.capacity) - Number(slot.remaining)} &#x4eba;&#x3002;&#x4fee;&#x6539;&#x6536;&#x8cbb;&#x4e0d;&#x6703;&#x66f4;&#x52d5;&#x65e2;&#x6709;&#x8a02;&#x55ae;&#x91d1;&#x984d;&#xff1b;&#x4fee;&#x6539;&#x65e5;&#x671f;&#x8207;&#x6642;&#x9593;&#x6703;&#x5f71;&#x97ff;&#x65e2;&#x6709;&#x5b78;&#x751f;&#xff0c;&#x8acb;&#x53e6;&#x884c;&#x901a;&#x77e5;&#x3002;&#x6708;&#x7e73;&#x65e5;&#x671f;&#x53ca;&#x79c1;&#x4eba;&#x8ab2;&#x7a0b;&#x540d;&#x7a31;&#x8acb;&#x4fdd;&#x7559;&#x539f;&#x683c;&#x5f0f;&#x3002;</p>
+                    <p className="text-sm text-gray-600 mb-4">&#x5df2;&#x9810;&#x7d04; {Number(slot.capacity) - Number(slot.remaining)} &#x4eba;&#x3002;&#x4fee;&#x6539;&#x6536;&#x8cbb;&#x4e0d;&#x6703;&#x66f4;&#x52d5;&#x65e2;&#x6709;&#x8a02;&#x55ae;&#x91d1;&#x984d;&#xff1b;&#x4fee;&#x6539;&#x65e5;&#x671f;&#x8207;&#x6642;&#x9593;&#x6703;&#x5f71;&#x97ff;&#x65e2;&#x6709;&#x5b78;&#x751f;&#xff0c;&#x8acb;&#x53e6;&#x884c;&#x901a;&#x77e5;&#x3002;&#x79c1;&#x4eba;&#x8ab2;&#x7a0b;&#x540d;&#x7a31;&#x8acb;&#x4fdd;&#x7559;&#x539f;&#x683c;&#x5f0f;&#x3002;</p>
                     {error && <p role="alert" className="bg-red-50 text-red-800 p-3 rounded-lg mb-3">{error}</p>}
                     <form onSubmit={save} className="space-y-4">
-                        {supportsTeachingCoaches && <TeachingCoachSelect coaches={teachingCoaches} value={form.teachingCoachId} onChange={teachingCoachId => setForm(prev => ({ ...prev, teachingCoachId }))} disabled={busy} allowUnassigned={!slot.teachingCoachId} label="&#x7de8;&#x8f2f;&#x8ab2;&#x7a0b;&#x6388;&#x8ab2;&#x6559;&#x7df4;" />}
-                        {[['title','\u8ab2\u7a0b\u540d\u7a31'],['date','\u4e0a\u8ab2\u65e5\u671f'],['time','\u4e0a\u8ab2\u6642\u9593'],['location','\u5834\u5730']].map(([key,label]) => <label key={key} className="block text-sm font-bold">{label}<input aria-label={label} required disabled={busy} value={form[key]} onChange={e => setForm(prev => ({...prev,[key]:e.target.value}))} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>)}
+                        {supportsTeachingCoaches && <TeachingCoachSelect coaches={teachingCoaches} value={form.teachingCoachId} onChange={teachingCoachId => setForm(prev => ({ ...prev, teachingCoachId }))} disabled={busy} allowUnassigned={!slot.teachingCoachId} label={isMonthly ? '\u9810\u8a2d\u6388\u8ab2\u6559\u7df4\uff08\u65b0\u589e\u5802\u6578\u4f7f\u7528\uff09' : '\u7de8\u8f2f\u8ab2\u7a0b\u6388\u8ab2\u6559\u7df4'} />}
+                        {[['title','\u8ab2\u7a0b\u540d\u7a31'],['date','\u4e0a\u8ab2\u65e5\u671f'],['time','\u4e0a\u8ab2\u6642\u9593'],['location','\u5834\u5730']].filter(([key]) => !isMonthly || key !== 'date').map(([key,label]) => <label key={key} className="block text-sm font-bold">{label}<input aria-label={label} required disabled={busy} value={form[key]} onChange={e => setForm(prev => ({...prev,[key]:e.target.value}))} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>)}
+                        {isMonthly && <fieldset className="space-y-3 border rounded-xl p-3" disabled={busy || !supportsSessions}>
+                            <legend className="font-bold px-1">&#x9010;&#x5802;&#x65e5;&#x671f;&#x8207;&#x6388;&#x8ab2;&#x6559;&#x7df4;</legend>
+                            <p className="text-sm text-slate-600">&#x76ee;&#x524d; {sessions.length} &#x5802;&#x3002;&#x53ef;&#x589e;&#x52a0;&#x6216;&#x522a;&#x9664;&#x5802;&#x6578;&#xff0c;&#x65e5;&#x671f;&#x4e0d;&#x53ef;&#x91cd;&#x8907;&#xff1b;&#x5f8c;&#x7e8c;&#x9810;&#x7d04;&#x4f9d;&#x65b0;&#x5802;&#x6578;&#x5831;&#x50f9;&#xff0c;&#x65e2;&#x6709;&#x8a02;&#x55ae;&#x91d1;&#x984d;&#x4e0d;&#x8b8a;&#x3002;&#x65b0;&#x589e;&#x4e00;&#x5802;&#x6703;&#x4f7f;&#x7528;&#x4e0a;&#x65b9;&#x9810;&#x8a2d;&#x6559;&#x7df4;&#x3002;</p>
+                            {!supportsSessions && <p role="status" className="text-sm text-amber-800">&#x8acb;&#x5148;&#x66f4;&#x65b0; Apps Script &#x5f8c;&#x7aef;&#xff0c;&#x624d;&#x80fd;&#x4fee;&#x6539;&#x6708;&#x7e73;&#x9010;&#x5802;&#x65e5;&#x671f;&#x8207;&#x6559;&#x7df4;&#x3002;</p>}
+                            {sessions.map((session, index) => <div key={index} className="monthly-session-row border rounded-lg p-3 space-y-3 bg-slate-50">
+                                <div className="flex justify-between items-center gap-2"><h3 className="font-bold">&#x7b2c; {index + 1} &#x5802;</h3><button type="button" aria-label={`\u522a\u9664\u7b2c ${index + 1} \u5802`} disabled={sessions.length <= 1} onClick={() => setSessions(previous => previous.filter((_, i) => i !== index))} className="text-sm text-red-700 border border-red-200 rounded-lg px-3 py-2 disabled:opacity-40">&#x522a;&#x9664;&#x6b64;&#x5802;</button></div>
+                                <label className="block text-sm font-bold">&#x4e0a;&#x8ab2;&#x65e5;&#x671f;<input aria-label={`\u7b2c ${index + 1} \u5802\u4e0a\u8ab2\u65e5\u671f`} type="date" required value={session.date} onChange={event => setSessions(previous => previous.map((item, i) => i === index ? { ...item, date: event.target.value } : item))} className="block w-full min-w-0 border rounded-lg p-3 mt-1 bg-white" /></label>
+                                <TeachingCoachSelect coaches={teachingCoaches} value={session.teachingCoachId} onChange={teachingCoachId => setSessions(previous => previous.map((item, i) => i === index ? { ...item, teachingCoachId } : item))} allowUnassigned={!slot.teachingCoachId} label={`\u7b2c ${index + 1} \u5802\u6388\u8ab2\u6559\u7df4`} />
+                            </div>)}
+                            <button type="button" disabled={sessions.length >= 31} onClick={() => setSessions(previous => [...previous, { date: '', teachingCoachId: form.teachingCoachId }])} className="border border-blue-200 bg-blue-50 text-blue-800 rounded-lg px-4 py-3 font-bold disabled:opacity-40">&#x65b0;&#x589e;&#x4e00;&#x5802;</button>
+                        </fieldset>}
                         <label className="block text-sm font-bold">&#x7e3d;&#x540d;&#x984d;<input aria-label="&#x7e3d;&#x540d;&#x984d;" type="number" required min={Math.max(1, Number(slot.capacity)-Number(slot.remaining))} step="1" disabled={busy} value={form.capacity} onChange={e => setForm(prev=>({...prev,capacity:e.target.value}))} className="block w-full border rounded-lg p-3 mt-1" /></label>
                         <p className="text-sm text-blue-900 bg-blue-50 rounded-lg p-3">&#x55ae;&#x5802;&#x4e00;&#xff0f;&#x4e8c;&#x5c0f;&#x6642;&#x5718;&#x8ab2;&#x4f9d;&#x5b78;&#x54e1;&#x500b;&#x4eba;&#x50f9;&#x683c;&#x6536;&#x8cbb;&#xff1b;&#x8acb;&#x81f3;&#x300c;&#x5b78;&#x54e1;&#x540d;&#x55ae;&#x8207;&#x8cc7;&#x6599; &#x2192; &#x5718;&#x8ab2;&#x50f9;&#x683c;&#x300d;&#x8abf;&#x6574;&#xff0c;&#x672a;&#x8a2d;&#x5b9a;&#x4f7f;&#x7528;&#x539f;&#x50f9;&#x3002;</p>
                         {isMonthly ? <><MonthlyTariffSummary tariffs={monthlyTariffs} />{!slot.monthlyTariff?.fixed && <label className="block text-sm font-bold">&#x820a;&#x65b9;&#x6848;&#x7d71;&#x4e00;&#x6536;&#x8cbb;<input aria-label="&#x820a;&#x65b9;&#x6848;&#x7d71;&#x4e00;&#x6536;&#x8cbb;" type="number" min="0" step="0.01" required disabled={busy} value={form.prices[1] ?? ''} onChange={event => setForm(previous => ({ ...previous, prices: { ...previous.prices, 1: event.target.value } }))} className="block w-full border rounded-lg p-3 mt-1" /></label>}</> : (<fieldset className="grid grid-cols-1 sm:grid-cols-2 gap-3"><legend className="font-bold mb-2">&#x5404;&#x7b49;&#x7d1a;&#x6536;&#x8cbb;</legend>{[1,2,3,4,5].map(level=><label key={level} className="block text-sm">{LEVEL_NAMES[level]}<input aria-label={`${LEVEL_NAMES[level]}\u6536\u8cbb`} type="number" min="0" step="any" required disabled={busy} value={form.prices[level] ?? ''} onChange={e=>setForm(prev=>({...prev,prices:{...prev.prices,[level]:e.target.value}}))} className="block w-full min-w-0 border rounded-lg p-3 mt-1" /></label>)}</fieldset>)}
@@ -1673,7 +1700,12 @@
             if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() + 1 !== Number(month) || date.getUTCDate() !== Number(day)) return null;
             return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         };
+        const slotCoachForDate = (slot, date) => {
+            const session = slot.monthlySessions?.find(item => item.date === date);
+            return session ? session.teachingCoachName : slot.teachingCoachName;
+        };
         const coachSlotDates = slot => {
+            if (Array.isArray(slot?.monthlySessions)) return slot.monthlySessions.map(session => session.date);
             const raw = slot?.date instanceof Date ? slot.date.toISOString() : String(slot?.date || '').trim();
             const text = formatTrainingDate(raw);
             const single = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s|$)/);
@@ -1704,14 +1736,14 @@
                 const occupied = Number.isFinite(capacity) && Number.isFinite(remaining) ? Math.max(0, capacity - remaining) : 0;
                 dates.filter(date => date.startsWith(monthKey + '-')).forEach(date => {
                     if (!byDate.has(date)) byDate.set(date, []);
-                    byDate.get(date).push({ slot, orders, occupied, reserved: orders.length > 0 || occupied > 0 });
+                    byDate.get(date).push({ slot, orders, occupied, teachingCoachName: slotCoachForDate(slot, date), reserved: orders.length > 0 || occupied > 0 });
                 });
             });
             const leading = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
             const days = Array.from({ length: new Date(Date.UTC(year, month, 0)).getUTCDate() }, (_, index) => {
                 const date = coachCalendarDateKey(year, month, index + 1);
                 const courses = (byDate.get(date) || []).sort((a, b) => coachCourseStartMinutes(a) - coachCourseStartMinutes(b) || String(a.slot.title).localeCompare(String(b.slot.title)));
-                return { date, day: index + 1, courses, reservedCount: courses.filter(course => course.reserved).length, teachingCoachNames: [...new Set(courses.map(course => course.slot.teachingCoachName).filter(Boolean))] };
+                return { date, day: index + 1, courses, reservedCount: courses.filter(course => course.reserved).length, teachingCoachNames: [...new Set(courses.map(course => course.teachingCoachName).filter(Boolean))] };
             });
             return { leading, days, unparsed };
         };
@@ -1755,10 +1787,10 @@
                     <div aria-label="&#x7576;&#x65e5;&#x8ab2;&#x7a0b;&#x8207;&#x9810;&#x7d04;" className="min-w-0">
                         <h3 className="font-bold text-slate-800 mb-3">{selectedDate} &#xb7; &#x7576;&#x65e5;&#x8ab2;&#x7a0b;</h3>
                         {!selected?.courses.length ? <p className="text-sm text-slate-500 border border-dashed rounded-xl p-5">&#x672c;&#x65e5;&#x7121;&#x6392;&#x5b9a;&#x8ab2;&#x7a0b;</p> : <div className="space-y-3 max-h-[560px] overflow-y-auto pr-1">
-                            {selected.courses.map(({ slot, orders, occupied, reserved }) => <article key={slot.id} className="border rounded-xl p-4 bg-slate-50 min-w-0">
+                            {selected.courses.map(({ slot, orders, occupied, reserved, teachingCoachName }) => <article key={slot.id} className="border rounded-xl p-4 bg-slate-50 min-w-0">
                                 <div className="flex flex-wrap items-start justify-between gap-2"><h4 className="font-bold text-sm text-slate-800 break-words">{/^\[\u5c08\u5c6c\u6559\u7df4\u8ab2\]/.test(slot.title) ? '\u6559\u7df4\u958b\u653e\u6642\u6bb5' : slot.title}</h4><span className={`text-xs rounded px-2 py-1 ${reserved ? 'bg-amber-100 text-amber-900' : 'bg-sky-100 text-sky-800'}`}>{reserved ? '\u5df2\u6709\u9810\u7d04' : '\u5df2\u958b\u8ab2\u7a0b'}</span></div>
                                 <p className="text-sm text-slate-600 mt-2">{slot.time} &#xb7; {String(slot.location || '').startsWith('coach_loc:') ? '\u5b78\u54e1\u81ea\u9078\u5834\u5730' : slot.location}</p>
-                                <p className="text-sm text-slate-700 mt-2 break-words">&#x6388;&#x8ab2;&#x6559;&#x7df4;&#xff1a;{slot.teachingCoachName || '\u672a\u6307\u5b9a'}</p>
+                                <p className="text-sm text-slate-700 mt-2 break-words">&#x6388;&#x8ab2;&#x6559;&#x7df4;&#xff1a;{teachingCoachName || '\u672a\u6307\u5b9a'}</p>
                                 <p className="text-xs text-slate-500 mt-2">&#x5df2;&#x4f54;&#x540d;&#x984d; {occupied} &#xb7; &#x5269;&#x9918;&#x540d;&#x984d; {slot.remaining}</p>
                                 {orders.length > 0 && <details className="text-sm mt-3"><summary className="cursor-pointer font-bold text-slate-700">&#x9810;&#x7d04;&#x540d;&#x55ae;&#xff08;{orders.length} &#x4eba;&#xff09;</summary><ul className="space-y-2 mt-2">{orders.map((booking, index) => <li key={`${booking.bookingId || 'legacy'}-${index}`} className="flex flex-wrap justify-between gap-2 border-t pt-2"><span>{booking.name}</span><span className="text-xs text-slate-500">{booking.status}</span></li>)}</ul></details>}
                                 <button type="button" onClick={() => onEdit(slot)} className="text-sm text-blue-700 font-bold mt-3 px-3 py-2 bg-white border border-blue-100 rounded-lg">&#x7de8;&#x8f2f;&#x8ab2;&#x7a0b;</button>
@@ -1817,7 +1849,7 @@
                 try {
                     const accessToken = typeof liff !== 'undefined' ? liff.getAccessToken() : null;
                     if (!accessToken) throw new Error('\u8acb\u91cd\u65b0\u767b\u5165 LINE\u3002');
-                    const result = await fetchAPI({ action: isMonthly ? 'coachRegisterMonthly' : 'coachRegisterSingle', lineId, studentIds, slotId, expectedTotalPrice: quote.totalPrice, expectedStudentPrices: quote.studentPrices, accessToken });
+                    const result = await fetchAPI({ action: isMonthly ? 'coachRegisterMonthly' : 'coachRegisterSingle', lineId, studentIds, slotId, expectedTotalPrice: quote.totalPrice, expectedStudentPrices: quote.studentPrices, expectedMonthlyScheduleKey: quote.monthlyScheduleKey, accessToken });
                     if (result.status !== 'success') throw new Error(result.message || '\u767b\u8a18\u5931\u6557\uff0c\u8acb\u7a0d\u5f8c\u518d\u8a66\u3002');
                     if (result.registeredCount !== selected.length) throw new Error('\u767b\u8a18\u7d50\u679c\u4eba\u6578\u4e0d\u4e00\u81f4\uff0c\u8acb\u91cd\u65b0\u6574\u7406\u9810\u7d04\u540d\u55ae\u78ba\u8a8d\u3002');
                     setMessage(`\u5df2\u767b\u8a18 ${result.registeredCount} \u4f4d\u5b78\u751f\uff0c\u5408\u8a08 NT$ ${result.totalPrice}\uff0c\u72c0\u614b\u70ba\u5be9\u6838\u4e2d\u3002`);
@@ -2206,7 +2238,7 @@
                                 const displayLoc = safeLocation.startsWith('coach_loc:') ? '\u5b78\u54e1\u81ea\u9078\u5834\u5730' : safeLocation;
                                 return (
                                   <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
-                                    <td data-label="&#x8ab2;&#x7a0b;&#x540d;&#x7a31;" className="p-3 md:p-4"><span className="font-bold text-gray-800">{isCoach ? '\u6559\u7df4\u958b\u653e\u6642\u6bb5' : s.title}</span><span className="block text-xs text-slate-500 mt-1 whitespace-normal break-words">&#x6388;&#x8ab2;&#x6559;&#x7df4;&#xff1a;{s.teachingCoachName || '\u672a\u6307\u5b9a'}</span></td>
+                                    <td data-label="&#x8ab2;&#x7a0b;&#x540d;&#x7a31;" className="p-3 md:p-4"><span className="font-bold text-gray-800">{isCoach ? '\u6559\u7df4\u958b\u653e\u6642\u6bb5' : s.title}</span>{s.monthlySessions ? <MonthlySessionSummary slot={s} /> : <span className="block text-xs text-slate-500 mt-1 whitespace-normal break-words">&#x6388;&#x8ab2;&#x6559;&#x7df4;&#xff1a;{s.teachingCoachName || '\u672a\u6307\u5b9a'}</span>}</td>
                                     <td data-label="&#x65e5;&#x671f;/&#x6642;&#x9593;" className="p-3 md:p-4 text-gray-500">{s.date} <br/><span className="text-xs md:text-sm">{s.time} &#x2022; {displayLoc}</span></td>
                                     <td data-label="&#x9032;&#x5ea6;" className="p-3 md:p-4 text-center"><span className={`px-3 py-1 rounded-full font-bold text-xs md:text-sm ${isFull ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700'}`}>{booked}/{s.capacity}</span></td>
                                     <td data-label="&#x64cd;&#x4f5c;" className="p-3 md:p-4 text-center"><div className="flex flex-wrap justify-center gap-2"><button onClick={() => setEditingSlot(s)} className="bg-blue-50 text-blue-700 font-bold px-4 py-2 rounded-lg">&#x7de8;&#x8f2f;</button><button onClick={() => handleDeleteSlot(s.id, s.title, s.date)} className="text-red-600 hover:text-red-800 font-bold text-sm bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg active:scale-95 transition">&#x522a;&#x9664;</button></div></td>

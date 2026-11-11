@@ -30,3 +30,13 @@ test('calendar carries each assigned coach and lists distinct names for each day
  assert.equal(day.courses[1].slot.teachingCoachId,'b');assert.equal(day.courses[1].slot.teachingCoachName,'佐藤');
  const legacy=month([slot()],[],'2026-11');assert.deepEqual(Array.from(legacy.days[3].teachingCoachNames),[]);
 });
+
+test('each monthly session carries the instructor for its actual date, including moved cross-year sessions', () => {
+ const schedule=slot({title:'[月繳2堂] 團課',date:'2026-12-01, 2027-01-05',teachingCoachName:'預設教練',monthlySessions:[{date:'2026-12-01',teachingCoachId:'one',teachingCoachName:'王教練'},{date:'2027-01-05',teachingCoachId:'two',teachingCoachName:'佐藤'}]});
+ assert.deepEqual(Array.from(dates(schedule)),['2026-12-01','2027-01-05']);
+ const dec=month([schedule],[],'2026-12').days[0],jan=month([schedule],[],'2027-01').days[4];
+ assert.deepEqual(Array.from(dec.teachingCoachNames),['王教練']);assert.deepEqual(Array.from(jan.teachingCoachNames),['佐藤']);
+ assert.equal(dec.courses[0].slot,schedule,'editing keeps the original default instructor and complete schedule');
+ assert.equal(jan.courses[0].teachingCoachName,'佐藤');
+ assert.equal(month([schedule],[],'2027-12').days.some(d=>d.courses.length),false);
+});
