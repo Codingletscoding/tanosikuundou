@@ -2338,6 +2338,9 @@
 
         const CoachMembersView = ({ onOpenStudent, onPaymentsChanged = () => {} }) => {
             const [members, setMembers] = useState([]);
+            const [selectedMemberKey, setSelectedMemberKey] = useState('');
+            const selectedMember = members.find(member => studentPaymentKey(member.lineId, member.studentId) === selectedMemberKey);
+            const memberNameCounts = members.reduce((counts, member) => counts.set(member.name, (counts.get(member.name) || 0) + 1), new Map());
             const [paymentTotals, setPaymentTotals] = useState(null);
             const [paymentError, setPaymentError] = useState('');
             const [historicalStudent, setHistoricalStudent] = useState(null);
@@ -2368,11 +2371,18 @@
             useEffect(() => { fetchMembers(); }, []);
 
             return (
-                <div className="bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
+                <div className="coach-members-overview bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
                     <h2 className="font-bold text-lg md:text-xl mb-5 border-b pb-3 text-slate-800">&#x5b78;&#x54e1;&#x540d;&#x55ae;&#x7e3d;&#x89bd;</h2>
                     <p className="text-sm text-gray-600 mb-4">&#x7d2f;&#x7a4d;&#x4ed8;&#x6b3e;&#x91d1;&#x984d;&#x4f9d;&#x5e33;&#x865f;&#x53ca;&#x5b78;&#x54e1;&#x7de8;&#x865f;&#x5206;&#x5225;&#x52a0;&#x7e3d;&#x5df2;&#x6838;&#x51c6;&#x53ca;&#x5df2;&#x5b8c;&#x8ab2;&#x7684;&#x73fe;&#x5b58;&#x8a02;&#x55ae;&#xff1b;&#x540c;&#x5e33;&#x865f;&#x5b78;&#x54e1;&#x4e0d;&#x5408;&#x4f75;&#xff0c;&#x672a;&#x6838;&#x51c6;&#x3001;&#x5df2;&#x53d6;&#x6d88;&#x3001;&#x5c1a;&#x672a;&#x78ba;&#x8a8d;&#x73fe;&#x91d1;&#x6536;&#x6b3e;&#x4e0d;&#x8a08;&#x3002;</p>
                     {paymentError && <p role="status" className="text-sm text-amber-800 mb-4">{paymentError}</p>}
-                    <div className="mobile-list-wrap overflow-x-auto">
+                    <label className="block text-sm font-bold text-slate-700 mb-4">&#x9078;&#x64c7;&#x5b78;&#x54e1;&#x59d3;&#x540d;
+                        <select aria-label="&#x9078;&#x64c7;&#x5b78;&#x54e1;&#x59d3;&#x540d;" aria-controls="selected-member-details" disabled={!members.length} value={selectedMember ? selectedMemberKey : ''} onChange={event => setSelectedMemberKey(event.target.value)} className="block w-full md:max-w-md min-w-0 border border-gray-300 rounded-lg p-3 mt-2 bg-white text-base font-normal disabled:bg-gray-100">
+                            <option value="">&#x8acb;&#x9078;&#x64c7;&#x5b78;&#x54e1;</option>
+                            {members.map((member, index) => <option key={studentPaymentKey(member.lineId, member.studentId)} value={studentPaymentKey(member.lineId, member.studentId)}>{member.name}{(memberNameCounts.get(member.name) || 0) > 1 ? `\uff08${member.nickname ? member.nickname + ' \u00b7 ' : ''}\u540c\u540d ${index + 1}\uff09` : ''}</option>)}
+                        </select>
+                    </label>
+                    {!members.length ? <p role="status" className="p-5 text-center text-gray-500">&#x76ee;&#x524d;&#x5c1a;&#x7121;&#x6703;&#x54e1;&#x8cc7;&#x6599;</p> : !selectedMember && <p role="status" className="p-5 text-center text-gray-500">&#x8acb;&#x5148;&#x9078;&#x64c7;&#x5b78;&#x54e1;&#x59d3;&#x540d;&#xff0c;&#x4ee5;&#x5c55;&#x958b;&#x8cc7;&#x6599;&#x8207;&#x64cd;&#x4f5c;&#x3002;</p>}
+                    {selectedMember && <div id="selected-member-details" role="region" aria-label="&#x5df2;&#x9078;&#x5b78;&#x54e1;&#x8cc7;&#x6599;" className="mobile-list-wrap overflow-x-auto">
                         <table className="mobile-card-table w-full min-w-max text-left text-sm md:text-base whitespace-nowrap">
                             <thead className="bg-gray-50 text-gray-600 border-b border-gray-200">
                                 <tr>
@@ -2384,10 +2394,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {!members || members.length === 0 ? (
-                                    <tr><td colSpan="5" className="p-8 text-center text-gray-400">&#x76ee;&#x524d;&#x5c1a;&#x7121;&#x6703;&#x54e1;&#x8cc7;&#x6599;</td></tr>
-                                ) : (
-                                    members.map((m, i) => (
+                                {[selectedMember].map((m, i) => (
                                         <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition">
                                             <td data-label="&#x5b78;&#x54e1;&#x59d3;&#x540d;" className="p-3 md:p-4 font-bold text-base md:text-lg text-slate-800">{m.name}</td>
                                             <td data-label="&#x6703;&#x54e1;&#x7b49;&#x7d1a;" className="p-3 md:p-4">
@@ -2411,11 +2418,10 @@
                                                 </div>
                                             </td>
                                         </tr>
-                                    ))
-                                )}
+                                ))}
                             </tbody>
                         </table>
-                    </div>
+                    </div>}
                     {pricingStudent && <StudentGroupPriceModal student={pricingStudent} originals={pricingDefaults} monthlyDefaults={monthlyPricingDefaults} onClose={() => setPricingStudent(null)} onSaved={async () => { const result = await fetchMembers(); if (result.status !== 'success') throw new Error('\u50f9\u683c\u5df2\u5132\u5b58\uff0c\u4f46\u5b78\u54e1\u540d\u55ae\u91cd\u65b0\u8b80\u53d6\u5931\u6557\uff0c\u8acb\u91cd\u65b0\u6574\u7406\u3002'); }} />}
                     {historicalStudent && <HistoricalBookingModal student={historicalStudent} onClose={() => setHistoricalStudent(null)} onSuccess={async () => { const result = await fetchMembers(); if (result.status !== 'success') throw new Error('\u4ed8\u6b3e\u7d71\u8a08\u8b80\u53d6\u5931\u6557'); onPaymentsChanged(); }} />}
                     {viewModal.isOpen && <StudentDetailsModal student={viewModal.student} onClose={()=>setViewModal({isOpen: false, student: null})} />}
