@@ -9,6 +9,8 @@ const SHEET_USERS = "會員資料";
 const SHEET_SLOTS = "可用時段";
 const SHEET_BOOKINGS = "預約名單";
 const SHEET_LOGS = "訓練日誌";
+const LOG_BOOKING_HEADER = '預約單號';
+const LOG_ID_HEADER = '日誌編號';
 const SHEET_TEACHING_COACHES = '授課教練';
 const SLOT_TEACHING_COACH_HEADER = '授課教練編號';
 const SLOT_MONTHLY_SESSIONS_HEADER = '月繳逐堂排程';
@@ -299,12 +301,15 @@ function doPost(e) {
       const sheetBookings = ss.getSheetByName(SHEET_BOOKINGS);
       const bData = sheetBookings.getDataRange().getValues();
       const bookings = [];
+      const completionData = monthlyLogCompletionData_(ss, bData);
       
       for (let i = 1; i < bData.length; i++) {
         let status = bData[i][5] || "預約成功"; 
         if (status === "成功" || status === "已完成") status = "預約成功"; // 舊資料相容
 
-        bookings.push({ 
+        const completion = completionData.get(String(bData[i][7] || '')) || null;
+        status = monthlyCompletionStatus_(status, completion);
+        bookings.push({ monthlyCompletion: completion, monthlyLogCompletionVersion: 1,
             timestamp: bData[i][0], 
             slotId: bData[i][1], 
             lineId: bData[i][2], // 新增：供日誌使用
@@ -336,7 +341,7 @@ function doPost(e) {
       attachCourseSchedule_(ss, bookings);
       const month = taipeiMonth_(new Date());
       const summary = monthlyAccounting_(ss, calculateCoachPayments_(bookings.concat(historical), month, members), month);
-      result = { status: "success", studentGroupPricingVersion: 1, studentMonthlyPricingVersion: 1, groupPriceDefaults: GROUP_PRICE_DEFAULTS, monthlyGroupPriceDefaults: MONTHLY_PRICE_DEFAULTS, bookings: bookings, members: members, historicalBookingVersion: 1, historicalBookings: historical, paymentSummary: paymentSummaryJSON_(summary) };
+      result = { status: "success", monthlyLogCompletionVersion: 1, studentGroupPricingVersion: 1, studentMonthlyPricingVersion: 1, groupPriceDefaults: GROUP_PRICE_DEFAULTS, monthlyGroupPriceDefaults: MONTHLY_PRICE_DEFAULTS, bookings: bookings, members: members, historicalBookingVersion: 1, historicalBookings: historical, paymentSummary: paymentSummaryJSON_(summary) };
     }
 
     else if (["getMonthlyLeaves", "registerMonthlyLeave", "arrangeMonthlyMakeup"].includes(action)) {
@@ -377,30 +382,44 @@ function doPost(e) {
       const booked = payload.bookingId ? monthlyUniqueRow_(bookingSheet, 7, payload.bookingId, '訂單') : null;
       const booking = booked ? booked.row : null;
       if (booking && booking[2] !== payload.lineId) throw new Error('學生與訂單不符。');
-      if (booking && ['預約成功', '成功', '已完成'].indexOf(booking[5] || '預約成功') < 0) throw new Error('請先核准預約；已完課訂單不能重複建立日誌。');
+      const completionData = booking ? monthlyLogCompletionData_(ss) : null;
+      const monthlyCompletion = completionData ? completionData.get(String(booking[7] || '')) || null : null;
+      if (booking && (monthlyCompletion ? ['預約成功', '成功', '已完成', '已完課'] : ['預約成功', '成功', '已完成']).indexOf(booking[5] || '預約成功') < 0) throw new Error('請先核准預約；已完課訂單不能重複建立日誌。');
       const studentId = booking ? (booking[9] || '') : (payload.studentId || '');
+      if (booking && payload.studentId != null && String(payload.studentId) !== String(studentId)) throw new Error('學生與訂單不符。');
       const matches = students.filter(item => item.id === studentId);
       if (matches.length !== 1) throw new Error('請選擇唯一且有效的學生。');
       const student = matches[0];
       safeSheetName_(student.name);
       validateLogPayload_(payload);
+      if (monthlyCompletion) {
+        const session = monthlyCompletion.sessions.find(item => item.date === payload.date);
+        if (!session) throw new Error('日誌日期不在此月繳課程的上課日期內。');
+        if (session.status !== '未結課') throw new Error(session.status === '已完課' ? '此學員這一天已結課，請勿重複建立日誌。' : session.status === '待補課' ? '此日期已有請假紀錄，請從補課訂單登錄日誌。' : '此日期的舊日誌無法唯一對應課程，請先核對原紀錄。');
+      }
+      const nextStatus = monthlyCompletion ? (monthlyCompletion.scheduleComplete && monthlyCompletion.completedDates.length + 1 === monthlyCompletion.total ? '已完課' : '預約成功') : '已完課';
       accountReserveColumn_(sheetLogs, 15, '學生編號');
+      accountReserveColumn_(sheetLogs, 16, LOG_BOOKING_HEADER);
+      accountReserveColumn_(sheetLogs, 17, LOG_ID_HEADER);
       const firstRow = sheetLogs.getDataRange().getValues().length + 1;
+      const legacyLinks = monthlyCompletion ? completionData.legacyAssignments.filter(item => item.bookingId === payload.bookingId) : [];
       try {
+        legacyLinks.forEach(item => sheetLogs.getRange(item.index, 16, 1, 2).setValues([[item.bookingId, Utilities.getUuid()]]));
         sheetLogs.appendRow([
           new Date(), payload.lineId, student.name, payload.date,
           payload.stats.clears, payload.stats.drives, payload.stats.lifts, payload.stats.drops, payload.stats.net,
-          payload.stats.pushes, payload.stats.smashes, payload.stats.defense, payload.stats.combo, payload.note, studentId
+          payload.stats.pushes, payload.stats.smashes, payload.stats.defense, payload.stats.combo, payload.note, studentId, payload.bookingId || '', Utilities.getUuid()
         ]);
-        if (booked) bookingSheet.getRange(booked.index, 6).setValue('已完課');
+        if (booked) bookingSheet.getRange(booked.index, 6).setValue(nextStatus);
         SpreadsheetApp.flush();
       } catch (error) {
+        legacyLinks.forEach(item => sheetLogs.getRange(item.index, 16, 1, 2).setValues([item.previous]));
         for (let row = sheetLogs.getDataRange().getValues().length; row >= firstRow; row--) sheetLogs.deleteRow(row);
         if (booked) bookingSheet.getRange(booked.index, 6).setValue(booking[5]);
         SpreadsheetApp.flush();
         throw new Error('日誌未完成儲存，請重新讀取後再試。');
       }
-      result = { status: "success" };
+      result = { status: "success", monthlyLogCompletionVersion: 1, isMonthlyBooking: !!monthlyCompletion, bookingStatus: booked ? nextStatus : null, completedDate: payload.date };
     }
 
     else if (action === "getStudentStats") {
@@ -417,6 +436,7 @@ function doPost(e) {
 
       const sheetBookings = ss.getSheetByName(SHEET_BOOKINGS);
       const bData = sheetBookings.getDataRange().getValues();
+      const completionData = monthlyLogCompletionData_(ss, bData);
       let myBookings = [];
       let bookingHistory = [];
 
@@ -426,7 +446,9 @@ function doPost(e) {
           if(status === "成功" || status === "已完成") status = "預約成功"; 
           
           const sInfo = slotMap[bData[i][1]] || { title: "未知或已下架課程", date: "", time: "" };
-          const item = {
+          const completion = completionData.get(String(bData[i][7] || '')) || null;
+          status = monthlyCompletionStatus_(status, completion);
+          const item = { monthlyCompletion: completion, monthlyLogCompletionVersion: 1,
             bookingId: bData[i][7] || "",
             slotId: bData[i][1],
             slotTitle: sInfo.title,
@@ -462,7 +484,7 @@ function doPost(e) {
       bookingHistory = bookingHistory.reverse().concat(historicalBookings_(ss).filter(function(row) {
         return row.lineId === payload.lineId && selectedStudent && row.studentId === selectedStudent.id;
       }).reverse());
-      result = { status: "success", students: publicAccountStudents_(students), studentId: selectedStudent ? selectedStudent.id : "", totalClasses: totalClasses, stats: stats, logs: logs.reverse(), bookings: myBookings.reverse(), bookingHistory: bookingHistory, monthlyLeaves: ss.getSheetByName('請假補課') ? monthlyLeaveRows_(ss.getSheetByName('請假補課')).filter(function(row) { return row.lineId === payload.lineId && (!selectedStudent || studentMatches_(row.studentId, row.name, selectedStudent)); }) : [] };
+      result = { status: "success", monthlyLogCompletionVersion: 1, students: publicAccountStudents_(students), studentId: selectedStudent ? selectedStudent.id : "", totalClasses: totalClasses, stats: stats, logs: logs.reverse(), bookings: myBookings.reverse(), bookingHistory: bookingHistory, monthlyLeaves: ss.getSheetByName('請假補課') ? monthlyLeaveRows_(ss.getSheetByName('請假補課')).filter(function(row) { return row.lineId === payload.lineId && (!selectedStudent || studentMatches_(row.studentId, row.name, selectedStudent)); }) : [] };
     }
 
     if (!result.status) throw new Error("不支援的操作：" + String(action || "未提供"));
@@ -731,6 +753,80 @@ function validateNewSlot_(payload) {
   if (/^\[專屬教練課\]/.test(payload.title) && (Number(payload.capacity) !== 1 || monthlyStart_(dates[0], times[2]).getTime() - monthlyStart_(dates[0], times[1]).getTime() !== 3600000)) throw new Error('專屬教練時段限一小時、一個名額。');
   [1, 2, 3, 4, 5].forEach(function(level) { money_(payload.prices && payload.prices[level]); });
 }
+
+// Monthly orders are bundles: completion belongs to a student, booking and session date.
+function monthlyLogCompletionData_(ss, suppliedBookings) {
+  var read = function(name) { var sheet = ss.getSheetByName(name); return sheet ? sheet.getDataRange().getValues() : []; };
+  var bookings = suppliedBookings || read(SHEET_BOOKINGS), slots = read(SHEET_SLOTS), logs = read(SHEET_LOGS);
+  var bySlot = new Map(), byBooking = new Map(), byDay = new Map(), completed = new Map(), ambiguous = new Map(), progress = new Map(), legacyAssignments = [];
+  slots.slice(1).forEach(function(row) { if (row[0]) { var key = String(row[0]); bySlot.set(key, bySlot.has(key) ? null : row); } });
+  bookings.slice(1).forEach(function(row) { if (row[7]) { var key = String(row[7]); byBooking.set(key, byBooking.has(key) ? null : row); } });
+  var belongs = function(log, booking) {
+    return String(log[1]) === String(booking[2]) && studentMatches_(String(log[14] || ''), log[2], { id: String(booking[9] || ''), name: String(booking[3] || '').split(' [')[0] });
+  };
+  bookings.slice(1).forEach(function(row) {
+    var slot = bySlot.get(String(row[1]));
+    if (!slot) return;
+    var dates = emptyCourseDates_(slot[2]), id = String(row[7] || '');
+    if (id && byBooking.get(id) === row && /^\[月繳/.test(String(slot[1]).trim())) {
+      var count = String(slot[1]).match(/^\s*\[月繳(\d+)堂\]/);
+      progress.set(id, { dates: Array.from(new Set(dates)), total: count ? Number(count[1]) : dates.length, completedDates: [], ambiguousDates: [], leaveDates: new Set() });
+    }
+    if (['預約成功', '成功', '已完成', '已完課'].indexOf(row[5] || '預約成功') < 0) return;
+    dates.forEach(function(date) {
+      var key = JSON.stringify([String(row[2]), date]);
+      if (!byDay.has(key)) byDay.set(key, []);
+      byDay.get(key).push(row);
+    });
+  });
+  var mark = function(map, id, date) { if (!map.has(id)) map.set(id, new Set()); map.get(id).add(date); };
+  logs.slice(1).forEach(function(log, logIndex) {
+    var dates = emptyCourseDates_(log[3]);
+    if (dates.length !== 1) return;
+    var date = dates[0], linked = logs[0] && logs[0][15] === LOG_BOOKING_HEADER ? String(log[15] || '') : '';
+    if (linked) {
+      var target = byBooking.get(linked), slot = target && bySlot.get(String(target[1]));
+      if (target && slot && belongs(log, target) && emptyCourseDates_(slot[2]).indexOf(date) >= 0) mark(completed, linked, date);
+      return;
+    }
+    // New manually-added logs deliberately have no booking; only old unlinked rows may be inferred.
+    if (logs[0] && logs[0][16] === LOG_ID_HEADER && log[16]) return;
+    var matches = (byDay.get(JSON.stringify([String(log[1]), date])) || []).filter(function(row) { return belongs(log, row); });
+    if (matches.length === 1 && matches[0][7] && matches[0][5] === '已完課') {
+      mark(completed, String(matches[0][7]), date);
+      legacyAssignments.push({ index: logIndex + 2, bookingId: String(matches[0][7]), previous: [log[15] == null ? '' : log[15], log[16] == null ? '' : log[16]] });
+    }
+    else if (matches.length > 1) matches.forEach(function(row) { if (row[7]) mark(ambiguous, String(row[7]), date); });
+  });
+  read('請假補課').slice(1).forEach(function(leave) {
+    var id = String(leave[2] || ''), info = progress.get(id), day = emptyCourseDates_(leave[6]);
+    if (!info || day.length !== 1 || info.dates.indexOf(day[0]) < 0) return;
+    info.leaveDates.add(day[0]);
+    var makeup = byBooking.get(String(leave[12] || '')), original = byBooking.get(id);
+    if (makeup && original && makeup[2] === original[2] && String(makeup[9] || '') === String(original[9] || '') && makeup[5] === '已完課') mark(completed, id, day[0]);
+  });
+  progress.forEach(function(info, id) {
+    info.completedDates = info.dates.filter(function(date) { return completed.has(id) && completed.get(id).has(date); });
+    info.ambiguousDates = info.dates.filter(function(date) { return info.completedDates.indexOf(date) < 0 && ambiguous.has(id) && ambiguous.get(id).has(date); });
+    info.scheduleComplete = info.total > 0 && info.dates.length === info.total && new Set(info.dates).size === info.total;
+    info.allCompleted = info.scheduleComplete && info.completedDates.length === info.total;
+    info.remainingDates = info.dates.filter(function(date) { return info.completedDates.indexOf(date) < 0; });
+    info.sessions = info.dates.map(function(date) { return { date: date, status: info.completedDates.indexOf(date) >= 0 ? '已完課' : info.ambiguousDates.indexOf(date) >= 0 ? '待核對舊日誌' : info.leaveDates.has(date) ? '待補課' : '未結課' }; });
+    info.availableDates = info.sessions.filter(function(item) { return item.status === '未結課'; }).map(function(item) { return item.date; });
+    delete info.leaveDates;
+  });
+  progress.legacyAssignments = legacyAssignments;
+  return progress;
+}
+
+function monthlyCompletionStatus_(status, completion) {
+  status = status || '預約成功';
+  if (status === '成功' || status === '已完成') status = '預約成功';
+  if (completion && ['預約成功', '已完課'].indexOf(status) >= 0) return completion.allCompleted ? '已完課' : '預約成功';
+  return status;
+}
+
+function monthlyCompletionForBooking_(ss, row) { return monthlyLogCompletionData_(ss).get(String(row[7] || '')) || null; }
 
 function validateLogPayload_(payload) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payload.date || ''))) throw new Error('請選擇有效日誌日期。');
@@ -1239,7 +1335,9 @@ function deleteApprovedBooking_(ss, bookingId) {
   })) throw new Error('此訂單已有請假或補課紀錄，請保留訂單以維持補課追蹤。');
   var index = matches[0];
   var booking = rows[index];
-  var status = booking[5] || '預約成功';
+  var completion = monthlyCompletionForBooking_(ss, booking);
+  if (completion && (completion.completedDates.length || completion.ambiguousDates.length)) throw new Error('此月繳訂單已有日誌，請保留訂單與逐堂紀錄。');
+  var status = monthlyCompletionStatus_(booking[5], completion);
   if (['審核中', '預約成功', '成功', '已完成'].indexOf(status) === -1) throw new Error('只能刪除審核中或預約成功且尚未完課的訂單。');
   var slotRows = slots.getDataRange().getValues();
   var slotIndex = -1;
@@ -1404,10 +1502,12 @@ function monthlyUniqueRow_(sheet, column, id, label) {
 
 function registerMonthlyLeave_(ss, payload) {
   var booking = monthlyUniqueRow_(ss.getSheetByName(SHEET_BOOKINGS), 7, payload.bookingId, '月繳訂單');
-  if (['預約成功', '成功', '已完成'].indexOf(booking.row[5] || '預約成功') === -1) throw new Error('只能登記已預約成功且尚未完課的月繳學生。');
+  var completion = monthlyCompletionForBooking_(ss, booking.row);
+  if (['預約成功', '成功', '已完成'].indexOf(monthlyCompletionStatus_(booking.row[5], completion)) === -1) throw new Error('只能登記已預約成功且尚未完課的月繳學生。');
   var slot = monthlyUniqueRow_(ss.getSheetByName(SHEET_SLOTS), 0, String(booking.row[1]), '月繳課程');
   if (!/^\[月繳/.test(String(slot.row[1]))) throw new Error('此訂單不是月繳課程。');
   var day = String(payload.originalDate || '');
+  if (completion && completion.completedDates.concat(completion.ambiguousDates).indexOf(day) >= 0) throw new Error('此日期已有日誌或需核對舊日誌，不能登記請假。');
   var start = monthlyStart_(day, slot.row[3]);
   if (start.getTime() - Date.now() < 14 * 24 * 60 * 60 * 1000) throw new Error('請假需在上課開始前至少 14 天登記。');
   var schedule = monthlyDate_(slot.row[2]);
@@ -1532,7 +1632,8 @@ function coachManagementAction_(ss, payload, actor) {
   if (payload.action === 'cancelBooking') {
     var bookings = ss.getSheetByName(SHEET_BOOKINGS);
     var booking = monthlyUniqueRow_(bookings, 7, payload.bookingId, '訂單');
-    if (['審核中', '預約成功', '成功', '已完成'].indexOf(booking.row[5] || '預約成功') < 0) throw new Error('只能取消審核中或預約成功的訂單。');
+    var completionData = monthlyLogCompletionData_(ss);
+    if (['審核中', '預約成功', '成功', '已完成'].indexOf(monthlyCompletionStatus_(booking.row[5], completionData.get(String(booking.row[7] || '')))) < 0) throw new Error('只能取消審核中或預約成功的訂單。');
     var leaves = ss.getSheetByName('請假補課');
     if (leaves && leaves.getDataRange().getValues().slice(1).some(function(row) { return String(row[2]) === payload.bookingId || String(row[12]) === payload.bookingId; })) throw new Error('此訂單已有請假補課紀錄，請保留關聯訂單。');
     var slots = ss.getSheetByName(SHEET_SLOTS);
@@ -1545,11 +1646,16 @@ function coachManagementAction_(ss, payload, actor) {
       if (!Number.isInteger(remaining) || !Number.isInteger(capacity) || remaining < 0 || capacity < remaining) throw new Error('名額資料異常。');
       counter = slots.getRange(index + 1, 7);
     }
+    var legacyLinks = completionData.legacyAssignments.filter(function(item) { return item.bookingId === payload.bookingId; });
+    var logSheet = legacyLinks.length ? ss.getSheetByName(SHEET_LOGS) : null;
+    if (logSheet) { accountReserveColumn_(logSheet, 16, LOG_BOOKING_HEADER); accountReserveColumn_(logSheet, 17, LOG_ID_HEADER); }
     try {
+      legacyLinks.forEach(function(item) { logSheet.getRange(item.index, 16, 1, 2).setValues([[item.bookingId, Utilities.getUuid()]]); });
       bookings.getRange(booking.index, 6).setValue('已取消');
       if (counter) counter.setValue(Math.min(capacity, remaining + bookingSeatsToRestore_(bookings.getDataRange().getValues(), booking.index - 1)));
       SpreadsheetApp.flush();
     } catch(error) {
+      legacyLinks.forEach(function(item) { logSheet.getRange(item.index, 16, 1, 2).setValues([item.previous]); });
       bookings.getRange(booking.index, 6).setValue(booking.row[5]);
       if (counter) counter.setValue(remaining);
       throw new Error('取消失敗，請重新讀取確認。');
@@ -1567,6 +1673,11 @@ function coachManagementAction_(ss, payload, actor) {
   if (hasSessions) {
     if (payload.expectedMonthlySessions && JSON.stringify(payload.expectedMonthlySessions.map(function(item) { return { date: item.date, teachingCoachId: item.teachingCoachId }; })) !== JSON.stringify(previousSessions)) throw new Error('逐堂排程已有變更，請重新讀取後再修改。');
     payload.monthlySessions = validateMonthlySessions_(ss, payload.monthlySessions, !slot.row[12]);
+    var revisedDates = payload.monthlySessions.map(function(item) { return item.date; }), completionData = monthlyLogCompletionData_(ss);
+    ss.getSheetByName(SHEET_BOOKINGS).getDataRange().getValues().slice(1).filter(function(row) { return String(row[1]) === payload.slotId; }).forEach(function(row) {
+      var completion = completionData.get(String(row[7] || ''));
+      if (completion && completion.completedDates.concat(completion.ambiguousDates).some(function(date) { return revisedDates.indexOf(date) < 0; })) throw new Error('已有訓練日誌的日期不可移除或改期，請保留逐堂紀錄。');
+    });
     payload.date = payload.monthlySessions.map(function(item) { return item.date; }).join(', ');
     payload.title = String(payload.title || '').replace(/^\s*\[月繳[^\]]*\]/, '[月繳' + payload.monthlySessions.length + '堂]');
   }

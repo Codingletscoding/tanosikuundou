@@ -11,6 +11,7 @@ function fixture(options={}){
   '預約名單':[['headers'],[new Date('2026-10-01'), 'monthly','student','學生',1200,options.status||'預約成功','','original']],
   '可用時段':[['headers'],['monthly',options.nonMonthly?'單堂團課':'[月繳3堂] 初階團課','2026年 11/15, 11/22, 11/29 (週日)','10:00 - 12:00','場地',5,3,300,294],['target',options.targetTitle||'補課團課',options.targetDate||'2026-11-16 (週一)','10:00 - 12:00','補課場地',5,options.remaining??1,300,294]]
  };
+ if(options.status==='已完課')for(const date of ['2026-11-15','2026-11-22','2026-11-29'])rows['訓練日誌'].push([0,'student','學生',date,0,0,0,0,0,0,0,0,0,'既有完課紀錄']);
  if(!options.noLeaveSheet)rows['請假補課']=[['headers']];
  const sheets={};
  function sheet(name){

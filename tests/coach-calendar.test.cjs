@@ -40,3 +40,8 @@ test('each monthly session carries the instructor for its actual date, including
  assert.equal(jan.courses[0].teachingCoachName,'佐藤');
  assert.equal(month([schedule],[],'2027-12').days.some(d=>d.courses.length),false);
 });
+
+test('monthly calendar orders use completion for the selected session and leave other days and input records unchanged', () => {
+ const s=slot({id:'monthly',title:'[月繳2堂] 團課',date:'2026年 11/4, 11/11'}),order={slotId:'monthly',status:'預約成功',monthlyCompletion:{sessions:[{date:'2026-11-04',status:'已完課'},{date:'2026-11-11',status:'未結課'}]}};
+ const data=month([s],[order],'2026-11');assert.equal(data.days[3].courses[0].orders[0].status,'已完課');assert.equal(data.days[10].courses[0].orders[0].status,'預約成功');assert.equal(order.status,'預約成功');
+});

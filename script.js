@@ -213,6 +213,7 @@
                         </div>
                     </div>
 
+                    <MonthlyCompletionSummary completion={booking.monthlyCompletion} />
                     {isCash && <p className="text-sm text-amber-900 mt-3">{booking.paymentCode === '\u73fe\u91d1\u5df2\u6536' ? '\u73fe\u91d1\u5df2\u6536\u6b3e' : '\u4ed8\u6b3e\u65b9\u5f0f\uff1a\u73fe\u5834\u73fe\u91d1\u4ed8\u6b3e\uff08\u6559\u7df4\u8cbb\u4e0d\u542b\u5834\u5730\u8cbb\uff09'}</p>}
                     {!isCash && !isApproved && !isCancelled && booking.bookingId && (
                         <div className="mt-4 pt-3 border-t border-amber-200/50 flex items-center gap-2">
@@ -237,10 +238,23 @@
             );
         };
 
+        const MonthlyCompletionSummary = ({ completion }) => !completion ? null : <details className="monthly-completion-summary mt-2 text-sm whitespace-normal text-slate-700">
+            <summary className="cursor-pointer font-bold text-emerald-800">&#x6708;&#x7e73;&#x7d50;&#x8ab2;&#x9032;&#x5ea6;&#xff1a;{completion.completedDates.length}&#xff0f;{completion.total} &#x5802;</summary>
+            {!completion.scheduleComplete && <p className="text-amber-800 mt-2">&#x6708;&#x7e73;&#x65e5;&#x671f;&#x4e0d;&#x5b8c;&#x6574;&#xff0c;&#x8acb;&#x5148;&#x7de8;&#x8f2f;&#x8ab2;&#x7a0b;&#x6392;&#x7a0b;&#x3002;</p>}
+            <ul className="space-y-1 mt-2">{completion.sessions.map(session => <li key={session.date}>{session.date} &#xb7; {session.status}</li>)}</ul>
+            {completion.ambiguousDates.length > 0 && <p className="text-amber-800 mt-2">&#x90e8;&#x5206;&#x820a;&#x65e5;&#x8a8c;&#x7121;&#x6cd5;&#x552f;&#x4e00;&#x5c0d;&#x61c9;&#x8ab2;&#x7a0b;&#xff0c;&#x8acb;&#x6559;&#x7df4;&#x6838;&#x5c0d;&#x539f;&#x7d00;&#x9304;&#x3002;</p>}
+        </details>;
+
         const LogFormModal = ({ targetData, onClose, onSuccess }) => {
-            const [date, setDate] = useState(formatDate(new Date()));
+            const isMonthly = !!targetData.monthlyCompletion || /^\[\u6708\u7e73/.test(String(targetData.slotTitle || ''));
+            const completion = targetData.monthlyCompletion;
+            const availableDates = completion?.availableDates || [];
+            const supportsMonthly = targetData.monthlyLogCompletionVersion === 1 && !!completion;
+            const today = formatDate(new Date());
+            const [date, setDate] = useState(isMonthly ? (availableDates.includes(today) ? today : [...availableDates].filter(day => day <= today).sort().pop() || availableDates[0] || '') : today);
             const [note, setNote] = useState('');
             const [submitting, setSubmitting] = useState(false);
+            const submittingRef = React.useRef(false);
             
             const [stats, setStats] = useState({
                 clears: 0, drives: 0, lifts: 0, drops: 0, net: 0, pushes: 0, smashes: 0, defense: 0, combo: 0
@@ -253,7 +267,8 @@
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
-                setSubmitting(true);
+                if (submittingRef.current || (isMonthly && (!supportsMonthly || !availableDates.includes(date)))) return;
+                submittingRef.current = true; setSubmitting(true);
                 const result = await fetchAPI({
                     action: 'addLog', 
                     lineId: targetData.lineId,
@@ -264,16 +279,16 @@
                     stats: Object.fromEntries(Object.entries(stats).map(([key, minutes]) => [key, minutes / 60])),
                     note: note 
                 });
-                if (result.status !== 'success') { setSubmitting(false); alert(result.message || '\u65e5\u8a8c\u5132\u5b58\u5931\u6557\uff0c\u8acb\u7a0d\u5f8c\u518d\u8a66\u3002'); return; }
-                alert('\u65e5\u8a8c\u5132\u5b58\u6210\u529f\uff01' + (targetData.bookingId ? ' \u8a72\u9810\u7d04\u55ae\u5df2\u9806\u5229\u7d50\u6848\u3002' : ''));
-                setSubmitting(false);
+                if (result.status !== 'success' || (isMonthly && result.monthlyLogCompletionVersion !== 1)) { submittingRef.current = false; setSubmitting(false); alert(result.message || '\u65e5\u8a8c\u5132\u5b58\u5931\u6557\uff0c\u8acb\u7a0d\u5f8c\u518d\u8a66\u3002'); return; }
+                alert(isMonthly ? '\u6708\u7e73\u65e5\u8a8c\u5df2\u5132\u5b58\uff0c\u50c5\u7d50\u8ab2\u6240\u9078\u65e5\u671f\uff0c\u5176\u4ed6\u65e5\u671f\u4e0d\u53d7\u5f71\u97ff\u3002' : '\u65e5\u8a8c\u5132\u5b58\u6210\u529f\uff01' + (targetData.bookingId ? ' \u8a72\u9810\u7d04\u55ae\u5df2\u9806\u5229\u7d50\u6848\u3002' : ''));
+                submittingRef.current = false; setSubmitting(false);
                 if(onSuccess) onSuccess();
                 onClose();
             };
 
             return (
                 <div className="fixed inset-0 bg-slate-900 bg-opacity-60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden my-auto max-h-[90dvh] flex flex-col">
+                    <div role="dialog" aria-modal="true" aria-label="&#x8a13;&#x7df4;&#x65e5;&#x8a8c;" className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden my-auto max-h-[90dvh] flex flex-col">
                         <div className="bg-slate-800 p-4 md:p-5 text-white flex gap-3 justify-between items-center shrink-0">
                             <h3 className="font-bold text-base md:text-lg">&#x8a13;&#x7df4;&#x65e5;&#x8a8c;&#xff1a;{targetData.name || '\u5b78\u54e1'}</h3>
                             <button onClick={onClose} className="text-slate-400 hover:text-white font-bold text-3xl px-2 shrink-0 leading-none active:scale-90">&times;</button>
@@ -282,7 +297,15 @@
                         <form onSubmit={handleSubmit} className="p-4 md:p-6 overflow-y-auto">
                             <div className="mb-5">
                                 <label className="block text-sm font-bold text-slate-700 mb-2">&#x672c;&#x6b21;&#x4e0a;&#x8ab2;&#x65e5;&#x671f;</label>
-                                <input type="date" required className="border border-gray-300 p-2.5 rounded-lg w-full md:max-w-xs text-base" value={date} onChange={e=>setDate(e.target.value)} />
+                                {isMonthly ? <>
+                                    {!supportsMonthly && <p role="alert" className="text-red-800 mb-3">&#x8acb;&#x5148;&#x66f4;&#x65b0; Apps Script &#x5f8c;&#x7aef;&#xff0c;&#x624d;&#x80fd;&#x9010;&#x5802;&#x7d50;&#x8ab2;&#x6708;&#x7e73;&#x65e5;&#x8a8c;&#x3002;</p>}
+                                    <p className="text-sm text-emerald-800 mb-3">&#x6708;&#x7e73;&#x65e5;&#x8a8c;&#x53ea;&#x7d50;&#x8ab2;&#x6240;&#x9078;&#x65e5;&#x671f;&#xff0c;&#x5176;&#x4ed6;&#x65e5;&#x671f;&#x4e0d;&#x53d7;&#x5f71;&#x97ff;&#x3002;</p>
+                                    <select aria-label="&#x672c;&#x6b21;&#x6708;&#x7e73;&#x4e0a;&#x8ab2;&#x65e5;&#x671f;" required disabled={submitting || !supportsMonthly} value={date} onChange={event => setDate(event.target.value)} className="border border-gray-300 p-2.5 rounded-lg w-full text-base bg-white">
+                                        <option value="">&#x8acb;&#x9078;&#x64c7;&#x672a;&#x7d50;&#x8ab2;&#x65e5;&#x671f;</option>
+                                        {(completion?.sessions || []).map(session => <option key={session.date} value={session.date} disabled={session.status !== '\u672a\u7d50\u8ab2'}>{session.date} &#xb7; {session.status}</option>)}
+                                    </select>
+                                    <MonthlyCompletionSummary completion={completion} />
+                                </> : <input aria-label="&#x672c;&#x6b21;&#x4e0a;&#x8ab2;&#x65e5;&#x671f;" type="date" required className="border border-gray-300 p-2.5 rounded-lg w-full md:max-w-xs text-base" value={date} onChange={e=>setDate(e.target.value)} />}
                             </div>
 
                             <div className="mb-5">
@@ -311,8 +334,8 @@
 
                             <div className="flex justify-end gap-3 pt-5 border-t mt-auto">
                                 <button type="button" onClick={onClose} className="px-5 py-2.5 font-bold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 text-sm md:text-base active:scale-95 transition">&#x53d6;&#x6d88;</button>
-                                <button type="submit" disabled={submitting} className="px-5 py-2.5 font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 shadow-sm disabled:opacity-50 text-sm md:text-base active:scale-95 transition">
-                                    {submitting ? '\u5132\u5b58\u4e2d...' : (targetData.bookingId ? '\u9001\u51fa\u65e5\u8a8c\u4e26\u7d50\u6848' : '\u9001\u51fa\u65e5\u8a8c')}
+                                <button type="submit" disabled={submitting || (isMonthly && (!supportsMonthly || !availableDates.includes(date)))} className="px-5 py-2.5 font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 shadow-sm disabled:opacity-50 text-sm md:text-base active:scale-95 transition">
+                                    {submitting ? '\u5132\u5b58\u4e2d...' : isMonthly ? '\u9001\u51fa\u65e5\u8a8c\u4e26\u7d50\u8ab2\u7576\u5802' : (targetData.bookingId ? '\u9001\u51fa\u65e5\u8a8c\u4e26\u7d50\u6848' : '\u9001\u51fa\u65e5\u8a8c')}
                                 </button>
                             </div>
                         </form>
@@ -357,7 +380,7 @@
             <div className="space-y-3 max-h-96 overflow-y-auto pr-1 min-w-0">
                 {!bookings.length ? <p className="text-center text-gray-400 text-sm py-6">&#x7121;&#x9810;&#x7d04;&#x7d00;&#x9304;</p> : bookings.map((booking, index) => <article key={`${booking.isHistorical ? 'history' : 'booking'}-${booking.bookingId || index}`} className="border rounded-xl p-4 bg-white min-w-0">
                     <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-bold text-slate-800 break-words">{booking.slotTitle || '\u672a\u77e5\u8ab2\u7a0b'}</h4><span className="text-xs bg-slate-100 text-slate-700 rounded px-2 py-1">{booking.status || '\u672a\u77e5\u72c0\u614b'}</span></div>
-                    <p className="text-sm text-slate-600 mt-2">{formatTrainingDate(booking.slotDate || '')} {booking.slotTime || ''}</p>
+                    <p className="text-sm text-slate-600 mt-2">{formatTrainingDate(booking.slotDate || '')} {booking.slotTime || ''}</p><MonthlyCompletionSummary completion={booking.monthlyCompletion} />
                     {booking.location && <p className="text-sm text-slate-600 mt-1 break-words">{booking.location}</p>}
                     {booking.teachingCoachName && <p className="text-sm text-slate-600 mt-1 break-words">&#x6388;&#x8ab2;&#x6559;&#x7df4;&#xff1a;{booking.teachingCoachName}</p>}
                     <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm mt-2"><span className="font-bold text-emerald-700">{booking.paidPrice !== '' && booking.paidPrice != null && Number.isFinite(Number(booking.paidPrice)) ? formatMoney(Number(booking.paidPrice)) : '\u672a\u586b\u5beb'}</span><span className="text-slate-600">{booking.isHistorical ? (booking.paymentStatus === 'paid' ? '\u5df2\u6536\u6b3e' : '\u5c1a\u672a\u6536\u6b3e') : (booking.paymentCode || '-')}</span></div>
@@ -1719,7 +1742,11 @@
                 const occupied = Number.isFinite(capacity) && Number.isFinite(remaining) ? Math.max(0, capacity - remaining) : 0;
                 dates.filter(date => date.startsWith(monthKey + '-')).forEach(date => {
                     if (!byDate.has(date)) byDate.set(date, []);
-                    byDate.get(date).push({ slot, orders, occupied, teachingCoachName: slotCoachForDate(slot, date), reserved: orders.length > 0 || occupied > 0 });
+                    const datedOrders = orders.map(booking => {
+                        const session = booking.monthlyCompletion?.sessions.find(item => item.date === date);
+                        return session && ['\u9810\u7d04\u6210\u529f', '\u5df2\u5b8c\u8ab2'].includes(booking.status) ? { ...booking, status: session.status === '\u672a\u7d50\u8ab2' ? '\u9810\u7d04\u6210\u529f' : session.status } : booking;
+                    });
+                    byDate.get(date).push({ slot, orders: datedOrders, occupied, teachingCoachName: slotCoachForDate(slot, date), reserved: orders.length > 0 || occupied > 0 });
                 });
             });
             const leading = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
@@ -2249,7 +2276,7 @@
                                return (
                               <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
                                 <td data-label="&#x5b78;&#x751f;&#x59d3;&#x540d;" className="p-3 md:p-4 font-bold text-gray-800">{b.name}{b.makeupLeaveId && <span className="block text-xs font-normal text-emerald-700 mt-1">&#x6708;&#x7e73;&#x88dc;&#x8ab2;&#xff08;&#x4e0d;&#x91cd;&#x8907;&#x6536;&#x8cbb;&#xff09;</span>}</td>
-                                <td data-label="&#x9810;&#x7d04;&#x8ab2;&#x7a0b;&#xff0f;&#x65e5;&#x671f;&#x6642;&#x6bb5;" className="p-3 md:p-4 max-w-sm whitespace-normal break-words"><p className="font-bold text-slate-800">{course.title}</p><p className="text-sm text-slate-600 mt-1">&#x4e0a;&#x8ab2;&#x65e5;&#x671f;&#xff1a;{course.date || '\u65e5\u671f\u672a\u63d0\u4f9b'}</p><p className="text-sm text-slate-600 mt-1">&#x4e0a;&#x8ab2;&#x6642;&#x6bb5;&#xff1a;{course.time || '\u6642\u6bb5\u672a\u63d0\u4f9b'}</p></td>
+                                <td data-label="&#x9810;&#x7d04;&#x8ab2;&#x7a0b;&#xff0f;&#x65e5;&#x671f;&#x6642;&#x6bb5;" className="p-3 md:p-4 max-w-sm whitespace-normal break-words"><p className="font-bold text-slate-800">{course.title}</p><p className="text-sm text-slate-600 mt-1">&#x4e0a;&#x8ab2;&#x65e5;&#x671f;&#xff1a;{course.date || '\u65e5\u671f\u672a\u63d0\u4f9b'}</p><p className="text-sm text-slate-600 mt-1">&#x4e0a;&#x8ab2;&#x6642;&#x6bb5;&#xff1a;{course.time || '\u6642\u6bb5\u672a\u63d0\u4f9b'}</p><MonthlyCompletionSummary completion={b.monthlyCompletion} /></td>
                                 <td data-label="&#x91d1;&#x984d;" className="p-3 md:p-4 text-emerald-600 font-bold">NT$ {b.paidPrice}{['\u73fe\u5834\u73fe\u91d1','\u73fe\u91d1\u5df2\u6536'].includes(b.paymentCode) && <p className="text-xs text-amber-900 mt-1">{b.paymentCode === '\u73fe\u91d1\u5df2\u6536' ? '\u73fe\u91d1\u5df2\u6536\u6b3e' : '\u73fe\u5834\u4ed8\u73fe \u00b7 \u5c1a\u672a\u78ba\u8a8d\u6536\u6b3e'}</p>}</td>
                                 <td data-label="&#x72c0;&#x614b; / &#x5f8c;&#x4e94;&#x78bc;" className="p-3 md:p-4">
                                     {b.status === "\u5df2\u53d6\u6d88" ? <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-md">&#x5df2;&#x53d6;&#x6d88;</span> : b.status === "\u5df2\u5b8c\u8ab2" ? (
@@ -2274,12 +2301,12 @@
                                             </button>
                                         )}
                                         {b.status === "\u9810\u7d04\u6210\u529f" && b.bookingId && (
-                                            <button onClick={() => setLogModalTarget({ lineId: b.lineId, studentId: b.studentId, name: b.name, bookingId: b.bookingId })} disabled={loading} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
+                                            <button onClick={() => setLogModalTarget({ lineId: b.lineId, studentId: b.studentId, name: b.name, bookingId: b.bookingId, slotTitle: b.slotTitle || course.title, monthlyCompletion: b.monthlyCompletion, monthlyLogCompletionVersion: b.monthlyLogCompletionVersion })} disabled={loading || (b.monthlyCompletion && !b.monthlyCompletion.availableDates.length)} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
                                                 &#x7d50;&#x8ab2; / &#x65e5;&#x8a8c;
                                             </button>
                                         )}
                                         {["\u5be9\u6838\u4e2d", "\u9810\u7d04\u6210\u529f"].includes(b.status) && <button onClick={() => handleCancelBooking(b)} disabled={loading || !b.bookingId} className="bg-orange-50 text-orange-800 border border-orange-200 font-bold py-2 px-3 rounded-lg disabled:opacity-50">&#x53d6;&#x6d88;&#x9810;&#x7d04;</button>}
-                                        {["\u5be9\u6838\u4e2d", "\u9810\u7d04\u6210\u529f"].includes(b.status) && (
+                                        {["\u5be9\u6838\u4e2d", "\u9810\u7d04\u6210\u529f"].includes(b.status) && !(b.monthlyCompletion && (b.monthlyCompletion.completedDates.length || b.monthlyCompletion.ambiguousDates.length)) && (
                                             <button onClick={() => handleDeleteBooking(b)} disabled={loading || !b.bookingId} title={!b.bookingId ? '\u6b64\u820a\u8a02\u55ae\u7f3a\u5c11\u8a02\u55ae\u7de8\u865f\uff0c\u8acb\u5148\u88dc\u4e0a\u9810\u7d04\u540d\u55ae\u7b2c H \u6b04\u7684\u552f\u4e00\u7de8\u865f\u3002' : undefined} aria-label={`\u522a\u9664${b.name || '\u5b78\u54e1'}\u7684\u9810\u7d04`} className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold py-1.5 px-3 rounded-lg shadow-sm text-sm active:scale-95 transition disabled:opacity-50">
                                                 {deletingBookingId === b.bookingId ? '\u522a\u9664\u4e2d...' : '\u522a\u9664\u8a02\u55ae'}
                                             </button>
