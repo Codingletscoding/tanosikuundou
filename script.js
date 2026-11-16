@@ -2109,7 +2109,7 @@
             setLoading(false);
           };
 
-          const visibleBookings = bookings.filter(booking => booking.status !== '\u5df2\u53d6\u6d88');
+          const visibleBookings = bookings.filter(booking => !['\u5df2\u53d6\u6d88', '\u5df2\u5b8c\u8ab2'].includes(booking.status));
 
           return (
             <div className="space-y-6 md:space-y-8">
