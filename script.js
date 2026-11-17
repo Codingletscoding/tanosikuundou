@@ -1478,8 +1478,56 @@
         // \ud83d\udd39 \u6559\u7df4\u7aef\u4e3b\u9801\u9762\u8207\u5b50\u8996\u5716
         // ==========================================
 
-        const CoachDisclosure = ({ title, sectionId, className, children }) => (
-            <details data-section={sectionId} className={`coach-disclosure group min-w-0 h-fit ${className || ''}`}>
+        const groupCoachBookings = (bookings, members = []) => {
+            const groups = new Map();
+            bookings.slice().reverse().forEach((booking, index) => {
+                if (['\u5df2\u53d6\u6d88', '\u5df2\u5b8c\u8ab2'].includes(booking.status)) return;
+                const lineId = String(booking.lineId || '');
+                const studentId = String(booking.studentId ?? '');
+                const name = String(booking.name || '').replace(/ \[1\u5c0d[12] - .*\]$/, '').trim();
+                const matches = members.filter(member => String(member.lineId || '') === lineId &&
+                    (studentId ? String(member.studentId ?? '') === studentId : String(member.name || '').trim() === name));
+                const member = matches.length === 1 ? matches[0] : null;
+                const resolvedId = studentId || (member ? String(member.studentId ?? '') : null);
+                const key = lineId && (resolvedId !== null || name)
+                    ? JSON.stringify([lineId, resolvedId, resolvedId !== null ? '' : name])
+                    : JSON.stringify(['unknown', booking.bookingId || index]);
+                if (!groups.has(key)) groups.set(key, { key, name: member?.name || name || '\u672a\u63d0\u4f9b\u59d3\u540d', nickname: member?.nickname || '', bookings: [], pendingCount: 0 });
+                const group = groups.get(key);
+                group.bookings.push(booking);
+                if (booking.status === '\u5be9\u6838\u4e2d') group.pendingCount++;
+            });
+            const result = [...groups.values()];
+            const counts = new Map();
+            result.forEach(group => counts.set(group.name, (counts.get(group.name) || 0) + 1));
+            const seen = new Map();
+            result.forEach(group => {
+                seen.set(group.name, (seen.get(group.name) || 0) + 1);
+                group.displayName = counts.get(group.name) > 1 ? `${group.name}\uff08${group.nickname ? group.nickname + ' \u00b7 ' : ''}\u540c\u540d ${seen.get(group.name)}\uff09` : group.name;
+            });
+            return result;
+        };
+
+        const CoachPendingReminder = ({ groups, onClose, onReview }) => {
+            const dialogRef = React.useRef(null);
+            useEffect(() => {
+                const dialog = dialogRef.current;
+                dialog.showModal();
+                return () => dialog.close();
+            }, []);
+            return <dialog ref={dialogRef} onCancel={event => { event.preventDefault(); onClose(); }} aria-labelledby="pending-reminder-title" className="fixed inset-0 m-auto w-[calc(100%_-_2rem)] max-w-lg max-h-[85dvh] overflow-y-auto rounded-2xl border border-pink-200 bg-white p-5 md:p-7 shadow-xl backdrop:bg-black/50">
+                <h2 id="pending-reminder-title" className="text-xl font-bold text-pink-900">&#x5f85;&#x5be9;&#x6838;&#x9810;&#x7d04;&#x63d0;&#x9192;</h2>
+                <p className="mt-3 text-slate-700">&#x76ee;&#x524d;&#x6709; {groups.reduce((sum, group) => sum + group.pendingCount, 0)} &#x7b46;&#x9810;&#x7d04;&#x5c1a;&#x672a;&#x5be9;&#x6838;&#xff0c;&#x6d89;&#x53ca; {groups.length} &#x4f4d;&#x5b78;&#x54e1;&#x3002;</p>
+                <ul className="mt-4 space-y-2 text-pink-900">{groups.map(group => <li key={group.key} className="rounded-lg bg-pink-50 p-3 break-words">{group.displayName}&#xff1a;&#x5f85;&#x5be9;&#x6838; {group.pendingCount} &#x7b46;</li>)}</ul>
+                <div className="mt-5 flex flex-wrap justify-end gap-3">
+                    <button type="button" onClick={onClose} className="rounded-lg border px-4 py-3 text-slate-700">&#x7a0d;&#x5f8c;&#x8655;&#x7406;</button>
+                    <button type="button" autoFocus onClick={onReview} className="rounded-lg bg-pink-700 px-4 py-3 font-bold text-white">&#x67e5;&#x770b;&#x5f85;&#x5be9;&#x6838;&#x9810;&#x7d04;</button>
+                </div>
+            </dialog>;
+        };
+
+        const CoachDisclosure = ({ title, sectionId, className, children, detailsRef }) => (
+            <details ref={detailsRef} data-section={sectionId} className={`coach-disclosure group min-w-0 h-fit ${className || ''}`}>
                 <summary className="flex items-center justify-between gap-3 cursor-pointer list-none rounded-lg min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-600">
                     <h2 className="font-bold text-lg md:text-xl min-w-0">{title}</h2>
                     <span aria-hidden="true" className="shrink-0 text-slate-500 transition-transform group-open:rotate-180">&#x25be;</span>
@@ -1897,7 +1945,7 @@
             };
         };
 
-        const CoachSlotsView = ({ onPaymentsChanged = () => {} }) => {
+        const CoachSlotsView = ({ onPaymentsChanged = () => {}, onBookingsLoaded = () => {}, showPendingReview = false, onPendingReviewShown = () => {} }) => {
           const [form, setForm] = useState({ 
             mode: 'single', title: '\u65b0\u624b\u5718\u8ab2', location: '\u95dc\u8056\u91cc\u6d3b\u52d5\u4e2d\u5fc3', teachingCoachId: '',
             date: '', startTime: '21:00', endTime: '22:00', capacity: '1', 
@@ -1918,6 +1966,22 @@
           const [showMonthlyLeave, setShowMonthlyLeave] = useState(false);
           const [editingSlot, setEditingSlot] = useState(null);
           const cancellingRef = React.useRef(false);
+          const bookingsPanelRef = React.useRef(null);
+          const studentGroupsRef = React.useRef(new Map());
+          const bookingGroups = React.useMemo(() => groupCoachBookings(bookings, members), [bookings, members]);
+          useEffect(() => {
+              if (!showPendingReview) return;
+              if (bookingsPanelRef.current) {
+                  bookingsPanelRef.current.open = true;
+                  bookingGroups.filter(group => group.pendingCount).forEach(group => {
+                      const details = studentGroupsRef.current.get(group.key);
+                      if (details) details.open = true;
+                  });
+                  bookingsPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  bookingsPanelRef.current.querySelector('summary')?.focus();
+                  onPendingReviewShown();
+              }
+          }, [showPendingReview, bookingGroups, onPendingReviewShown]);
 
           const addingSlotsRef = React.useRef(false);
           let coachHours = [], coachHoursError = '';
@@ -1950,6 +2014,7 @@
                 setSupportsTeachingCoaches(sRes.teachingCoachesVersion === 1);
                 setBookings(bRes.bookings || []);
                 setMembers(bRes.members || []);
+                onBookingsLoaded(bRes.bookings || [], bRes.members || []);
                 setSlots((sRes.slots || []).filter(s => s.id && s.title && s.date));
                 setSupportsSingleRegistration(sRes.coachSingleRegistrationVersion === 1);
                 setMonthlyTariffs(sRes.monthlyUniformPricingVersion === 1 ? sRes.monthlyGroupTariffs : null);
@@ -2109,8 +2174,6 @@
             setLoading(false);
           };
 
-          const visibleBookings = bookings.filter(booking => !['\u5df2\u53d6\u6d88', '\u5df2\u5b8c\u8ab2'].includes(booking.status));
-
           return (
             <div className="space-y-6 md:space-y-8">
               {dataError && <div role="alert" className="bg-red-50 text-red-800 rounded-xl p-4"><p>{dataError}</p><button type="button" onClick={() => fetchData().catch(() => {})} className="border rounded-lg px-3 py-2 mt-2">&#x91cd;&#x65b0;&#x8b80;&#x53d6;&#x8ab2;&#x7a0b;</button></div>}
@@ -2259,7 +2322,14 @@
                         </div>
                     </CoachDisclosure>
 
-                    <CoachDisclosure title="&#x6700;&#x65b0;&#x9810;&#x7d04;&#x540d;&#x55ae;&#xff08;&#x6559;&#x7df4;&#x5c0d;&#x5e33;&#x8207;&#x7d50;&#x8ab2;&#xff09;" sectionId="bookings" className="coach-booking-list bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
+                    <CoachDisclosure title="&#x6700;&#x65b0;&#x9810;&#x7d04;&#x540d;&#x55ae;&#xff08;&#x6559;&#x7df4;&#x5c0d;&#x5e33;&#x8207;&#x7d50;&#x8ab2;&#xff09;" sectionId="bookings" detailsRef={bookingsPanelRef} className="coach-booking-list bg-white p-4 md:p-8 rounded-2xl shadow-sm border w-full overflow-hidden">
+                      {!bookingGroups.length && <p className="p-6 text-center text-gray-500">&#x76ee;&#x524d;&#x6c92;&#x6709;&#x53ef;&#x986f;&#x793a;&#x7684;&#x9810;&#x7d04;</p>}
+                      <div className="space-y-3">{bookingGroups.map(group => (
+                        <details key={group.key} data-booking-student={group.key} ref={element => { if (element) studentGroupsRef.current.set(group.key, element); else studentGroupsRef.current.delete(group.key); }} className="min-w-0 overflow-hidden rounded-xl border border-slate-200">
+                          <summary className={`flex min-h-[52px] cursor-pointer list-none flex-wrap items-center justify-between gap-2 p-3 md:p-4 ${group.pendingCount ? 'bg-pink-100 text-pink-950' : 'bg-slate-50 text-slate-800'}`}>
+                            <h3 className="font-bold break-words min-w-0">{group.displayName}</h3>
+                            <span className="flex flex-wrap items-center gap-2 text-sm"><span>&#x5171; {group.bookings.length} &#x7b46;</span>{group.pendingCount > 0 && <span className="rounded-full bg-pink-700 px-2 py-1 font-bold text-white">&#x5f85;&#x5be9;&#x6838; {group.pendingCount} &#x7b46;</span>}<span aria-hidden="true">&#x25be;</span></span>
+                          </summary>
                       <div className="mobile-list-wrap overflow-x-auto max-h-[400px] overflow-y-auto">
                         <table className="mobile-card-table w-full min-w-max text-left text-sm md:text-base whitespace-nowrap">
                           <thead className="sticky top-0 bg-white shadow-sm z-10"><tr className="text-gray-600">
@@ -2270,11 +2340,10 @@
                               <th className="p-3 md:p-4 text-center">&#x64cd;&#x4f5c;</th>
                           </tr></thead>
                           <tbody>
-                            {!visibleBookings.length && <tr><td colSpan="5" className="p-6 text-center text-gray-500">&#x76ee;&#x524d;&#x6c92;&#x6709;&#x53ef;&#x986f;&#x793a;&#x7684;&#x9810;&#x7d04;</td></tr>}
-                            {visibleBookings.slice().reverse().map((b, idx) => {
+                            {group.bookings.map((b, idx) => {
                                const course = coachBookingCourseInfo(b, slots);
                                return (
-                              <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                              <tr key={b.bookingId || idx} className="border-b border-gray-100 hover:bg-gray-50">
                                 <td data-label="&#x5b78;&#x751f;&#x59d3;&#x540d;" className="p-3 md:p-4 font-bold text-gray-800">{b.name}{b.makeupLeaveId && <span className="block text-xs font-normal text-emerald-700 mt-1">&#x6708;&#x7e73;&#x88dc;&#x8ab2;&#xff08;&#x4e0d;&#x91cd;&#x8907;&#x6536;&#x8cbb;&#xff09;</span>}</td>
                                 <td data-label="&#x9810;&#x7d04;&#x8ab2;&#x7a0b;&#xff0f;&#x65e5;&#x671f;&#x6642;&#x6bb5;" className="p-3 md:p-4 max-w-sm whitespace-normal break-words"><p className="font-bold text-slate-800">{course.title}</p><p className="text-sm text-slate-600 mt-1">&#x4e0a;&#x8ab2;&#x65e5;&#x671f;&#xff1a;{course.date || '\u65e5\u671f\u672a\u63d0\u4f9b'}</p><p className="text-sm text-slate-600 mt-1">&#x4e0a;&#x8ab2;&#x6642;&#x6bb5;&#xff1a;{course.time || '\u6642\u6bb5\u672a\u63d0\u4f9b'}</p><MonthlyCompletionSummary completion={b.monthlyCompletion} /></td>
                                 <td data-label="&#x91d1;&#x984d;" className="p-3 md:p-4 text-emerald-600 font-bold">NT$ {b.paidPrice}{['\u73fe\u5834\u73fe\u91d1','\u73fe\u91d1\u5df2\u6536'].includes(b.paymentCode) && <p className="text-xs text-amber-900 mt-1">{b.paymentCode === '\u73fe\u91d1\u5df2\u6536' ? '\u73fe\u91d1\u5df2\u6536\u6b3e' : '\u73fe\u5834\u4ed8\u73fe \u00b7 \u5c1a\u672a\u78ba\u8a8d\u6536\u6b3e'}</p>}</td>
@@ -2323,6 +2392,8 @@
                           </tbody>
                         </table>
                       </div>
+                        </details>
+                      ))}</div>
                     </CoachDisclosure>
                 </div>
               </div>
@@ -2480,6 +2551,16 @@
             const [activeTab, setActiveTab] = useState('slots');
             const [selectedStudent, setSelectedStudent] = useState(null);
             const [paymentRevision, setPaymentRevision] = useState(0);
+            const pendingCheckedRef = React.useRef(false);
+            const [pendingReminder, setPendingReminder] = useState(null);
+            const [showPendingReview, setShowPendingReview] = useState(false);
+            const bookingsLoaded = React.useCallback((bookings, members) => {
+                if (pendingCheckedRef.current) return;
+                pendingCheckedRef.current = true;
+                const pending = groupCoachBookings(bookings, members).filter(group => group.pendingCount > 0);
+                if (pending.length) setPendingReminder(pending);
+            }, []);
+            const pendingReviewShown = React.useCallback(() => setShowPendingReview(false), []);
             const paymentsChanged = React.useCallback(() => setPaymentRevision(n => n + 1), []);
 
             const studentRequestRef = React.useRef(0);
@@ -2538,9 +2619,10 @@
                             </div>
                         </div>
                     </header>
+                    {pendingReminder && <CoachPendingReminder groups={pendingReminder} onClose={() => setPendingReminder(null)} onReview={() => { setPendingReminder(null); setActiveTab('slots'); setShowPendingReview(true); }} />}
                     <div className="flex-1 min-w-0 p-3 md:p-8">
                         {activeTab === 'members' && <CoachRevenue revision={`${activeTab}-${paymentRevision}`} />}
-                        {activeTab === 'slots' ? <CoachSlotsView onPaymentsChanged={paymentsChanged} /> : <CoachMembersView onOpenStudent={openStudent} onPaymentsChanged={paymentsChanged} />}
+                        {activeTab === 'slots' ? <CoachSlotsView onPaymentsChanged={paymentsChanged} onBookingsLoaded={bookingsLoaded} showPendingReview={showPendingReview} onPendingReviewShown={pendingReviewShown} /> : <CoachMembersView onOpenStudent={openStudent} onPaymentsChanged={paymentsChanged} />}
                     </div>
                 </div>
             );
